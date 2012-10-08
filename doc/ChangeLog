@@ -1,6 +1,4 @@
-2012-03-20  John Dennis  <jdennis@redhat.com> 0.13
-  * Allow lables and values to be justified when printing objects
-
+2012-10-05  John Dennis  <jdennis@redhat.com> 0.13
   * Fix NSS SECITEM_CompareItem bug via workaround.
 
   * Fix incorrect format strings in PyArg_ParseTuple* for:
@@ -8,6 +6,8 @@
     - BasicConstraints
     - cert_x509_key_usage
 
+  * Fix bug when decoding certificate BasicConstraints extension
+	
   * Fix hang in setup_certs.
 
   * For NSS >= 3.13 support CERTDB_TERMINAL_RECORD
@@ -15,8 +15,14 @@
   * You can now query for a specific certificate extension
     Certficate.get_extension()
 
+  * The following classes were added:
+    - RSAGenParams
+
   * The following class methods were added:
     - nss.nss.Certificate.get_extension
+    - nss.nss.PK11Slot.generate_key_pair
+    - nss.nss.DSAPublicKey.format
+    - nss.nss.DSAPublicKey.format_lines
 
   * The following module functions were added:
     - nss.nss.pub_wrap_sym_key
@@ -24,6 +30,16 @@
   * The following internal utilities were added:
     - PyString_UTF8
     - SecItem_new_alloc()
+
+  * The following class constructors were modified to accept
+    intialization parameters
+
+    - KEYPQGParams (DSA generation parameters)
+
+  * The PublicKey formatting (i.e. format_lines) was augmented
+    to format DSA keys (formerly it only recognized RSA keys).
+
+  * Allow lables and values to be justified when printing objects
 
   * The following were deprecated:
     - nss.nss.make_line_pairs (replaced by nss.nss.make_line_fmt_tuples)
