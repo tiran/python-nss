@@ -142,14 +142,21 @@ typedef struct {
 } DSAPublicKey;
 
 /* ========================================================================== */
+/* ============================ RSAGenParams Class ========================== */
+/* ========================================================================== */
+
+typedef struct {
+    PyObject_HEAD
+    PK11RSAGenParams params;
+} RSAGenParams;
+
+/* ========================================================================== */
 /* ============================ KEYPQGParams Class ========================== */
 /* ========================================================================== */
 
 typedef struct {
     PyObject_HEAD
-    PyObject *py_prime;
-    PyObject *py_subprime;
-    PyObject *py_base;
+    SECKEYPQGParams params;
 } KEYPQGParams;
 
 /* ========================================================================== */
@@ -358,7 +365,7 @@ typedef struct {
     PyTypeObject *sec_item_type;
     PyObject *(*Certificate_new_from_CERTCertificate)(CERTCertificate *cert);
     PyObject *(*PrivateKey_new_from_SECKEYPrivateKey)(SECKEYPrivateKey *private_key);
-    PyObject *(*SecItem_new_from_SECItem)(SECItem *item, SECItemKind type);
+    PyObject *(*SecItem_new_from_SECItem)(const SECItem *item, SECItemKind type);
     PyObject *(*cert_distnames_new_from_CERTDistNames)(CERTDistNames *names);
     CERTDistNames *(*cert_distnames_as_CERTDistNames)(PyObject *py_distnames);
 } PyNSPR_NSS_C_API_Type;

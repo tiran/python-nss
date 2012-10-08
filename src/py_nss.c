@@ -51,7 +51,8 @@ NewType_set_classproperty(NewType *self, PyObject *value, void *closure)
     }
 
     if (!PyString_Check(value)) {
-        PyErr_SetString(PyExc_TypeError, "The first attribute value must be a string");
+        PyErr_Format(PyExc_TypeError, "classproperty must be a string, not %.200s",
+                     Py_TYPE(value)->tp_name);
         return -1;
     }
 
@@ -280,11 +281,44 @@ NewType_new_from_NSSType(NSSType *id)
 #define PyRDN_Check(op)  PyObject_TypeCheck(op, &RDNType)
 #define PyDN_Check(op) PyObject_TypeCheck(op, &DNType)
 
+#define PyRSAGenParams_Check(op) PyObject_TypeCheck(op, &RSAGenParamsType)
+#define PyKEYPQGParams_Check(op) PyObject_TypeCheck(op, &KEYPQGParamsType)
+
 
 // FIXME, should use this in more places.
 PyObject *
 PyString_UTF8(PyObject *obj, char *name);
 
+
+#define SECITEM_PARAM(py_param, pitem, tmp_item, none_ok, param_name)   \
+{                                                                       \
+    pitem = NULL;                                                       \
+    if (py_param) {                                                     \
+        if (PySecItem_Check(py_param)) {                                \
+            pitem = &((SecItem *)py_param)->item;                       \
+        } else if (none_ok && PyNone_Check(py_param)) {                 \
+            pitem = NULL;                                               \
+        } else if (PyObject_CheckReadBuffer(py_param)) {                \
+            unsigned char *data = NULL;                                 \
+            Py_ssize_t data_len;                                        \
+                                                                        \
+            if (PyObject_AsReadBuffer(py_param, (void *)&data, &data_len)) \
+                return -1;                                              \
+                                                                        \
+            tmp_item.data = data;                                       \
+            tmp_item.len = data_len;                                    \
+            pitem = &tmp_item;                                          \
+        } else {                                                        \
+            if (none_ok) {                                              \
+                PyErr_SetString(PyExc_TypeError, param_name " must be SecItem, buffer compatible or None"); \
+                return -1;                                              \
+            } else {                                                    \
+                PyErr_SetString(PyExc_TypeError, param_name " must be SecItem or buffer compatible"); \
+                return -1;                                              \
+            }                                                           \
+        }                                                               \
+    }                                                                   \
+}
 
 /* ========================================================================== */
 /* ========================= Formatting Utilities =========================== */
@@ -390,6 +424,19 @@ py_indented_format(PyObject *self, PyObject *args, PyObject *kwds);
     }                                                                   \
     Py_CLEAR(obj);                                                      \
     APPEND_LINES_AND_CLEAR(dst_fmt_tuples, obj_lines, level, fail);     \
+}
+
+#define FMT_SEC_INT_OBJ_APPEND_AND_CLEAR(dst_fmt_tuples, label, obj, level, fail) \
+{                                                                       \
+    PyObject *obj_lines = NULL;                                         \
+    SecItem *item = (SecItem *)obj;                                     \
+                                                                        \
+    FMT_LABEL_AND_APPEND(dst_fmt_tuples, label, level, fail);           \
+    if ((obj_lines = secitem_integer_format_lines(&item->item, level+1)) == NULL) { \
+        goto fail;                                                      \
+    }                                                                   \
+    Py_CLEAR(obj);                                                      \
+    APPEND_LINE_TUPLES_AND_CLEAR(dst_fmt_tuples, obj_lines, fail);      \
 }
 
 PyDoc_STRVAR(generic_format_doc,
@@ -1168,6 +1215,53 @@ static AsciiEscapes ascii_encoding_table[256] = {
     {4, "\\xFE"}, /* 254      */    {4, "\\xFF"}, /* 255      */
 };
 
+/* From nss/cmd/certutil/keystuff.c */
+static const unsigned char P[] = { 0, 
+       0x98, 0xef, 0x3a, 0xae, 0x70, 0x98, 0x9b, 0x44, 
+       0xdb, 0x35, 0x86, 0xc1, 0xb6, 0xc2, 0x47, 0x7c, 
+       0xb4, 0xff, 0x99, 0xe8, 0xae, 0x44, 0xf2, 0xeb, 
+       0xc3, 0xbe, 0x23, 0x0f, 0x65, 0xd0, 0x4c, 0x04, 
+       0x82, 0x90, 0xa7, 0x9d, 0x4a, 0xc8, 0x93, 0x7f, 
+       0x41, 0xdf, 0xf8, 0x80, 0x6b, 0x0b, 0x68, 0x7f, 
+       0xaf, 0xe4, 0xa8, 0xb5, 0xb2, 0x99, 0xc3, 0x69, 
+       0xfb, 0x3f, 0xe7, 0x1b, 0xd0, 0x0f, 0xa9, 0x7a, 
+       0x4a, 0x04, 0xbf, 0x50, 0x9e, 0x22, 0x33, 0xb8, 
+       0x89, 0x53, 0x24, 0x10, 0xf9, 0x68, 0x77, 0xad, 
+       0xaf, 0x10, 0x68, 0xb8, 0xd3, 0x68, 0x5d, 0xa3, 
+       0xc3, 0xeb, 0x72, 0x3b, 0xa0, 0x0b, 0x73, 0x65, 
+       0xc5, 0xd1, 0xfa, 0x8c, 0xc0, 0x7d, 0xaa, 0x52, 
+       0x29, 0x34, 0x44, 0x01, 0xbf, 0x12, 0x25, 0xfe, 
+       0x18, 0x0a, 0xc8, 0x3f, 0xc1, 0x60, 0x48, 0xdb, 
+       0xad, 0x93, 0xb6, 0x61, 0x67, 0xd7, 0xa8, 0x2d };
+static const unsigned char Q[] = { 0,
+       0xb5, 0xb0, 0x84, 0x8b, 0x44, 0x29, 0xf6, 0x33, 
+       0x59, 0xa1, 0x3c, 0xbe, 0xd2, 0x7f, 0x35, 0xa1, 
+       0x76, 0x27, 0x03, 0x81                         };
+static const unsigned char G[] = { 
+       0x04, 0x0e, 0x83, 0x69, 0xf1, 0xcd, 0x7d, 0xe5, 
+       0x0c, 0x78, 0x93, 0xd6, 0x49, 0x6f, 0x00, 0x04, 
+       0x4e, 0x0e, 0x6c, 0x37, 0xaa, 0x38, 0x22, 0x47, 
+       0xd2, 0x58, 0xec, 0x83, 0x12, 0x95, 0xf9, 0x9c, 
+       0xf1, 0xf4, 0x27, 0xff, 0xd7, 0x99, 0x57, 0x35, 
+       0xc6, 0x64, 0x4c, 0xc0, 0x47, 0x12, 0x31, 0x50, 
+       0x82, 0x3c, 0x2a, 0x07, 0x03, 0x01, 0xef, 0x30, 
+       0x09, 0x89, 0x82, 0x41, 0x76, 0x71, 0xda, 0x9e, 
+       0x57, 0x8b, 0x76, 0x38, 0x37, 0x5f, 0xa5, 0xcd, 
+       0x32, 0x84, 0x45, 0x8d, 0x4c, 0x17, 0x54, 0x2b, 
+       0x5d, 0xc2, 0x6b, 0xba, 0x3e, 0xa0, 0x7b, 0x95, 
+       0xd7, 0x00, 0x42, 0xf7, 0x08, 0xb8, 0x83, 0x87, 
+       0x60, 0xe1, 0xe5, 0xf4, 0x1a, 0x54, 0xc2, 0x20, 
+       0xda, 0x38, 0x3a, 0xd1, 0xb6, 0x10, 0xf4, 0xcb, 
+       0x35, 0xda, 0x97, 0x92, 0x87, 0xd6, 0xa5, 0x37, 
+       0x62, 0xb4, 0x93, 0x4a, 0x15, 0x21, 0xa5, 0x10 };
+
+static const SECKEYPQGParams default_pqg_params = {
+    NULL,
+    { 0, (unsigned char *)P, sizeof(P) },
+    { 0, (unsigned char *)Q, sizeof(Q) },
+    { 0, (unsigned char *)G, sizeof(G) }
+};
+
 /*
  * Returns the number of bytes needed to escape an ascii string.
  */
@@ -1321,7 +1415,7 @@ static PyObject *
 cert_trust_flags_str(unsigned int flags);
 
 static PyObject *
-SecItem_new_from_SECItem(SECItem *item, SECItemKind kind);
+SecItem_new_from_SECItem(const SECItem *item, SECItemKind kind);
 
 static PyObject *
 SecItem_new_alloc(size_t len, SECItemType type, SECItemKind kind);
@@ -1401,6 +1495,9 @@ del_thread_local(const char *name);
 #endif
 
 static PyObject *
+SECItem_to_hex(SECItem *item, int octets_per_line, char *separator);
+
+static PyObject *
 SECItem_der_to_hex(SECItem *item, int octets_per_line, char *separator);
 
 static PyObject *
@@ -1441,6 +1538,9 @@ fingerprint_format_lines(SECItem *item, int level);
 
 static PyObject *
 PKCS12Decoder_item(PKCS12Decoder *self, register Py_ssize_t i);
+
+PyObject *
+KEYPQGParams_init_from_SECKEYPQGParams(KEYPQGParams *self, const SECKEYPQGParams *params);
 
 /* ==================================== */
 
@@ -3731,6 +3831,47 @@ cert_der_universal_secitem_fmt_lines(PyObject *self, PyObject *args, PyObject *k
 }
 
 static PyObject *
+secitem_integer_format_lines(SECItem *item, int level)
+{
+    PyObject *lines = NULL;
+    PyObject *obj = NULL;
+    PyObject *obj1 = NULL;
+    PyObject *obj_lines = NULL;
+
+    TraceMethodEnter(NULL);
+
+    if ((lines = PyList_New(0)) == NULL) {
+        return NULL;
+    }
+
+    if (item->len > 8) {
+        if ((obj_lines = SECItem_to_hex(item, OCTETS_PER_LINE_DEFAULT, HEX_SEPARATOR_DEFAULT)) == NULL) {
+            goto fail;
+        }
+        APPEND_LINES_AND_CLEAR(lines, obj_lines, level, fail);
+    } else {
+        if ((obj = integer_secitem_to_pylong(item)) == NULL) {
+            goto fail;
+        }
+        if ((obj1 = obj_sprintf("%d (%#x)", obj, obj)) == NULL) {
+            goto fail;
+        }
+        Py_CLEAR(obj);
+        FMT_OBJ_AND_APPEND(lines, NULL, obj1, level, fail);
+        Py_CLEAR(obj1);
+    }
+
+    return lines;
+
+ fail:
+    Py_XDECREF(obj_lines);
+    Py_XDECREF(obj);
+    Py_XDECREF(obj1);
+    Py_XDECREF(lines);
+    return NULL;
+}
+
+static PyObject *
 fingerprint_format_lines(SECItem *item, int level)
 {
     PyObject *lines = NULL;
@@ -4413,6 +4554,12 @@ ip_addr_secitem_to_pystr(SECItem *item)
 }
 
 static PyObject *
+SECItem_to_hex(SECItem *item, int octets_per_line, char *separator)
+{
+    return raw_data_to_hex(item->data, item->len, octets_per_line, separator);
+}
+
+static PyObject *
 SECItem_der_to_hex(SECItem *item, int octets_per_line, char *separator)
 {
     SECItem tmp_item = *item;
@@ -4896,7 +5043,7 @@ static PyTypeObject SecItemType = {
 };
 
 static PyObject *
-SecItem_new_from_SECItem(SECItem *item, SECItemKind kind)
+SecItem_new_from_SECItem(const SECItem *item, SECItemKind kind)
 {
     SecItem *self = NULL;
 
@@ -5523,6 +5670,201 @@ AlgorithmID_new_from_SECAlgorithmID(SECAlgorithmID *id)
 }
 
 /* ========================================================================== */
+/* =========================== RSAGenParams Class =========================== */
+/* ========================================================================== */
+
+/* ============================ Attribute Access ============================ */
+
+static PyObject *
+RSAGenParams_get_key_size(RSAGenParams *self, void *closure)
+{
+    TraceMethodEnter(self);
+
+    return PyInt_FromLong(self->params.keySizeInBits);
+
+}
+
+static int
+RSAGenParams_set_key_size(RSAGenParams *self, PyObject *value, void *closure)
+{
+    TraceMethodEnter(self);
+
+    if (value == NULL) {
+        PyErr_SetString(PyExc_TypeError, "Cannot delete the classproperty attribute");
+        return -1;
+    }
+
+    if (!PyInt_Check(value)) {
+        PyErr_Format(PyExc_TypeError, "key_size must be a integer, not %.200s",
+                     Py_TYPE(value)->tp_name);
+        return -1;
+    }
+
+    self->params.keySizeInBits = PyInt_AsLong(value);
+
+    return 0;
+}
+
+static PyObject *
+RSAGenParams_get_public_exponent(RSAGenParams *self, void *closure)
+{
+    TraceMethodEnter(self);
+
+    return PyInt_FromLong(self->params.keySizeInBits);
+
+}
+
+static int
+RSAGenParams_set_public_exponent(RSAGenParams *self, PyObject *value, void *closure)
+{
+    TraceMethodEnter(self);
+
+    if (value == NULL) {
+        PyErr_SetString(PyExc_TypeError, "Cannot delete the classproperty attribute");
+        return -1;
+    }
+
+    if (!PyInt_Check(value)) {
+        PyErr_Format(PyExc_TypeError, "public_exponent must be a integer, not %.200s",
+                     Py_TYPE(value)->tp_name);
+        return -1;
+    }
+
+    self->params.pe = PyInt_AsLong(value);
+
+    return 0;
+}
+
+static
+PyGetSetDef RSAGenParams_getseters[] = {
+    {"key_size", (getter)RSAGenParams_get_key_size,    (setter)RSAGenParams_set_key_size,
+     "key size in bits (integer)", NULL},
+    {"public_exponent", (getter)RSAGenParams_get_public_exponent,    (setter)RSAGenParams_set_public_exponent,
+     "public exponent (integer)", NULL},
+    {NULL}  /* Sentinel */
+};
+
+static PyMemberDef RSAGenParams_members[] = {
+    {NULL}  /* Sentinel */
+};
+
+/* ============================== Class Methods ============================= */
+
+static PyMethodDef RSAGenParams_methods[] = {
+    {NULL, NULL}  /* Sentinel */
+};
+
+/* =========================== Class Construction =========================== */
+
+static PyObject *
+RSAGenParams_new(PyTypeObject *type, PyObject *args, PyObject *kwds)
+{
+    RSAGenParams *self;
+
+    TraceObjNewEnter(type);
+
+    if ((self = (RSAGenParams *)type->tp_alloc(type, 0)) == NULL) {
+        return NULL;
+    }
+
+    memset(&self->params, 0, sizeof(self->params));
+
+    TraceObjNewLeave(self);
+    return (PyObject *)self;
+}
+
+static void
+RSAGenParams_dealloc(RSAGenParams* self)
+{
+    TraceMethodEnter(self);
+
+    self->ob_type->tp_free((PyObject*)self);
+}
+
+PyDoc_STRVAR(RSAGenParams_doc,
+"RSAGenParams(key_size=1024, public_exponent=0x10001)\n\
+\n\
+:Parameters:\n\
+    key_size : integer\n\
+        RSA key size in bits.\n\
+    public_exponent : integer\n\
+        public exponent.\n\
+\n\
+An object representing RSAGenParams.\n\
+");
+
+static int
+RSAGenParams_init(RSAGenParams *self, PyObject *args, PyObject *kwds)
+{
+    static char *kwlist[] = {"key_size", "exponent", NULL};
+    int key_size = 1024;
+    unsigned long public_exponent = 0x10001;
+
+    TraceMethodEnter(self);
+
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "|ik:RSAGenParams", kwlist,
+                                     &key_size, &public_exponent))
+        return -1;
+
+    self->params.keySizeInBits = key_size;
+    self->params.pe = public_exponent;
+
+    return 0;
+}
+
+static PyObject *
+RSAGenParams_str(RSAGenParams *self)
+{
+    TraceMethodEnter(self);
+
+    return PyString_FromFormat("key_size=%d public_exponent=%lu",
+                               self->params.keySizeInBits,
+                               self->params.pe);
+}
+
+static PyTypeObject RSAGenParamsType = {
+    PyObject_HEAD_INIT(NULL)
+    0,						/* ob_size */
+    "nss.nss.RSAGenParams",				/* tp_name */
+    sizeof(RSAGenParams),				/* tp_basicsize */
+    0,						/* tp_itemsize */
+    (destructor)RSAGenParams_dealloc,		/* tp_dealloc */
+    0,						/* tp_print */
+    0,						/* tp_getattr */
+    0,						/* tp_setattr */
+    0,						/* tp_compare */
+    0,						/* tp_repr */
+    0,						/* tp_as_number */
+    0,						/* tp_as_sequence */
+    0,						/* tp_as_mapping */
+    0,						/* tp_hash */
+    0,						/* tp_call */
+    (reprfunc)RSAGenParams_str,			/* tp_str */
+    0,						/* tp_getattro */
+    0,						/* tp_setattro */
+    0,						/* tp_as_buffer */
+    Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE,	/* tp_flags */
+    RSAGenParams_doc,				/* tp_doc */
+    (traverseproc)0,				/* tp_traverse */
+    (inquiry)0,					/* tp_clear */
+    0,						/* tp_richcompare */
+    0,						/* tp_weaklistoffset */
+    0,						/* tp_iter */
+    0,						/* tp_iternext */
+    RSAGenParams_methods,				/* tp_methods */
+    RSAGenParams_members,				/* tp_members */
+    RSAGenParams_getseters,				/* tp_getset */
+    0,						/* tp_base */
+    0,						/* tp_dict */
+    0,						/* tp_descr_get */
+    0,						/* tp_descr_set */
+    0,						/* tp_dictoffset */
+    (initproc)RSAGenParams_init,			/* tp_init */
+    0,						/* tp_alloc */
+    RSAGenParams_new,				/* tp_new */
+};
+
+/* ========================================================================== */
 /* ============================ KEYPQGParams Class ========================== */
 /* ========================================================================== */
 
@@ -5533,8 +5875,7 @@ KEYPQGParams_get_prime(KEYPQGParams *self, void *closure)
 {
     TraceMethodEnter(self);
 
-    Py_INCREF(self->py_prime);
-    return self->py_prime;
+    return SecItem_new_from_SECItem(&self->params.prime, SECITEM_unknown);
 }
 
 static PyObject *
@@ -5542,8 +5883,7 @@ KEYPQGParams_get_subprime(KEYPQGParams *self, void *closure)
 {
     TraceMethodEnter(self);
 
-    Py_INCREF(self->py_subprime);
-    return self->py_subprime;
+    return SecItem_new_from_SECItem(&self->params.subPrime, SECITEM_unknown);
 }
 
 static PyObject *
@@ -5551,8 +5891,7 @@ KEYPQGParams_get_base(KEYPQGParams *self, void *closure)
 {
     TraceMethodEnter(self);
 
-    Py_INCREF(self->py_base);
-    return self->py_base;
+    return SecItem_new_from_SECItem(&self->params.base, SECITEM_unknown);
 }
 
 static
@@ -5566,10 +5905,74 @@ PyGetSetDef KEYPQGParams_getseters[] = {
 static PyMemberDef KEYPQGParams_members[] = {
     {NULL}  /* Sentinel */
 };
-
 /* ============================== Class Methods ============================= */
 
+PyObject *
+KEYPQGParams_format_lines(KEYPQGParams *self, PyObject *args, PyObject *kwds)
+{
+    static char *kwlist[] = {"level", NULL};
+    int level = 0;
+    PyObject *lines = NULL;
+    PyObject *obj = NULL;
+    PyObject *obj_lines = NULL;
+
+    TraceMethodEnter(self);
+
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "|i:format_lines", kwlist, &level))
+        return NULL;
+
+    if ((lines = PyList_New(0)) == NULL) {
+        return NULL;
+    }
+
+
+    if ((obj = KEYPQGParams_get_prime(self, NULL)) == NULL) {
+        goto fail;
+    }
+    FMT_SEC_INT_OBJ_APPEND_AND_CLEAR(lines, _("Prime"), obj, level, fail);
+
+    if ((obj = KEYPQGParams_get_subprime(self, NULL)) == NULL) {
+        goto fail;
+    }
+    FMT_SEC_INT_OBJ_APPEND_AND_CLEAR(lines, _("SubPrime"), obj, level, fail);
+
+    if ((obj = KEYPQGParams_get_base(self, NULL)) == NULL) {
+        goto fail;
+    }
+    FMT_SEC_INT_OBJ_APPEND_AND_CLEAR(lines, _("Base"), obj, level, fail);
+
+    return lines;
+
+ fail:
+    Py_XDECREF(obj_lines);
+    Py_XDECREF(obj);
+    Py_XDECREF(lines);
+    return NULL;
+}
+
+static PyObject *
+KEYPQGParams_format(KEYPQGParams *self, PyObject *args, PyObject *kwds)
+{
+    TraceMethodEnter(self);
+
+    return format_from_lines((format_lines_func)KEYPQGParams_format_lines, (PyObject *)self, args, kwds);
+}
+
+static PyObject *
+KEYPQGParams_str(KEYPQGParams *self)
+{
+    PyObject *py_formatted_result = NULL;
+
+    TraceMethodEnter(self);
+
+    py_formatted_result =  KEYPQGParams_format(self, empty_tuple, NULL);
+    return py_formatted_result;
+
+}
+
 static PyMethodDef KEYPQGParams_methods[] = {
+    {"format_lines", (PyCFunction)KEYPQGParams_format_lines,   METH_VARARGS|METH_KEYWORDS, generic_format_lines_doc},
+    {"format",       (PyCFunction)KEYPQGParams_format,         METH_VARARGS|METH_KEYWORDS, generic_format_doc},
     {NULL, NULL}  /* Sentinel */
 };
 
@@ -5586,32 +5989,15 @@ KEYPQGParams_new(PyTypeObject *type, PyObject *args, PyObject *kwds)
         return NULL;
     }
 
-    self->py_prime = NULL;
-    self->py_subprime = NULL;
-    self->py_base = NULL;
+    memset(&self->params, 0, sizeof(self->params));
+
+    if ((self->params.arena = PORT_NewArena(DER_DEFAULT_CHUNKSIZE)) == NULL) {
+        type->tp_free(self);
+        return set_nspr_error(NULL);
+    }
 
     TraceObjNewLeave(self);
     return (PyObject *)self;
-}
-
-static int
-KEYPQGParams_traverse(KEYPQGParams *self, visitproc visit, void *arg)
-{
-    Py_VISIT(self->py_prime);
-    Py_VISIT(self->py_subprime);
-    Py_VISIT(self->py_base);
-    return 0;
-}
-
-static int
-KEYPQGParams_clear(KEYPQGParams* self)
-{
-    TraceMethodEnter(self);
-
-    Py_CLEAR(self->py_prime);
-    Py_CLEAR(self->py_subprime);
-    Py_CLEAR(self->py_base);
-    return 0;
 }
 
 static void
@@ -5619,21 +6005,76 @@ KEYPQGParams_dealloc(KEYPQGParams* self)
 {
     TraceMethodEnter(self);
 
-    KEYPQGParams_clear(self);
+    if (self->params.arena) {
+        PORT_FreeArena(self->params.arena, PR_FALSE);
+    }
+
     self->ob_type->tp_free((PyObject*)self);
 }
 
 PyDoc_STRVAR(KEYPQGParams_doc,
-"An object representing key parameters\n\
+"KEYPQGParams(prime=None, subprime=None, base=None)\n\
+\n\
+:Parameters:\n\
+    prime : SecItem or str or any buffer compatible object or None\n\
+        prime (also known as p)\n\
+    subprime : SecItem or str or any buffer compatible object or None\n\
+        subprime (also known as q)\n\
+    base : SecItem or str or any buffer compatible object or None\n\
+        base (also known as g)\n\
+\n\
+An object representing DSA key parameters\n\
     - prime (also known as p)\n\
     - subprime (also known as q)\n\
     - base (also known as g)\n\
+\n\
+If no parameters are passed the default PQG the KeyPQGParams will\n\
+be intialized to default values. If you pass any initialization\n\
+parameters then they must all be passed.\n\
 ");
 
 static int
 KEYPQGParams_init(KEYPQGParams *self, PyObject *args, PyObject *kwds)
 {
+    PyObject *py_prime = NULL;
+    SECItem prime_tmp_item;
+    SECItem *prime_item = NULL;
+
+    PyObject *py_subprime = NULL;
+    SECItem subprime_tmp_item;
+    SECItem *subprime_item = NULL;
+
+    PyObject *py_base = NULL;
+    SECItem base_tmp_item;
+    SECItem *base_item = NULL;
+
     TraceMethodEnter(self);
+
+    // FIXME: prime, subprime & base are really large ASN.1 integers
+    // we should accept a python int or python long and convert to a SecItem
+
+    SECITEM_PARAM(py_prime, prime_item, prime_tmp_item, false, "prime");
+    SECITEM_PARAM(py_subprime, subprime_item, subprime_tmp_item, false, "subprime");
+    SECITEM_PARAM(py_base, base_item, base_tmp_item, false, "base");
+
+    if (py_prime == NULL && py_subprime == NULL && py_base == NULL) {
+        if ((KEYPQGParams_init_from_SECKEYPQGParams(self, &default_pqg_params)) == NULL) {
+            return -1;
+        }
+    } else if (py_prime != NULL && py_subprime != NULL && py_base != NULL) {
+        SECKEYPQGParams params;
+
+        params.arena = NULL;
+        params.prime = *prime_item;
+        params.subPrime = *subprime_item;
+        params.base = *base_item;
+
+        if ((KEYPQGParams_init_from_SECKEYPQGParams(self, &params)) == NULL) {
+            return -1;
+        }
+    } else {
+        PyErr_SetString(PyExc_ValueError, "prime, subprime and base must all be provided or none of them provided, not a mix");
+    }
 
     return 0;
 }
@@ -5643,34 +6084,6 @@ KEYPQGParams_repr(KEYPQGParams *self)
 {
     return PyString_FromFormat("<%s object at %p>",
                                Py_TYPE(self)->tp_name, self);
-}
-
-static PyObject *
-KEYPQGParams_str(KEYPQGParams *self)
-{
-    PyObject *fmt = NULL;
-    PyObject *args = NULL;
-    PyObject *str = NULL;
-
-    TraceMethodEnter(self);
-
-    if ((fmt = PyString_FromString("prime(p)=%s subprime(q)=%s base(g)=%s")) == NULL) {
-        return NULL;
-    }
-    if ((args = PyTuple_New(3)) == NULL) {
-        Py_DECREF(fmt);
-        return NULL;
-    }
-
-    PyTuple_SetItem(args, 0, PyObject_Str(self->py_prime));
-    PyTuple_SetItem(args, 1, PyObject_Str(self->py_subprime));
-    PyTuple_SetItem(args, 2, PyObject_Str(self->py_base));
-
-    str = PyString_Format(fmt, args);
-
-    Py_DECREF(fmt);
-    Py_DECREF(args);
-    return str;
 }
 
 static PyTypeObject KEYPQGParamsType = {
@@ -5694,10 +6107,10 @@ static PyTypeObject KEYPQGParamsType = {
     0,						/* tp_getattro */
     0,						/* tp_setattro */
     0,						/* tp_as_buffer */
-    Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE | Py_TPFLAGS_HAVE_GC,	/* tp_flags */
+    Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE,	/* tp_flags */
     KEYPQGParams_doc,				/* tp_doc */
-    (traverseproc)KEYPQGParams_traverse,	/* tp_traverse */
-    (inquiry)KEYPQGParams_clear,		/* tp_clear */
+    0,						/* tp_traverse */
+    0,						/* tp_clear */
     0,						/* tp_richcompare */
     0,						/* tp_weaklistoffset */
     0,						/* tp_iter */
@@ -5716,7 +6129,30 @@ static PyTypeObject KEYPQGParamsType = {
 };
 
 PyObject *
-KEYPQGParams_new_from_SECKEYPQGParams(SECKEYPQGParams *params)
+KEYPQGParams_init_from_SECKEYPQGParams(KEYPQGParams *self, const SECKEYPQGParams *params)
+{
+
+    SECITEM_FreeItem(&self->params.prime, PR_FALSE);
+    if (SECITEM_CopyItem(self->params.arena, &self->params.prime, &params->prime) != SECSuccess) {
+        return NULL;
+    }
+
+    SECITEM_FreeItem(&self->params.subPrime, PR_FALSE);
+    if (SECITEM_CopyItem(self->params.arena, &self->params.subPrime, &params->subPrime) != SECSuccess) {
+        return NULL;
+    }
+
+    SECITEM_FreeItem(&self->params.base, PR_FALSE);
+    if (SECITEM_CopyItem(self->params.arena, &self->params.base, &params->base) != SECSuccess) {
+        return NULL;
+    }
+
+
+    return (PyObject *) self;
+}
+
+PyObject *
+KEYPQGParams_new_from_SECKEYPQGParams(const SECKEYPQGParams *params)
 {
     KEYPQGParams *self = NULL;
 
@@ -5726,17 +6162,7 @@ KEYPQGParams_new_from_SECKEYPQGParams(SECKEYPQGParams *params)
         return NULL;
     }
 
-    if ((self->py_prime = SecItem_new_from_SECItem(&params->prime, SECITEM_unknown)) == NULL) {
-        Py_CLEAR(self);
-        return NULL;
-    }
-
-    if ((self->py_subprime = SecItem_new_from_SECItem(&params->subPrime, SECITEM_unknown)) == NULL) {
-        Py_CLEAR(self);
-        return NULL;
-    }
-
-    if ((self->py_base = SecItem_new_from_SECItem(&params->base, SECITEM_unknown)) == NULL) {
+    if ((KEYPQGParams_init_from_SECKEYPQGParams(self, params) == NULL)) {
         Py_CLEAR(self);
         return NULL;
     }
@@ -5789,7 +6215,6 @@ RSAPublicKey_format_lines(RSAPublicKey *self, PyObject *args, PyObject *kwds)
     int level = 0;
     PyObject *lines = NULL;
     PyObject *obj = NULL;
-    PyObject *exponent = NULL;
 
     TraceMethodEnter(self);
 
@@ -5800,27 +6225,19 @@ RSAPublicKey_format_lines(RSAPublicKey *self, PyObject *args, PyObject *kwds)
         return NULL;
     }
 
-    FMT_LABEL_AND_APPEND(lines, _("Modulus"), level, fail);
-
     if ((obj = RSAPublicKey_get_modulus(self, NULL)) == NULL) {
         goto fail;
     }
-    APPEND_OBJ_TO_HEX_LINES_AND_CLEAR(lines, obj, level+1, fail);
+    FMT_SEC_INT_OBJ_APPEND_AND_CLEAR(lines, _("Modulus"), obj, level, fail);
 
-    if ((exponent = RSAPublicKey_get_exponent(self, NULL)) == NULL) {
+    if ((obj = RSAPublicKey_get_exponent(self, NULL)) == NULL) {
         goto fail;
     }
-    if ((obj = obj_sprintf("%d (%#x)", exponent, exponent)) == NULL) {
-        goto fail;
-    }
-    FMT_OBJ_AND_APPEND(lines, _("Exponent"), obj, level, fail);
-    Py_CLEAR(exponent);
-    Py_CLEAR(obj);
+    FMT_SEC_INT_OBJ_APPEND_AND_CLEAR(lines, _("Exponent"), obj, level, fail);
 
     return lines;
  fail:
     Py_XDECREF(obj);
-    Py_XDECREF(exponent);
     Py_XDECREF(lines);
     return NULL;
 }
@@ -5974,7 +6391,7 @@ RSAPublicKey_new_from_SECKEYRSAPublicKey(SECKEYRSAPublicKey *rsa)
         return NULL;
     }
 
-    if ((self->py_exponent = integer_secitem_to_pylong(&rsa->publicExponent)) == NULL) {
+    if ((self->py_exponent = SecItem_new_from_SECItem(&rsa->publicExponent, SECITEM_unknown)) == NULL) {
         Py_CLEAR(self);
         return NULL;
     }
@@ -6020,7 +6437,65 @@ static PyMemberDef DSAPublicKey_members[] = {
 
 /* ============================== Class Methods ============================= */
 
+static PyObject *
+DSAPublicKey_format_lines(DSAPublicKey *self, PyObject *args, PyObject *kwds)
+{
+    static char *kwlist[] = {"level", NULL};
+    int level = 0;
+    PyObject *lines = NULL;
+    PyObject *obj = NULL;
+    PyObject *exponent = NULL;
+
+    TraceMethodEnter(self);
+
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "|i:format_lines", kwlist, &level))
+        return NULL;
+
+    if ((lines = PyList_New(0)) == NULL) {
+        return NULL;
+    }
+
+    if ((obj = DSAPublicKey_get_pqg_params(self, NULL)) == NULL) {
+        goto fail;
+    }
+    CALL_FORMAT_LINES_AND_APPEND(lines, obj, level, fail);
+    Py_CLEAR(obj);
+
+    if ((obj = DSAPublicKey_get_public_value(self, NULL)) == NULL) {
+        goto fail;
+    }
+    FMT_SEC_INT_OBJ_APPEND_AND_CLEAR(lines, _("Public Value"), obj, level, fail);
+    return lines;
+ fail:
+    Py_XDECREF(obj);
+    Py_XDECREF(exponent);
+    Py_XDECREF(lines);
+    return NULL;
+}
+
+static PyObject *
+DSAPublicKey_format(DSAPublicKey *self, PyObject *args, PyObject *kwds)
+{
+    TraceMethodEnter(self);
+
+    return format_from_lines((format_lines_func)DSAPublicKey_format_lines, (PyObject *)self, args, kwds);
+}
+
+static PyObject *
+DSAPublicKey_str(DSAPublicKey *self)
+{
+    PyObject *py_formatted_result = NULL;
+
+    TraceMethodEnter(self);
+
+    py_formatted_result =  DSAPublicKey_format(self, empty_tuple, NULL);
+    return py_formatted_result;
+
+}
+
 static PyMethodDef DSAPublicKey_methods[] = {
+    {"format_lines", (PyCFunction)DSAPublicKey_format_lines,   METH_VARARGS|METH_KEYWORDS, generic_format_lines_doc},
+    {"format",       (PyCFunction)DSAPublicKey_format,         METH_VARARGS|METH_KEYWORDS, generic_format_doc},
     {NULL, NULL}  /* Sentinel */
 };
 
@@ -6087,33 +6562,6 @@ DSAPublicKey_repr(DSAPublicKey *self)
 {
     return PyString_FromFormat("<%s object at %p>",
                                Py_TYPE(self)->tp_name, self);
-}
-
-static PyObject *
-DSAPublicKey_str(DSAPublicKey *self)
-{
-    PyObject *fmt = NULL;
-    PyObject *args = NULL;
-    PyObject *str = NULL;
-
-    TraceMethodEnter(self);
-
-    if ((fmt = PyString_FromString("pqg_params=[%s] public_value=%s")) == NULL) {
-        return NULL;
-    }
-
-    if ((args = PyTuple_New(2)) == NULL) {
-        return NULL;
-    }
-
-    PyTuple_SetItem(args, 0, PyObject_Str(self->py_pqg_params));
-    PyTuple_SetItem(args, 1, PyObject_Str(self->py_public_value));
-
-    str = PyString_Format(fmt, args);
-
-    Py_DECREF(fmt);
-    Py_DECREF(args);
-    return str;
 }
 
 static PyTypeObject DSAPublicKeyType = {
@@ -6547,6 +6995,8 @@ PublicKey_format_lines(PublicKey *self, PyObject *args, PyObject *kwds)
     static char *kwlist[] = {"level", NULL};
     int level = 0;
     PyObject *lines = NULL;
+    PyObject *obj = NULL;
+    PyObject *py_key = NULL;
 
     TraceMethodEnter(self);
 
@@ -6563,6 +7013,8 @@ PublicKey_format_lines(PublicKey *self, PyObject *args, PyObject *kwds)
         CALL_FORMAT_LINES_AND_APPEND(lines, self->py_rsa_key, level+1, fail);
         break;
     case dsaKey:
+        FMT_LABEL_AND_APPEND(lines, _("DSA Public Key"), level, fail);
+        CALL_FORMAT_LINES_AND_APPEND(lines, self->py_dsa_key, level+1, fail);
         break;
     case fortezzaKey:
     case dhKey:
@@ -6571,6 +7023,11 @@ PublicKey_format_lines(PublicKey *self, PyObject *args, PyObject *kwds)
     case rsaPssKey:
     case rsaOaepKey:
     case nullKey:
+        if ((obj = PublicKey_get_key_type_str(self, NULL)) == NULL) {
+            goto fail;
+        }
+        FMT_OBJ_AND_APPEND(lines, _("Key Type"), obj, level, fail);
+        Py_CLEAR(obj);
         break;
     }
 
@@ -6578,6 +7035,8 @@ PublicKey_format_lines(PublicKey *self, PyObject *args, PyObject *kwds)
 
  fail:
     Py_XDECREF(lines);
+    Py_XDECREF(obj);
+    Py_XDECREF(py_key);
     return NULL;
 }
 
@@ -8604,24 +9063,9 @@ Certificate_init(Certificate *self, PyObject *args, PyObject *kwds)
                                      &py_data, &der_is_signed))
         return -1;
 
+    SECITEM_PARAM(py_data, der_item, tmp_item, false, "data");
+
     if (py_data) {
-        if (PySecItem_Check(py_data)) {
-            der_item = &((SecItem *)py_data)->item;
-        } else if (PyObject_CheckReadBuffer(py_data)) {
-            unsigned char *data = NULL;
-            Py_ssize_t data_len;
-
-            if (PyObject_AsReadBuffer(py_data, (void *)&data, &data_len))
-                return -1;
-
-            tmp_item.data = data;
-            tmp_item.len = data_len;
-            der_item = &tmp_item;
-        } else {
-            PyErr_SetString(PyExc_TypeError, "data must be SecItem or buffer compatible");
-            return -1;
-        }
-
         if (der_is_signed) {
             return Certificate_init_from_signed_der_secitem(self, der_item);
         } else {
@@ -8631,6 +9075,8 @@ Certificate_init(Certificate *self, PyObject *args, PyObject *kwds)
 
     return 0;
 }
+
+
 
 static PyObject *
 Certificate_repr(Certificate *self)
@@ -11853,7 +12299,7 @@ PyDoc_STRVAR(PK11Slot_key_gen_doc,
 :Parameters:\n\
     mechanism : int\n\
         key mechanism enumeration constant (CKM_*)\n\
-    key_param : SecItem object or None\n\
+    sec_param : SecItem object or None\n\
         SecItem key parameters. None is also valid.\n\
     key_size : int\n\
         key length (use get_best_key_length())\n\
@@ -11908,6 +12354,144 @@ PK11Slot_key_gen(PK11Slot *self, PyObject *args)
     return PyPK11SymKey_new_from_PK11SymKey(sym_key);
 }
 
+PyDoc_STRVAR(PK11Slot_generate_key_pair_doc,
+"generate_key_pair(mechanism, key_params, token, sensitive, [user_data1, ...]) -> public_key, private_key\n\
+\n\
+:Parameters:\n\
+    mechanism : int\n\
+        key mechanism enumeration constant (CKM_*)\n\
+    key_params : SecItem object or None\n\
+        SecItem key parameters. None is also valid.\n\
+    token : bool\n\
+        If true the key is a token object otherwise it's a session object.\n\
+    sensitive : bool\n\
+        If a key is sensitive, certain attributes of the key cannot be\n\
+        revealed in plaintext outside the token. It is also more\n\
+        expensive to move between tokens.\n\
+    user_dataN : object ...\n\
+        zero or more caller supplied parameters which will\n\
+        be passed to the password callback function\n\
+\n\
+Generate a public and private key pair.\n\
+\n\
+Example::\n\
+\n\
+    # Generate a DSA key pair\n\
+    key_params = nss.KEYPQGParams()\n\
+    mechanism = nss.CKM_DSA_KEY_PAIR_GEN\n\
+    slot = nss.get_best_slot(mechanism)\n\
+    pub_key, priv_key = slot.generate_key_pair(mechanism, key_params, False, False)\n\
+\n\
+    # Generate a DSA key pair\n\
+    key_params = nss.RSAGenParams()\n\
+    mechanism = nss.CKM_RSA_PKCS_KEY_PAIR_GEN\n\
+    slot = nss.get_best_slot(mechanism)\n\
+    pub_key, priv_key = slot.generate_key_pair(mechanism, key_params, False, False)\n\
+\n\
+");
+static PyObject *
+PK11Slot_generate_key_pair(PK11Slot *self, PyObject *args)
+{
+    Py_ssize_t n_base_args = 4;
+    Py_ssize_t argc;
+    PyObject *parse_args = NULL;
+    PyObject *pin_args = NULL;
+    unsigned long mechanism;
+    int token;
+    int sensitive;
+    PyObject *py_key_params;
+    void *key_params = NULL;
+    SECKEYPublicKey *pub_key = NULL;
+    SECKEYPrivateKey *priv_key = NULL;
+    PyObject *result_tuple = NULL;
+    PyObject *py_pub_key = NULL;
+    PyObject *py_priv_key = NULL;
+
+    TraceMethodEnter(self);
+
+    argc = PyTuple_Size(args);
+    if (argc == n_base_args) {
+        Py_INCREF(args);
+        parse_args = args;
+    } else {
+        parse_args = PyTuple_GetSlice(args, 0, n_base_args);
+    }
+    if (!PyArg_ParseTuple(parse_args, "kOii:generate_key_pair",
+                          &mechanism, &py_key_params, &token, &sensitive)) {
+        goto fail;
+    }
+    Py_CLEAR(parse_args);
+
+    pin_args = PyTuple_GetSlice(args, n_base_args, argc);
+
+    switch(mechanism) {
+    case CKM_RSA_PKCS_KEY_PAIR_GEN:
+    case CKM_RSA_X9_31_KEY_PAIR_GEN:
+        if (!PyRSAGenParams_Check(py_key_params)) {
+            PyObject *mechanism_name = key_mechanism_type_to_pystr(mechanism);
+
+            PyErr_Format(PyExc_TypeError, "key_params for %s mechanism must be %.50s, not %.50s",
+                         mechanism_name ? PyString_AsString(mechanism_name) : "unknown",
+                         RSAGenParamsType.tp_name, Py_TYPE(py_key_params)->tp_name);
+            Py_XDECREF(mechanism_name);
+            goto fail;
+        }
+        key_params = &((RSAGenParams *)py_key_params)->params;
+        break;
+    case CKM_DSA_KEY_PAIR_GEN:
+        if (!PyKEYPQGParams_Check(py_key_params)) {
+            PyObject *mechanism_name = key_mechanism_type_to_pystr(mechanism);
+
+            PyErr_Format(PyExc_TypeError, "key_params for %s mechanism must be %.50s, not %.50s",
+                         mechanism_name ? PyString_AsString(mechanism_name) : "unknown",
+                         KEYPQGParamsType.tp_name, Py_TYPE(py_key_params)->tp_name);
+            Py_XDECREF(mechanism_name);
+            goto fail;
+        }
+        key_params = &((KEYPQGParams *)py_key_params)->params;
+        break;
+    default:
+        break;
+    }
+
+    Py_BEGIN_ALLOW_THREADS
+    if ((priv_key = PK11_GenerateKeyPair(self->slot, mechanism, key_params,
+                                         &pub_key,
+                                         token     ? PR_TRUE : PR_FALSE,
+                                         sensitive ? PR_TRUE : PR_FALSE,
+                                         pin_args)) == NULL) {
+	Py_BLOCK_THREADS
+        set_nspr_error(NULL);
+        goto fail;
+    }
+    Py_END_ALLOW_THREADS
+
+    Py_CLEAR(pin_args);
+
+    if ((py_pub_key = PublicKey_new_from_SECKEYPublicKey(pub_key)) == NULL) {
+        goto fail;
+    }
+
+    if ((py_priv_key = PrivateKey_new_from_SECKEYPrivateKey(priv_key)) == NULL) {
+        goto fail;
+    }
+
+    if ((result_tuple = PyTuple_New(2)) == NULL) {
+        goto fail;
+    }
+
+    PyTuple_SetItem(result_tuple, 0, py_pub_key);
+    PyTuple_SetItem(result_tuple, 1, py_priv_key);
+
+    return result_tuple;
+
+ fail:
+    Py_XDECREF(parse_args);
+    Py_XDECREF(pin_args);
+    Py_XDECREF(result_tuple);
+    return NULL;
+}
+
 static PyMethodDef PK11Slot_methods[] = {
     {"is_hw",                             (PyCFunction)PK11Slot_is_hw,                             METH_NOARGS,                PK11Slot_is_hw_doc},
     {"is_present",                        (PyCFunction)PK11Slot_is_present,                        METH_NOARGS,                PK11Slot_is_present_doc},
@@ -11929,6 +12513,7 @@ static PyMethodDef PK11Slot_methods[] = {
     {"get_best_wrap_mechanism",           (PyCFunction)PK11Slot_get_best_wrap_mechanism,           METH_NOARGS,                PK11Slot_get_best_wrap_mechanism_doc},
     {"get_best_key_length",               (PyCFunction)PK11Slot_get_best_key_length,               METH_VARARGS,               PK11Slot_get_best_key_length_doc},
     {"key_gen",                           (PyCFunction)PK11Slot_key_gen,                           METH_VARARGS,               PK11Slot_key_gen_doc},
+    {"generate_key_pair",                 (PyCFunction)PK11Slot_generate_key_pair,                 METH_VARARGS,               PK11Slot_generate_key_pair_doc},
     {NULL, NULL}  /* Sentinel */
 };
 
@@ -19718,6 +20303,7 @@ initnss(void)
 
     TYPE_READY(SecItemType);
     TYPE_READY(AlgorithmIDType);
+    TYPE_READY(RSAGenParamsType);
     TYPE_READY(KEYPQGParamsType);
     TYPE_READY(RSAPublicKeyType);
     TYPE_READY(DSAPublicKeyType);
@@ -20839,4 +21425,3 @@ if (_AddIntConstantWithLookup(m, #constant, constant, \
     ExportConstant(PKCS12_DES_EDE3_168);
 
 }
-

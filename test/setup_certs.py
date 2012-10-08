@@ -31,7 +31,7 @@ config = {
     'verbose'          : False,
     'debug'            : False,
     'logfile'          : 'setup_certs.log',
-    'log_level'        : logging.INFO,
+    'log_level'        : logging.WARN,
     'interactive'      : sys.stdout.isatty(),
     'dbdir'            : os.path.join(os.path.dirname(sys.argv[0]), 'pki'),
     'db_passwd'        : 'db_passwd',
@@ -88,15 +88,14 @@ def run_cmd(cmd, input=None):
     stdout, stderr = p.communicate(input)
     status = p.returncode
     if config['verbose']:
-        logging.info("cmd status = %s", status)
-        logging.info("cmd stdout = %s", stdout)
-        logging.info("cmd stderr = %s", stderr)
+        logging.debug("cmd status = %s", status)
+        logging.debug("cmd stdout = %s", stdout)
+        logging.debug("cmd stderr = %s", stderr)
     return status, stdout, stderr
 
-def run_cmd_with_password(cmd, password_prompt, password):
-    logging.debug("running command: %s", cmd)
+def run_cmd_with_prompts(cmd, prompts):
+    logging.debug('running command: %s', cmd)
 
-    prompt_re = re.compile(password_prompt)
     argv = shlex.split(cmd)
 
     pid, master_fd = pty.fork()
@@ -106,6 +105,15 @@ def run_cmd_with_password(cmd, password_prompt, password):
     time.sleep(0.1)            # FIXME: why is this necessary?
     output = ''
     search_position = 0
+    cur_prompt = 0
+    if cur_prompt < len(prompts):
+        prompt_re = re.compile(prompts[cur_prompt][0])
+        response = prompts[cur_prompt][1]
+        cur_prompt += 1
+    else:
+        prompt_re = None
+        response = None
+
     while True:
         try:
             new_data = os.read(master_fd, 1024)
@@ -117,19 +125,31 @@ def run_cmd_with_password(cmd, password_prompt, password):
         if len(new_data) == 0:
             break               # EOF
         output += new_data
-        logging.debug("output=%s", output);
-        match = prompt_re.search(output, search_position)
-        if match:
-            search_position = match.end()
-            parsed = output[match.start() : match.end()]
-            logging.debug("found password: %s", parsed)
-            os.write(master_fd, "%s\n" % password)
+        logging.debug('output="%s"', output[search_position:]);
+        if prompt_re is not None:
+            logging.debug('search pattern = "%s"', prompt_re.pattern)
+            match = prompt_re.search(output, search_position)
+            if match:
+                search_position = match.end()
+                parsed = output[match.start() : match.end()]
+                logging.debug('found prompt: "%s"', parsed)
+                logging.debug('writing response: "%s"', response)
+                os.write(master_fd, response)
+
+                if cur_prompt < len(prompts):
+                    prompt_re = re.compile(prompts[cur_prompt][0])
+                    response = prompts[cur_prompt][1]
+                    cur_prompt += 1
+                else:
+                    prompt_re = None
+                    response = None
+
 
     exit_value = os.waitpid(pid, 0)[1]
     exit_signal = exit_value & 0xFF
     exit_code = exit_value >> 8
-    logging.debug("output=%s" % output)
-    logging.debug("cmd signal=%s, exit_code=%s" % (exit_signal, exit_code))
+    #logging.debug('output="%s"' % output)
+    logging.debug('cmd signal=%s, exit_code=%s' % (exit_signal, exit_code))
 
     return exit_code, output
 
@@ -137,7 +157,7 @@ def run_cmd_with_password(cmd, password_prompt, password):
 #-------------------------------------------------------------------------------
 
 def setup_certs():
-    print "setting up certs ..."
+    print 'setting up certs ...'
 
     if os.path.exists(config['dbdir']):
        shutil.rmtree(config['dbdir'])
@@ -148,52 +168,60 @@ def setup_certs():
         create_noise_file()
 
         # 1. Create the database
-        cmd = 'certutil -N -d %s' % (config['dbdir'])
-        exit_code, output = run_cmd_with_password(cmd,
-                                                  '(Enter new password:\s*)|(Re-enter password:\s*)',
-                                                  config['db_passwd'])
+        cmd = 'certutil -N -d %(dbdir)s' % config
+        exit_code, output = run_cmd_with_prompts(cmd,
+            [('Enter new password:\s*', config['db_passwd'] + '\n'),
+             ('Re-enter password:\s*',  config['db_passwd'] + '\n')])
         if exit_code != 0:
             raise CmdError(cmd, exit_code, output)
 
-
         # 2. Create a root CA certificate
-        cmd = 'certutil -S -d %s -z %s -s "%s" -n "%s" -x -t "CTu,C,C" -m %d' % \
-            (config['dbdir'], config['noise_file'],
-             config['ca_subject'], config['ca_nickname'],
-             next_serial())
-        exit_code, output = run_cmd_with_password(cmd,
-                                                  'Enter Password or Pin for "NSS Certificate DB":\s*',
-                                                  config['db_passwd'])
+        config['serial_number'] = next_serial()
+        cmd = 'certutil -S -d %(dbdir)s -z %(noise_file)s -s "%(ca_subject)s" -n "%(ca_nickname)s" -x -t "CTu,C,C" -m %(serial_number)d' % config
+        exit_code, output = run_cmd_with_prompts(cmd,
+            [('Enter Password or Pin for "NSS Certificate DB":\s*', config['db_passwd'] + '\n')])
         if exit_code != 0:
             raise CmdError(cmd, exit_code, output)
 
         # 3. Create a server certificate and sign it.
-        cmd = 'certutil -S -d %s -z %s -c %s -s "%s" -n "%s" -t "u,u,u" -m %d' % \
-            (config['dbdir'], config['noise_file'], config['ca_nickname'],
-             config['server_subject'], config['server_nickname'],
-             next_serial())
-        exit_code, output = run_cmd_with_password(cmd,
-                                                  'Enter Password or Pin for "NSS Certificate DB":\s*',
-                                                  config['db_passwd'])
+        config['serial_number'] = next_serial()
+        cmd = 'certutil -S -d %(dbdir)s -z %(noise_file)s -c %(ca_nickname)s -s "%(server_subject)s" -n "%(server_nickname)s" -t "u,u,u" -m %(serial_number)d' % config
+        exit_code, output = run_cmd_with_prompts(cmd,
+            [('Enter Password or Pin for "NSS Certificate DB":\s*', config['db_passwd'] + '\n')])
         if exit_code != 0:
             raise CmdError(cmd, exit_code, output)
 
         # 4. Create a client certificate and sign it.
-        cmd = 'certutil -S -d %s -z %s -c %s -s "%s" -n "%s" -t "u,u,u" -m %d' % \
-            (config['dbdir'], config['noise_file'], config['ca_nickname'],
-             config['client_subject'], config['client_nickname'],
-             next_serial())
-        exit_code, output = run_cmd_with_password(cmd,
-                                                  'Enter Password or Pin for "NSS Certificate DB":\s*',
-                                                  config['db_passwd'])
+        config['serial_number'] = next_serial()
+        cmd = 'certutil -S -d %(dbdir)s -z %(noise_file)s -c %(ca_nickname)s -s "%(client_subject)s" -n "%(client_nickname)s" -t "u,u,u" -m %(serial_number)d' % config
+        exit_code, output = run_cmd_with_prompts(cmd,
+                                                 [('Enter Password or Pin for "NSS Certificate DB":\s*', config['db_passwd'] + '\n')])
         if exit_code != 0:
             raise CmdError(cmd, exit_code, output)
 
         # 5. Import public root CA's
-        cmd = 'modutil -dbdir %s -add ca_certs -libfile libnssckbi.so' % \
-            (config['dbdir'])
-
+        cmd = 'modutil -dbdir %(dbdir)s -add ca_certs -libfile libnssckbi.so' % config
         exit_code, stdout, stderr = run_cmd(cmd)
+        if exit_code != 0:
+            raise CmdError(cmd, exit_code, output)
+
+        # 6. Create a sub CA certificate
+        config['serial_number'] = next_serial()
+        config['subca_subject'] = 'CN=subca'
+        config['subca_nickname'] = 'subca'
+        cmd = 'certutil -S -d %(dbdir)s -z %(noise_file)s -c %(ca_nickname)s -s "%(subca_subject)s" -n "%(subca_nickname)s" -t "CTu,C,C" -m %(serial_number)d' % config
+        exit_code, output = run_cmd_with_prompts(cmd,
+            [('Enter Password or Pin for "NSS Certificate DB":\s*', config['db_passwd'] + '\n')])
+        if exit_code != 0:
+            raise CmdError(cmd, exit_code, output)
+
+        # 7. Create a server certificate and sign it with the subca.
+        config['serial_number'] = next_serial()
+        config['server_subject'] = config['server_subject'] + "_" + config['subca_nickname']
+        config['server_nickname'] = config['server_nickname'] + "_" + config['subca_nickname']
+        cmd = 'certutil -S -d %(dbdir)s -z %(noise_file)s -c %(subca_nickname)s -s "%(server_subject)s" -n "%(server_nickname)s" -t "u,u,u" -m %(serial_number)d' % config
+        exit_code, output = run_cmd_with_prompts(cmd,
+            [('Enter Password or Pin for "NSS Certificate DB":\s*', config['db_passwd'] + '\n')])
         if exit_code != 0:
             raise CmdError(cmd, exit_code, output)
 
@@ -201,13 +229,10 @@ def setup_certs():
         if os.path.exists(config['noise_file']):
             os.remove(config['noise_file'])
 
-    logging.info('certifcate database password="%s"', config['db_passwd'])
-    logging.info('CA nickname="%s", CA subject="%s"',
-                 config['ca_nickname'], config['ca_subject'])
-    logging.info('server nickname="%s", server subject="%s"',
-                 config['server_nickname'], config['server_subject'])
-    logging.info('client nickname="%s", client subject="%s"',
-                 config['client_nickname'], config['client_subject'])
+    logging.info('certifcate database password="%(db_passwd)s"', config)
+    logging.info('CA nickname="%(ca_nickname)s", CA subject="%(ca_subject)s"', config)
+    logging.info('server nickname="%(server_nickname)s", server subject="%(server_subject)s"', config)
+    logging.info('client nickname="%(client_nickname)s", client subject="%(client_subject)s"', config)
 
 #-------------------------------------------------------------------------------
 
@@ -283,6 +308,11 @@ def main(argv=None):
         print >>sys.stderr, "for help use --help"
         return 2
 
+    if config['verbose']:
+        config['log_level'] = logging.INFO
+    if config['debug']:
+        config['log_level'] = logging.DEBUG
+
     # Initialize logging
     logging.basicConfig(level=config['log_level'],
                         format='%(asctime)s %(levelname)-8s %(message)s',
@@ -313,4 +343,3 @@ def main(argv=None):
 
 if __name__ == '__main__':
     sys.exit(main())
-
