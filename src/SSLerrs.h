@@ -20,7 +20,8 @@ ER3(SSL_ERROR_NO_CERTIFICATE,				SSL_ERROR_BASE + 3,
 ER3(SSL_ERROR_BAD_CERTIFICATE,				SSL_ERROR_BASE + 4,
 "Unable to communicate securely with peer: peers's certificate was rejected.")
 
-/* unused						(SSL_ERROR_BASE + 5),*/
+ER3(SSL_ERROR_UNUSED_5,					SSL_ERROR_BASE + 5,
+"Unrecognized SSL error code.")
 
 ER3(SSL_ERROR_BAD_CLIENT,				SSL_ERROR_BASE + 6,
 "The server has encountered bad data from the client.")
@@ -34,7 +35,8 @@ ER3(SSL_ERROR_UNSUPPORTED_CERTIFICATE_TYPE,		SSL_ERROR_BASE + 8,
 ER3(SSL_ERROR_UNSUPPORTED_VERSION,			SSL_ERROR_BASE + 9,
 "Peer using unsupported version of security protocol.")
 
-/* unused						(SSL_ERROR_BASE + 10),*/
+ER3(SSL_ERROR_UNUSED_10,				SSL_ERROR_BASE + 10,
+"Unrecognized SSL error code.")
 
 ER3(SSL_ERROR_WRONG_CERTIFICATE,			SSL_ERROR_BASE + 11,
 "Client authentication failed: private key in key database does not match public key in certificate database.")
@@ -42,9 +44,8 @@ ER3(SSL_ERROR_WRONG_CERTIFICATE,			SSL_ERROR_BASE + 11,
 ER3(SSL_ERROR_BAD_CERT_DOMAIN,				SSL_ERROR_BASE + 12,
 "Unable to communicate securely with peer: requested domain name does not match the server's certificate.")
 
-/* SSL_ERROR_POST_WARNING				(SSL_ERROR_BASE + 13),
-   defined in sslerr.h
-*/
+ER3(SSL_ERROR_POST_WARNING,				SSL_ERROR_BASE + 13,
+"Unrecognized SSL error code.")
 
 ER3(SSL_ERROR_SSL2_DISABLED,				(SSL_ERROR_BASE + 14),
 "Peer only supports SSL version 2, which is locally disabled.")
@@ -70,7 +71,6 @@ ER3(SSL_ERROR_SSL_DISABLED,				(SSL_ERROR_BASE + 20),
 
 ER3(SSL_ERROR_FORTEZZA_PQG,				(SSL_ERROR_BASE + 21),
 "Cannot connect: SSL peer is in another FORTEZZA domain.")
-
 
 ER3(SSL_ERROR_UNKNOWN_CIPHER_SUITE          , (SSL_ERROR_BASE + 22),
 "An unknown SSL cipher suite has been requested.")
@@ -285,7 +285,7 @@ ER3(SSL_ERROR_NO_COMPRESSION_OVERLAP        , (SSL_ERROR_BASE + 85),
 "Cannot communicate securely with peer: no common compression algorithm(s).")
 
 ER3(SSL_ERROR_HANDSHAKE_NOT_COMPLETED       , (SSL_ERROR_BASE + 86),
-"Cannot initiate another SSL handshake until current handshake is complete.")
+"Cannot perform the operation until the handshake is complete.")
 
 ER3(SSL_ERROR_BAD_HANDSHAKE_HASH_VALUE      , (SSL_ERROR_BASE + 87),
 "Received incorrect handshakes hash values from peer.")
@@ -352,3 +352,61 @@ ER3(SSL_ERROR_BAD_CERT_STATUS_RESPONSE_ALERT , (SSL_ERROR_BASE + 107),
 
 ER3(SSL_ERROR_BAD_CERT_HASH_VALUE_ALERT      , (SSL_ERROR_BASE + 108),
 "SSL peer reported bad certificate hash value.")
+
+ER3(SSL_ERROR_RX_UNEXPECTED_NEW_SESSION_TICKET, (SSL_ERROR_BASE + 109),
+"SSL received an unexpected New Session Ticket handshake message.")
+
+ER3(SSL_ERROR_RX_MALFORMED_NEW_SESSION_TICKET, (SSL_ERROR_BASE + 110),
+"SSL received a malformed New Session Ticket handshake message.")
+
+ER3(SSL_ERROR_DECOMPRESSION_FAILURE,           (SSL_ERROR_BASE + 111),
+"SSL received a compressed record that could not be decompressed.")
+
+ER3(SSL_ERROR_RENEGOTIATION_NOT_ALLOWED,       (SSL_ERROR_BASE + 112),
+"Renegotiation is not allowed on this SSL socket.")
+
+ER3(SSL_ERROR_UNSAFE_NEGOTIATION,              (SSL_ERROR_BASE + 113),
+"Peer attempted old style (potentially vulnerable) handshake.")
+
+ER3(SSL_ERROR_RX_UNEXPECTED_UNCOMPRESSED_RECORD, (SSL_ERROR_BASE + 114),
+"SSL received an unexpected uncompressed record.")
+
+ER3(SSL_ERROR_WEAK_SERVER_EPHEMERAL_DH_KEY,    (SSL_ERROR_BASE + 115),
+"SSL received a weak ephemeral Diffie-Hellman key in Server Key Exchange handshake message.")
+
+ER3(SSL_ERROR_NEXT_PROTOCOL_DATA_INVALID,      (SSL_ERROR_BASE + 116),
+"SSL received invalid NPN extension data.")
+
+ER3(SSL_ERROR_FEATURE_NOT_SUPPORTED_FOR_SSL2,  (SSL_ERROR_BASE + 117),
+"SSL feature not supported for SSL 2.0 connections.")
+
+ER3(SSL_ERROR_FEATURE_NOT_SUPPORTED_FOR_SERVERS, (SSL_ERROR_BASE + 118),
+"SSL feature not supported for servers.")
+
+ER3(SSL_ERROR_FEATURE_NOT_SUPPORTED_FOR_CLIENTS, (SSL_ERROR_BASE + 119),
+"SSL feature not supported for clients.")
+
+#ifdef SSL_ERROR_INVALID_VERSION_RANGE
+ER3(SSL_ERROR_INVALID_VERSION_RANGE,           (SSL_ERROR_BASE + 120),
+"SSL version range is not valid.")
+#endif
+
+#ifdef SSL_ERROR_CIPHER_DISALLOWED_FOR_VERSION
+ER3(SSL_ERROR_CIPHER_DISALLOWED_FOR_VERSION,   (SSL_ERROR_BASE + 121),
+"SSL peer selected a cipher suite disallowed for the selected protocol version.")
+#endif
+
+#ifdef SSL_ERROR_RX_MALFORMED_HELLO_VERIFY_REQUEST
+ER3(SSL_ERROR_RX_MALFORMED_HELLO_VERIFY_REQUEST, (SSL_ERROR_BASE + 122),
+"SSL received a malformed Hello Verify Request handshake message.")
+#endif
+
+#ifdef SSL_ERROR_RX_UNEXPECTED_HELLO_VERIFY_REQUEST
+ER3(SSL_ERROR_RX_UNEXPECTED_HELLO_VERIFY_REQUEST, (SSL_ERROR_BASE + 123),
+"SSL received an unexpected Hello Verify Request handshake message.")
+#endif
+
+#ifdef SSL_ERROR_FEATURE_NOT_SUPPORTED_FOR_VERSION
+ER3(SSL_ERROR_FEATURE_NOT_SUPPORTED_FOR_VERSION, (SSL_ERROR_BASE + 124),
+"SSL feature not supported for the protocol version.")
+#endif

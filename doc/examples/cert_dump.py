@@ -38,6 +38,10 @@ def print_extension(level, extension):
         print nss.indented_format([(level, 'Usages:')])
         print nss.indented_format(nss.make_line_fmt_tuples(level+1, nss.x509_key_usage(extension.value)))
 
+    elif oid_tag == nss.SEC_OID_NS_CERT_EXT_CERT_TYPE:
+        print nss.indented_format([(level, 'Types:')])
+        print nss.indented_format(nss.make_line_fmt_tuples(level+1, nss.x509_cert_type(extension.value)))
+
     elif oid_tag == nss.SEC_OID_X509_SUBJECT_KEY_ID:
         print nss.indented_format([(level, 'Data:')])
         print nss.indented_format(nss.make_line_fmt_tuples(level+1,
