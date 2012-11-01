@@ -100,6 +100,8 @@ def main():
     param_group.add_option('-P', '--db-passwd', dest='db_passwd',
                            help='NSS database password, default="%default"')
 
+    parser.add_option_group(param_group)
+
     param_group = optparse.OptionGroup(parser, 'Certificate',
                                        'Specify how the certificate is loaded')
 
@@ -110,6 +112,8 @@ def main():
     param_group.add_option('-n', '--nickname', dest='cert_nickname',
                            help='load cert from NSS database by looking it up under this nickname')
 
+
+    parser.add_option_group(param_group)
 
     param_group = optparse.OptionGroup(parser, 'Validation',
                                        'Control the validation')
@@ -129,11 +133,15 @@ def main():
     param_group.add_option('-A', '--no-check-ca', action='store_false', dest='check_ca',
                            help='check if cert is CA, default=%default')
 
+    parser.add_option_group(param_group)
+
     param_group = optparse.OptionGroup(parser, 'Miscellaneous',
                                        'Miscellaneous options')
 
     param_group.add_option('-p', '--print-cert', action='store_true', dest='print_cert',
                            help='print the certificate in a friendly fashion, default=%default')
+
+    parser.add_option_group(param_group)
 
     options, args = parser.parse_args()
 
