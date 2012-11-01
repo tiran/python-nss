@@ -1,3 +1,130 @@
+2012-10-24  John Dennis  <jdennis@redhat.com> 0.14
+  External Changes:
+  -----------------
+
+  The primary enhancement in this version is support of certifcate
+  validation, especially CA certs which can be done via
+  Certificate.verify() or Certificate.is_ca_cert(). When cert
+  validation fails you can now obtain diagnostic information as to why
+  the cert failed to validate. This is encapsulated in the
+  CertVerifyLog class which is a iterable collection of
+  CertVerifyLogNode objects. Most people will probablby just print the
+  string representation of the returned CertVerifyLog object. Cert
+  validation logging is handled by the Certificate.verify() method.
+  Support has also been added for the various key usage and cert type
+  entities which feature prominently during cert validation.
+
+  * The following classes were added:
+    - nss.CertVerifyLogNode
+    - nss.CertVerifyLog
+    - error.CertVerifyError (exception)
+	
+  * The following class methods were added:
+    - nss.Certificate.is_ca_cert
+    - nss.Certificate.verify
+    - nss.Certificate.verify_with_log
+    - nss.Certificate.get_cert_chain
+    - nss.PK11Slot.list_certs
+    - nss.CertVerifyLogNode.format_lines
+    - nss.CertVerifyLog.format_lines
+
+  * The following class properties were added:
+    - nss.CertVerifyLogNode.certificate
+    - nss.CertVerifyLogNode.error
+    - nss.CertVerifyLogNode.depth
+    - nss.CertVerifyLog.count
+
+  * The following module functions were added:
+    - nss.x509_cert_type
+    - nss.key_usage_flags
+    - nss.list_certs
+    - nss.find_certs_from_email_addr
+    - nss.find_certs_from_nickname
+    - nss.get_use_pkix_for_validation
+    - nss.set_use_pkix_for_validation
+
+  * The following files were added:
+      doc/examples/verify_cert.py
+
+  * The following constants were added:
+    - nss.KU_DIGITAL_SIGNATURE
+    - nss.KU_NON_REPUDIATION
+    - nss.KU_KEY_ENCIPHERMENT
+    - nss.KU_DATA_ENCIPHERMENT
+    - nss.KU_KEY_AGREEMENT
+    - nss.KU_KEY_CERT_SIGN
+    - nss.KU_CRL_SIGN
+    - nss.KU_ENCIPHER_ONLY
+    - nss.KU_ALL
+    - nss.KU_DIGITAL_SIGNATURE_OR_NON_REPUDIATION
+    - nss.KU_KEY_AGREEMENT_OR_ENCIPHERMENT
+    - nss.KU_NS_GOVT_APPROVED
+    - nss.PK11CertListUnique
+    - nss.PK11CertListUser
+    - nss.PK11CertListRootUnique
+    - nss.PK11CertListCA
+    - nss.PK11CertListCAUnique
+    - nss.PK11CertListUserUnique
+    - nss.PK11CertListAll
+    - nss.certUsageSSLClient
+    - nss.certUsageSSLServer
+    - nss.certUsageSSLServerWithStepUp
+    - nss.certUsageSSLCA
+    - nss.certUsageEmailSigner
+    - nss.certUsageEmailRecipient
+    - nss.certUsageObjectSigner
+    - nss.certUsageUserCertImport
+    - nss.certUsageVerifyCA
+    - nss.certUsageProtectedObjectSigner
+    - nss.certUsageStatusResponder
+    - nss.certUsageAnyCA
+
+  * cert_dump.py extended to print NS_CERT_TYPE_EXTENSION
+
+  * cert_usage_flags, nss_init_flags now support optional repr_kind parameter
+
+  * error codes and descriptions were updated from upstream NSPR & NSS.
+
+  Internal Changes:
+  -----------------
+
+  * Reimplement exception handling
+    - NSPRError is now derived from StandardException instead of
+      EnvironmentError. It was never correct to derive from
+      EnvironmentError but was difficult to implement a new subclassed
+      exception with it's own attributes, using EnvironmentError had
+      been expedient.
+
+    - NSPRError now derived from StandardException, provides:
+      * errno (numeric error code)
+      * strerror (error description associated with error code)
+      * error_message (optional detailed message)
+      * error_code (alias for errno)
+      * error_desc (alias for strerror)
+
+    - CertVerifyError derived from NSPRError, extends with:
+      * usages (bitmask of returned usages)
+      * log (CertVerifyLog object)
+
+  * Expose error lookup to sibling modules
+
+  * Use macros for bitmask_to_list functions to reduce code
+    duplication and centralize logic.
+
+  * Add repr_kind parameter to cert_trust_flags_str()
+
+  * Add support for repr_kind AsEnumName to bitstring table lookup.
+
+  * Add cert_type_bitstr_to_tuple() lookup function
+
+  * Add PRTimeConvert(), used to convert Python time values
+    to PRTime, centralizes conversion logic, reduces duplication
+
+  * Add Certificate_summary_format_lines() utility to generate
+    concise certificate identification info for output.
+
+
+	
 2012-10-05  John Dennis  <jdennis@redhat.com> 0.13
   * Fix NSS SECITEM_CompareItem bug via workaround.
 

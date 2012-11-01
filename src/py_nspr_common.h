@@ -68,6 +68,8 @@ typedef PyObject *(*ssizessizeargfunc)(PyObject *, Py_ssize_t, Py_ssize_t);
 
 #define PyNone_Check(x) ((x) == Py_None)
 
+#define CALL_BASE(type, func, ...) (type)->tp_base->tp_##func(__VA_ARGS__)
+
 #define TYPE_READY(type)                                                \
 {                                                                       \
     if (PyType_Ready(&type) < 0)                                        \

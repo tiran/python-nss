@@ -17,7 +17,7 @@ from distutils.util import subst_vars, change_root
 from distutils.command.build_py import build_py as _build_py
 from distutils.command.sdist import sdist as _sdist
 
-version = "0.13"
+version = "0.14.0alpha"
 
 doc_manifest = [
     [['include README LICENSE* doc/ChangeLog',
@@ -369,7 +369,7 @@ def main(argv):
           author_email     = 'jdennis@redhat.com',
           maintainer       = 'John Dennis',
           maintainer_email = 'jdennis@redhat.com',
-          license          = 'MPLv1.1 or GPLv2+ or LGPLv2+',
+          license          = 'MPLv2.0 or GPLv2+ or LGPLv2+',
           platforms        = 'posix',
           url              = 'http://www.mozilla.org/projects/security/pki/python-nss',
           download_url     = '',

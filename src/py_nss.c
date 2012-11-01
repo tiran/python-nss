@@ -72,6 +72,52 @@ static PyMemberDef NewType_members[] = {
 
 /* ============================== Class Methods ============================= */
 
+static PyObject *
+NewType_format_lines(NewType *self, PyObject *args, PyObject *kwds)
+{
+    static char *kwlist[] = {"level", NULL};
+    int level = 0;
+    PyObject *lines = NULL;
+    PyObject *obj = NULL;
+
+    SECOidTag alg_tag;
+
+    TraceMethodEnter(self);
+
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "|i:format_lines", kwlist, &level))
+        return NULL;
+
+    if ((lines = PyList_New(0)) == NULL) {
+        return NULL;
+    }
+
+    return lines;
+ fail:
+    Py_XDECREF(obj);
+    Py_XDECREF(lines);
+    return NULL;
+}
+
+static PyObject *
+NewType_format(NewType *self, PyObject *args, PyObject *kwds)
+{
+    TraceMethodEnter(self);
+
+    return format_from_lines((format_lines_func)NewType_format_lines, (PyObject *)self, args, kwds);
+}
+
+static PyObject *
+NewType_str(NewType *self)
+{
+    PyObject *py_formatted_result = NULL;
+
+    TraceMethodEnter(self);
+
+    py_formatted_result =  NewType_format(self, empty_tuple, NULL);
+    return py_formatted_result;
+
+}
+
 PyDoc_STRVAR(NewType_func_name_doc,
 "func_name() -> \n\
 \n\
@@ -98,9 +144,68 @@ NewType_func_name(PyObject *self, PyObject *args, PyObject *kwds)
 }
 
 static PyMethodDef NewType_methods[] = {
-    {"func_name", (PyCFunction)NewType_func_name, METH_VARARGS|METH_KEYWORDS, NewType_func_name_doc},
+    {"format_lines", (PyCFunction)NewType_format_lines,   METH_VARARGS|METH_KEYWORDS, generic_format_lines_doc},
+    {"format",       (PyCFunction)NewType_format,         METH_VARARGS|METH_KEYWORDS, generic_format_doc},
+    {"func_name",    (PyCFunction)NewType_func_name, METH_VARARGS|METH_KEYWORDS, NewType_func_name_doc},
     {NULL, NULL}  /* Sentinel */
 };
+
+/* =========================== Sequence Protocol ============================ */
+static Py_ssize_t
+NSSType_list_count(NSSType *head)
+{
+    NSSType *cur;
+    Py_ssize_t count;
+
+    count = 0;
+    if (!head) {
+        return count;
+    }
+
+    cur = head;
+    do {
+        count++;
+        cur = NSSType_Next(cur);
+    } while (cur != head);
+
+    return count;
+}
+
+static Py_ssize_t
+NewType_length(NewType *self)
+{
+    if (!self->name) {
+        PyErr_Format(PyExc_ValueError, "%s is uninitialized", Py_TYPE(self)->tp_name);
+        return -1;
+    }
+
+    return NSSType_list_count(self->name);
+}
+
+static PyObject *
+NewType_item(NewType *self, register Py_ssize_t i)
+{
+    NSSType *head, *cur;
+    Py_ssize_t index;
+
+    if (!self->name) {
+        return PyErr_Format(PyExc_ValueError, "%s is uninitialized", Py_TYPE(self)->tp_name);
+    }
+
+    index = 0;
+    cur = head = self->name;
+    do {
+        cur = NSSType_Next(cur);
+        if (i == index) {
+            return NewType_new_from_NSSType(cur);
+        }
+        index++;
+    } while (cur != head);
+
+    PyErr_SetString(PyExc_IndexError, "NewType index out of range");
+    return NULL;
+}
+
 
 /* =========================== Class Construction =========================== */
 
@@ -169,12 +274,18 @@ NewType_init(NewType *self, PyObject *args, PyObject *kwds)
     return 0;
 }
 
-static PyObject *
-NewType_repr(NewType *self)
-{
-    return PyString_FromFormat("<%s object at %p>",
-                               Py_TYPE(self)->tp_name, self);
-}
+static PySequenceMethods NewType_as_sequence = {
+    (lenfunc)NewType_length,		/* sq_length */
+    0,						/* sq_concat */
+    0,						/* sq_repeat */
+    (ssizeargfunc)NewType_item,		/* sq_item */
+    0,						/* sq_slice */
+    0,						/* sq_ass_item */
+    0,						/* sq_ass_slice */
+    0,						/* sq_contains */
+    0,						/* sq_inplace_concat */
+    0,						/* sq_inplace_repeat */
+};
 
 static PyTypeObject NewTypeType = {
     PyObject_HEAD_INIT(NULL)
@@ -187,13 +298,13 @@ static PyTypeObject NewTypeType = {
     0,						/* tp_getattr */
     0,						/* tp_setattr */
     0,						/* tp_compare */
-    (reprfunc)NewType_repr,			/* tp_repr */
+    0,						/* tp_repr */
     0,						/* tp_as_number */
     0,						/* tp_as_sequence */
     0,						/* tp_as_mapping */
     0,						/* tp_hash */
     0,						/* tp_call */
-    0,						/* tp_str */
+    (reprfunc)NewType_str,			/* tp_str */
     0,						/* tp_getattro */
     0,						/* tp_setattro */
     0,						/* tp_as_buffer */
@@ -243,8 +354,6 @@ NewType_new_from_NSSType(NSSType *id)
 
 #define CERT_DecodeDERCertificate __CERT_DecodeDERCertificate
 
-#include <stdbool.h>
-
 #define PY_SSIZE_T_CLEAN
 #include "Python.h"
 #include "structmember.h"
@@ -283,7 +392,74 @@ NewType_new_from_NSSType(NSSType *id)
 
 #define PyRSAGenParams_Check(op) PyObject_TypeCheck(op, &RSAGenParamsType)
 #define PyKEYPQGParams_Check(op) PyObject_TypeCheck(op, &KEYPQGParamsType)
+#define PyCertVerifyLog_Check(op) PyObject_TypeCheck(op, &CertVerifyLogType)
 
+
+#define BIT_FLAGS_TO_LIST_PROLOGUE()                                    \
+    PyObject *py_flags = NULL;                                          \
+    PyObject *py_flag = NULL;                                           \
+                                                                        \
+    switch(repr_kind) {                                                 \
+    case AsEnum:                                                        \
+    case AsEnumName:                                                    \
+    case AsEnumDescription:                                             \
+        break;                                                          \
+    default:                                                            \
+        PyErr_Format(PyExc_ValueError, "Unsupported representation kind (%d)", repr_kind); \
+        return NULL;                                                    \
+    }                                                                   \
+                                                                        \
+    if ((py_flags = PyList_New(0)) == NULL)                             \
+        return NULL;
+
+
+
+#define BIT_FLAGS_TO_LIST(enum, description)                            \
+{                                                                       \
+    if (flags & enum) {                                                 \
+        flags &= ~enum;                                                 \
+        switch(repr_kind) {                                             \
+        case AsEnum:                                                    \
+            py_flag = PyInt_FromLong(enum);                             \
+            break;                                                      \
+        case AsEnumName:                                                \
+            py_flag = PyString_FromString(#enum);                       \
+            break;                                                      \
+        case AsEnumDescription:                                         \
+            py_flag = PyString_FromString(description);                 \
+            break;                                                      \
+        default:                                                        \
+            PyErr_Format(PyExc_ValueError, "Unsupported representation kind (%d)", repr_kind); \
+            Py_DECREF(py_flags);                                        \
+            return NULL;                                                \
+        }                                                               \
+	if (py_flag == NULL) {                                          \
+            Py_DECREF(py_flags);                                        \
+            return NULL;                                                \
+        }                                                               \
+        PyList_Append(py_flags, py_flag);                               \
+	Py_DECREF(py_flag);                                             \
+    }                                                                   \
+}
+
+#define BIT_FLAGS_TO_LIST_EPILOGUE()                                    \
+{                                                                       \
+    if (flags) {                                                        \
+        if ((py_flag = PyString_FromFormat("unknown bit flags %#x", flags)) == NULL) { \
+            Py_DECREF(py_flags);                                        \
+            return NULL;                                                \
+        }                                                               \
+        PyList_Append(py_flags, py_flag);                               \
+	Py_DECREF(py_flag);                                             \
+    }                                                                   \
+                                                                        \
+    if (PyList_Sort(py_flags) == -1) {                                  \
+            Py_DECREF(py_flags);                                        \
+            return NULL;                                                \
+    }                                                                   \
+                                                                        \
+    return py_flags;                                                    \
+}
 
 // FIXME, should use this in more places.
 PyObject *
@@ -1301,6 +1477,7 @@ static PyTypeObject PK11SymKeyType;
 static PyTypeObject AVAType;
 static PyTypeObject RDNType;
 static PyTypeObject DNType;
+static PyTypeObject CertVerifyLogType;
 
 /* === Forward Declarations */
 
@@ -1412,7 +1589,7 @@ static PyObject *
 cert_oid_tag_name(PyObject *self, PyObject *args);
 
 static PyObject *
-cert_trust_flags_str(unsigned int flags);
+cert_trust_flags_str(unsigned int flags, RepresentationKind repr_kind);
 
 static PyObject *
 SecItem_new_from_SECItem(const SECItem *item, SECItemKind kind);
@@ -1503,6 +1680,9 @@ SECItem_der_to_hex(SECItem *item, int octets_per_line, char *separator);
 static PyObject *
 cert_x509_key_usage(PyObject *self, PyObject *args, PyObject *kwds);
 
+static PyObject *
+cert_x509_cert_type(PyObject *self, PyObject *args, PyObject *kwds);
+
 PyObject *
 CRLDistributionPts_new_from_SECItem(SECItem *item);
 
@@ -1534,6 +1714,15 @@ static int
 Certificate_init_from_unsigned_der_secitem(Certificate *self, SECItem *der);
 
 static PyObject *
+Certificate_get_subject(Certificate *self, void *closure);
+
+static PyObject *
+Certificate_get_issuer(Certificate *self, void *closure);
+
+static PyObject *
+Certificate_new_from_CERTCertificate(CERTCertificate *cert);
+
+static PyObject *
 fingerprint_format_lines(SECItem *item, int level);
 
 static PyObject *
@@ -1542,39 +1731,63 @@ PKCS12Decoder_item(PKCS12Decoder *self, register Py_ssize_t i);
 PyObject *
 KEYPQGParams_init_from_SECKEYPQGParams(KEYPQGParams *self, const SECKEYPQGParams *params);
 
+static PyObject *
+CertVerifyLog_new(PyTypeObject *type, PyObject *args, PyObject *kwds);
+
+static Py_ssize_t
+CertVerifyLog_length(CertVerifyLog *self);
+
+static PyObject *
+CertVerifyLog_item(CertVerifyLog *self, register Py_ssize_t i);
+
 /* ==================================== */
 
 typedef struct BitStringTableStr {
     int enum_value;
+    const char *enum_name;
     const char *enum_description;
 } BitStringTable;
 
+#define BITSTRING_TBL_INIT(enum, description) \
+    {enum, #enum, description}
+
 static BitStringTable CRLReasonDef[] = {
-    {crlEntryReasonUnspecified,          _("Unspecified")           }, /* bit 0  */
-    {crlEntryReasonKeyCompromise,        _("Key Compromise")        }, /* bit 1  */
-    {crlEntryReasonCaCompromise,         _("CA Compromise")         }, /* bit 2  */
-    {crlEntryReasonAffiliationChanged,   _("Affiliation Changed")   }, /* bit 3  */
-    {crlEntryReasonSuperseded,           _("Superseded")            }, /* bit 4  */
-    {crlEntryReasonCessationOfOperation, _("Cessation Of Operation")}, /* bit 5  */
-    {crlEntryReasoncertificatedHold,     _("Certificate On Hold")   }, /* bit 6  */
-    {-1,                                 NULL,                      }, /* bit 7  */
-    {crlEntryReasonRemoveFromCRL,        _("Remove From CRL")       }, /* bit 8  */
-    {crlEntryReasonPrivilegeWithdrawn,   _("Privilege Withdrawn")   }, /* bit 9  */
-    {crlEntryReasonAaCompromise,         _("AA Compromise")         }, /* bit 10 */
+    BITSTRING_TBL_INIT(crlEntryReasonUnspecified,          _("Unspecified")           ), /* bit 0  */
+    BITSTRING_TBL_INIT(crlEntryReasonKeyCompromise,        _("Key Compromise")        ), /* bit 1  */
+    BITSTRING_TBL_INIT(crlEntryReasonCaCompromise,         _("CA Compromise")         ), /* bit 2  */
+    BITSTRING_TBL_INIT(crlEntryReasonAffiliationChanged,   _("Affiliation Changed")   ), /* bit 3  */
+    BITSTRING_TBL_INIT(crlEntryReasonSuperseded,           _("Superseded")            ), /* bit 4  */
+    BITSTRING_TBL_INIT(crlEntryReasonCessationOfOperation, _("Cessation Of Operation")), /* bit 5  */
+    BITSTRING_TBL_INIT(crlEntryReasoncertificatedHold,     _("Certificate On Hold")   ), /* bit 6  */
+    BITSTRING_TBL_INIT(-1,                                 NULL                       ), /* bit 7  */
+    BITSTRING_TBL_INIT(crlEntryReasonRemoveFromCRL,        _("Remove From CRL")       ), /* bit 8  */
+    BITSTRING_TBL_INIT(crlEntryReasonPrivilegeWithdrawn,   _("Privilege Withdrawn")   ), /* bit 9  */
+    BITSTRING_TBL_INIT(crlEntryReasonAaCompromise,         _("AA Compromise")         ), /* bit 10 */
 };
 
 static BitStringTable KeyUsageDef[] = {
-    {KU_DIGITAL_SIGNATURE, _("Digital Signature")  }, /* bit 0 */
-    {KU_NON_REPUDIATION,   _("Non-Repudiation")    }, /* bit 1 */
-    {KU_KEY_ENCIPHERMENT,  _("Key Encipherment")   }, /* bit 2 */
-    {KU_DATA_ENCIPHERMENT, _("Data Encipherment")  }, /* bit 3 */
-    {KU_KEY_AGREEMENT,     _("Key Agreement")      }, /* bit 4 */
-    {KU_KEY_CERT_SIGN,     _("Certificate Signing")}, /* bit 5 */
-    {KU_CRL_SIGN,          _("CRL Signing")        }, /* bit 6 */
-    {KU_ENCIPHER_ONLY,     _("Encipher Only")      }, /* bit 7 */
+    BITSTRING_TBL_INIT(KU_DIGITAL_SIGNATURE, _("Digital Signature")  ), /* bit 0 */
+    BITSTRING_TBL_INIT(KU_NON_REPUDIATION,   _("Non-Repudiation")    ), /* bit 1 */
+    BITSTRING_TBL_INIT(KU_KEY_ENCIPHERMENT,  _("Key Encipherment")   ), /* bit 2 */
+    BITSTRING_TBL_INIT(KU_DATA_ENCIPHERMENT, _("Data Encipherment")  ), /* bit 3 */
+    BITSTRING_TBL_INIT(KU_KEY_AGREEMENT,     _("Key Agreement")      ), /* bit 4 */
+    BITSTRING_TBL_INIT(KU_KEY_CERT_SIGN,     _("Certificate Signing")), /* bit 5 */
+    BITSTRING_TBL_INIT(KU_CRL_SIGN,          _("CRL Signing")        ), /* bit 6 */
+    BITSTRING_TBL_INIT(KU_ENCIPHER_ONLY,     _("Encipher Only")      ), /* bit 7 */
 #ifdef KU_DECIPHER_ONLY
-    {KU_DECIPHER_ONLY,     _("Decipher Only")      }, /* bit 8 */
+    BITSTRING_TBL_INIT(KU_DECIPHER_ONLY,     _("Decipher Only")      ), /* bit 8 */
 #endif
+};
+
+static BitStringTable CertTypeDef[] = {
+    BITSTRING_TBL_INIT(NS_CERT_TYPE_SSL_CLIENT,        _("SSL Client")        ), /* bit 0 */
+    BITSTRING_TBL_INIT(NS_CERT_TYPE_SSL_SERVER,        _("SSL Server")        ), /* bit 1 */
+    BITSTRING_TBL_INIT(NS_CERT_TYPE_EMAIL,             _("Email")             ), /* bit 2 */
+    BITSTRING_TBL_INIT(NS_CERT_TYPE_OBJECT_SIGNING,    _("Object Signing")    ), /* bit 3 */
+    BITSTRING_TBL_INIT(NS_CERT_TYPE_RESERVED,          _("Reserved")          ), /* bit 4 */
+    BITSTRING_TBL_INIT(NS_CERT_TYPE_SSL_CA,            _("SSL CA")            ), /* bit 5 */
+    BITSTRING_TBL_INIT(NS_CERT_TYPE_EMAIL_CA,          _("Email CA")          ), /* bit 6 */
+    BITSTRING_TBL_INIT(NS_CERT_TYPE_OBJECT_SIGNING_CA, _("Object Signing CA") ), /* bit 7 */
 };
 
 /* returns new reference or NULL on error */
@@ -1815,6 +2028,9 @@ bitstr_table_to_tuple(SECItem *bitstr, BitStringTable *table,
                 case AsEnum:
                     PyTuple_SetItem(tuple, j++, PyInt_FromLong(table[i].enum_value));
                     break;
+                case AsEnumName:
+                    PyTuple_SetItem(tuple, j++, PyString_FromString(table[i].enum_name));
+                    break;
                 case AsEnumDescription:
                     PyTuple_SetItem(tuple, j++, PyString_FromString(table[i].enum_description));
                     break;
@@ -1851,6 +2067,15 @@ key_usage_bitstr_to_tuple(SECItem *bitstr, RepresentationKind repr_kind)
 
     table_len = sizeof(KeyUsageDef) / sizeof(KeyUsageDef[0]);
     return bitstr_table_to_tuple(bitstr, KeyUsageDef, table_len, repr_kind);
+}
+
+static PyObject *
+cert_type_bitstr_to_tuple(SECItem *bitstr, RepresentationKind repr_kind)
+{
+    size_t table_len;
+
+    table_len = sizeof(CertTypeDef) / sizeof(CertTypeDef[0]);
+    return bitstr_table_to_tuple(bitstr, CertTypeDef, table_len, repr_kind);
 }
 
 static PyObject *
@@ -1920,6 +2145,35 @@ decode_oid_sequence_to_tuple(SECItem *item, RepresentationKind repr_kind)
     }
     CERT_DestroyOidSequence(os);
 
+    return tuple;
+}
+
+static PyObject *
+CERTCertList_to_tuple(CERTCertList *cert_list)
+{
+    Py_ssize_t n_certs = 0;
+    Py_ssize_t i = 0;
+    CERTCertListNode *node = NULL;
+    PyObject *py_cert = NULL;
+    PyObject *tuple = NULL;
+
+    for (node = CERT_LIST_HEAD(cert_list), n_certs = 0;
+         !CERT_LIST_END(node, cert_list);
+         node = CERT_LIST_NEXT(node), n_certs++);
+
+    if ((tuple = PyTuple_New(n_certs)) == NULL) {
+        return NULL;
+    }
+    
+    for (node = CERT_LIST_HEAD(cert_list), i = 0;
+         !CERT_LIST_END(node, cert_list);
+         node = CERT_LIST_NEXT(node), i++) {
+        if ((py_cert = Certificate_new_from_CERTCertificate(node->cert)) == NULL) {
+            Py_DECREF(tuple);
+            return NULL;
+        }
+        PyTuple_SetItem(tuple, i, py_cert);
+    }
     return tuple;
 }
 
@@ -2660,6 +2914,34 @@ del_thread_local(const char *name)
     return PyDict_DelItemString(thread_local_dict, name);
 }
 #endif
+
+static int
+PRTimeConvert(PyObject *obj, PRTime *param)
+{
+    PRTime time;
+
+    if (PyFloat_Check(obj)) {
+        LL_D2L(time, PyFloat_AsDouble(obj));
+        *param = time;
+        return 1;
+    }
+
+    if (PyInt_Check(obj)) {
+        LL_I2L(time, PyInt_AsLong(obj)); /* FIXME: should be PyLong_AsLongLong? */
+        *param = time;
+        return 1;
+    }
+
+    if (PyNone_Check(obj)) {
+        time = PR_Now();
+        *param = time;
+        return 1;
+    }
+
+    PyErr_Format(PyExc_TypeError, "must be int, float or None, not %.50s",
+                 Py_TYPE(obj)->tp_name);
+    return 0;
+}
 
 static int
 PK11SlotOrNoneConvert(PyObject *obj, PyObject **param)
@@ -4150,376 +4432,117 @@ CERTRDN_to_pystr(CERTRDN *rdn)
 }
 
 static PyObject *
-cert_trust_flags_str(unsigned int flags)
+cert_trust_flags_str(unsigned int flags, RepresentationKind repr_kind)
 {
-    PyObject *py_flags = NULL;
-    PyObject *py_flag = NULL;
-
-    if ((py_flags = PyList_New(0)) == NULL)
-        return NULL;
+    BIT_FLAGS_TO_LIST_PROLOGUE();
 
 #if NSS_VMAJOR >= 3 && NSS_VMINOR >= 13
-    if (flags & CERTDB_TERMINAL_RECORD) {
-        flags &= ~CERTDB_TERMINAL_RECORD;
-	if ((py_flag = PyString_FromString(_("Terminal Record"))) == NULL) {
-            Py_DECREF(py_flags);
-            return NULL;
-        }
-        PyList_Append(py_flags, py_flag);
-	Py_DECREF(py_flag);
-    }
+    BIT_FLAGS_TO_LIST(CERTDB_TERMINAL_RECORD,   _("Terminal Record"));
 #else
-    if (flags & CERTDB_VALID_PEER) {
-        flags &= ~CERTDB_VALID_PEER;
-	if ((py_flag = PyString_FromString(_("Valid Peer"))) == NULL) {
-            Py_DECREF(py_flags);
-            return NULL;
-        }
-        PyList_Append(py_flags, py_flag);
-	Py_DECREF(py_flag);
-    }
+    BIT_FLAGS_TO_LIST(CERTDB_VALID_PEER,        _("Valid Peer"));
 #endif
-    if (flags & CERTDB_TRUSTED) {
-        flags &= ~CERTDB_TRUSTED;
-	if ((py_flag = PyString_FromString(_("Trusted"))) == NULL) {
-            Py_DECREF(py_flags);
-            return NULL;
-        }
-        PyList_Append(py_flags, py_flag);
-	Py_DECREF(py_flag);
-    }
-    if (flags & CERTDB_SEND_WARN) {
-        flags &= ~CERTDB_SEND_WARN;
-	if ((py_flag = PyString_FromString(_("Warn When Sending"))) == NULL) {
-            Py_DECREF(py_flags);
-            return NULL;
-        }
-        PyList_Append(py_flags, py_flag);
-	Py_DECREF(py_flag);
-    }
-    if (flags & CERTDB_VALID_CA) {
-        flags &= ~CERTDB_VALID_CA;
-	if ((py_flag = PyString_FromString(_("Valid CA"))) == NULL) {
-            Py_DECREF(py_flags);
-            return NULL;
-        }
-        PyList_Append(py_flags, py_flag);
-	Py_DECREF(py_flag);
-    }
-    if (flags & CERTDB_TRUSTED_CA) {
-        flags &= ~CERTDB_TRUSTED_CA;
-	if ((py_flag = PyString_FromString(_("Trusted CA"))) == NULL) {
-            Py_DECREF(py_flags);
-            return NULL;
-        }
-        PyList_Append(py_flags, py_flag);
-	Py_DECREF(py_flag);
-    }
-    if (flags & CERTDB_NS_TRUSTED_CA) {
-        flags &= ~CERTDB_NS_TRUSTED_CA;
-	if ((py_flag = PyString_FromString(_("Netscape Trusted CA"))) == NULL) {
-            Py_DECREF(py_flags);
-            return NULL;
-        }
-        PyList_Append(py_flags, py_flag);
-	Py_DECREF(py_flag);
-    }
-    if (flags & CERTDB_USER) {
-        flags &= ~CERTDB_USER;
-	if ((py_flag = PyString_FromString(_("User"))) == NULL) {
-            Py_DECREF(py_flags);
-            return NULL;
-        }
-        PyList_Append(py_flags, py_flag);
-	Py_DECREF(py_flag);
-    }
-    if (flags & CERTDB_TRUSTED_CLIENT_CA) {
-        flags &= ~CERTDB_TRUSTED_CLIENT_CA;
-	if ((py_flag = PyString_FromString(_("Trusted Client CA"))) == NULL) {
-            Py_DECREF(py_flags);
-            return NULL;
-        }
-        PyList_Append(py_flags, py_flag);
-	Py_DECREF(py_flag);
-    }
-    if (flags & CERTDB_GOVT_APPROVED_CA) {
-        flags &= ~CERTDB_GOVT_APPROVED_CA;
-	if ((py_flag = PyString_FromString(_("Step-up"))) == NULL) {
-            Py_DECREF(py_flags);
-            return NULL;
-        }
-        PyList_Append(py_flags, py_flag);
-	Py_DECREF(py_flag);
-    }
+    BIT_FLAGS_TO_LIST(CERTDB_TRUSTED,           _("Trusted"));
+    BIT_FLAGS_TO_LIST(CERTDB_SEND_WARN,         _("Warn When Sending"));
+    BIT_FLAGS_TO_LIST(CERTDB_VALID_CA,          _("Valid CA"));
+    BIT_FLAGS_TO_LIST(CERTDB_TRUSTED_CA,        _("Trusted CA"));
+    BIT_FLAGS_TO_LIST(CERTDB_NS_TRUSTED_CA,     _("Netscape Trusted CA"));
+    BIT_FLAGS_TO_LIST(CERTDB_USER,              _("User"));
+    BIT_FLAGS_TO_LIST(CERTDB_TRUSTED_CLIENT_CA, _("Trusted Client CA"));
+    BIT_FLAGS_TO_LIST(CERTDB_GOVT_APPROVED_CA,  _("Step-up"));
 
-    if (flags) {
-        if ((py_flag = PyString_FromFormat("unknown bit flags %#x", flags)) == NULL) {
-            Py_DECREF(py_flags);
-            return NULL;
-        }
-        PyList_Append(py_flags, py_flag);
-	Py_DECREF(py_flag);
-    }
-
-    if (PyList_Sort(py_flags) == -1) {
-            Py_DECREF(py_flags);
-            return NULL;
-    }
-
-    return py_flags;
+    BIT_FLAGS_TO_LIST_EPILOGUE();
 }
 
 static PyObject *
-cert_usage_flags(unsigned int flags)
+cert_usage_flags(unsigned int flags, RepresentationKind repr_kind)
 {
-    PyObject *py_flags = NULL;
-    PyObject *py_flag = NULL;
+    BIT_FLAGS_TO_LIST_PROLOGUE();
 
-    if ((py_flags = PyList_New(0)) == NULL)
-        return NULL;
+    BIT_FLAGS_TO_LIST(certificateUsageSSLClient,             _("SSL Client"));
+    BIT_FLAGS_TO_LIST(certificateUsageSSLServer,             _("SSL Server"));
+    BIT_FLAGS_TO_LIST(certificateUsageSSLServerWithStepUp,   _("SSL Server With StepUp"));
+    BIT_FLAGS_TO_LIST(certificateUsageSSLCA,                 _("SSL CA"));
+    BIT_FLAGS_TO_LIST(certificateUsageEmailSigner,           _("Email Signer"));
+    BIT_FLAGS_TO_LIST(certificateUsageEmailRecipient,        _("Email Recipient"));
+    BIT_FLAGS_TO_LIST(certificateUsageObjectSigner,          _("Object Signer"));
+    BIT_FLAGS_TO_LIST(certificateUsageUserCertImport,        _("User Certificate Import"));
+    BIT_FLAGS_TO_LIST(certificateUsageVerifyCA,              _("Verify CA"));
+    BIT_FLAGS_TO_LIST(certificateUsageProtectedObjectSigner, _("Protected Object Signer"));
+    BIT_FLAGS_TO_LIST(certificateUsageStatusResponder,       _("Status Responder"));
+    BIT_FLAGS_TO_LIST(certificateUsageAnyCA,                 _("Any CA"));
 
-    if (flags & certificateUsageSSLClient) {
-        flags &= ~certificateUsageSSLClient;
-	if ((py_flag = PyString_FromString(_("SSLClient"))) == NULL) {
-            Py_DECREF(py_flags);
-            return NULL;
-        }
-        PyList_Append(py_flags, py_flag);
-	Py_DECREF(py_flag);
-    }
-    if (flags & certificateUsageSSLServer) {
-        flags &= ~certificateUsageSSLServer;
-	if ((py_flag = PyString_FromString(_("SSLServer"))) == NULL) {
-            Py_DECREF(py_flags);
-            return NULL;
-        }
-        PyList_Append(py_flags, py_flag);
-	Py_DECREF(py_flag);
-    }
-    if (flags & certificateUsageSSLServerWithStepUp) {
-        flags &= ~certificateUsageSSLServerWithStepUp;
-	if ((py_flag = PyString_FromString(_("SSLServerWithStepUp"))) == NULL) {
-            Py_DECREF(py_flags);
-            return NULL;
-        }
-        PyList_Append(py_flags, py_flag);
-	Py_DECREF(py_flag);
-    }
-    if (flags & certificateUsageSSLCA) {
-        flags &= ~certificateUsageSSLCA;
-	if ((py_flag = PyString_FromString(_("SSLCA"))) == NULL) {
-            Py_DECREF(py_flags);
-            return NULL;
-        }
-        PyList_Append(py_flags, py_flag);
-	Py_DECREF(py_flag);
-    }
-    if (flags & certificateUsageEmailSigner) {
-        flags &= ~certificateUsageEmailSigner;
-	if ((py_flag = PyString_FromString(_("EmailSigner"))) == NULL) {
-            Py_DECREF(py_flags);
-            return NULL;
-        }
-        PyList_Append(py_flags, py_flag);
-	Py_DECREF(py_flag);
-    }
-    if (flags & certificateUsageEmailRecipient) {
-        flags &= ~certificateUsageEmailRecipient;
-	if ((py_flag = PyString_FromString(_("EmailRecipient"))) == NULL) {
-            Py_DECREF(py_flags);
-            return NULL;
-        }
-        PyList_Append(py_flags, py_flag);
-	Py_DECREF(py_flag);
-    }
-    if (flags & certificateUsageObjectSigner) {
-        flags &= ~certificateUsageObjectSigner;
-	if ((py_flag = PyString_FromString(_("ObjectSigner"))) == NULL) {
-            Py_DECREF(py_flags);
-            return NULL;
-        }
-        PyList_Append(py_flags, py_flag);
-	Py_DECREF(py_flag);
-    }
-    if (flags & certificateUsageUserCertImport) {
-        flags &= ~certificateUsageUserCertImport;
-	if ((py_flag = PyString_FromString(_("UserCertImport"))) == NULL) {
-            Py_DECREF(py_flags);
-            return NULL;
-        }
-        PyList_Append(py_flags, py_flag);
-	Py_DECREF(py_flag);
-    }
-    if (flags & certificateUsageVerifyCA) {
-        flags &= ~certificateUsageVerifyCA;
-	if ((py_flag = PyString_FromString(_("VerifyCA"))) == NULL) {
-            Py_DECREF(py_flags);
-            return NULL;
-        }
-        PyList_Append(py_flags, py_flag);
-	Py_DECREF(py_flag);
-    }
-    if (flags & certificateUsageProtectedObjectSigner) {
-        flags &= ~certificateUsageProtectedObjectSigner;
-	if ((py_flag = PyString_FromString(_("ProtectedObjectSigner"))) == NULL) {
-            Py_DECREF(py_flags);
-            return NULL;
-        }
-        PyList_Append(py_flags, py_flag);
-	Py_DECREF(py_flag);
-    }
-    if (flags & certificateUsageStatusResponder) {
-        flags &= ~certificateUsageStatusResponder;
-	if ((py_flag = PyString_FromString(_("StatusResponder"))) == NULL) {
-            Py_DECREF(py_flags);
-            return NULL;
-        }
-        PyList_Append(py_flags, py_flag);
-	Py_DECREF(py_flag);
-    }
-    if (flags & certificateUsageAnyCA) {
-        flags &= ~certificateUsageAnyCA;
-	if ((py_flag = PyString_FromString(_("AnyCA"))) == NULL) {
-            Py_DECREF(py_flags);
-            return NULL;
-        }
-        PyList_Append(py_flags, py_flag);
-	Py_DECREF(py_flag);
-    }
-
-    if (flags) {
-        if ((py_flag = PyString_FromFormat("unknown bit flags %#x", flags)) == NULL) {
-            Py_DECREF(py_flags);
-            return NULL;
-        }
-        PyList_Append(py_flags, py_flag);
-	Py_DECREF(py_flag);
-    }
-
-    if (PyList_Sort(py_flags) == -1) {
-            Py_DECREF(py_flags);
-            return NULL;
-    }
-
-    return py_flags;
+    BIT_FLAGS_TO_LIST_EPILOGUE();
 }
 
 static PyObject *
-nss_init_flags(unsigned int flags)
+key_usage_flags(unsigned int flags, RepresentationKind repr_kind)
 {
-    PyObject *py_flags = NULL;
-    PyObject *py_flag = NULL;
+    BIT_FLAGS_TO_LIST_PROLOGUE();
 
+    BIT_FLAGS_TO_LIST(KU_DIGITAL_SIGNATURE, _("Digital Signature"));
+    BIT_FLAGS_TO_LIST(KU_NON_REPUDIATION,   _("Non-Repudiation"));
+    BIT_FLAGS_TO_LIST(KU_KEY_ENCIPHERMENT,  _("Key Encipherment"));
+    BIT_FLAGS_TO_LIST(KU_DATA_ENCIPHERMENT, _("Data Encipherment"));
+    BIT_FLAGS_TO_LIST(KU_KEY_AGREEMENT,     _("Key Agreement"));
+    BIT_FLAGS_TO_LIST(KU_KEY_CERT_SIGN,     _("Certificate Signing"));
+    BIT_FLAGS_TO_LIST(KU_CRL_SIGN,          _("CRL Signing"));
+    BIT_FLAGS_TO_LIST(KU_ENCIPHER_ONLY,     _("Encipher Only"));
+#ifdef KU_DECIPHER_ONLY
+    BIT_FLAGS_TO_LIST(KU_DECIPHER_ONLY,     _("Decipher Only"));
+#endif
+    /*
+     * The following flags are not present in certs but appear in
+     * CERTVerifyNode when the error is
+     * SEC_ERROR_INADEQUATE_KEY_USAGE. This rountine is also used
+     * to print those flags.
+     */
+    BIT_FLAGS_TO_LIST(KU_DIGITAL_SIGNATURE_OR_NON_REPUDIATION, _("Digital Signature or Non-Repudiation"));
+    BIT_FLAGS_TO_LIST(KU_KEY_AGREEMENT_OR_ENCIPHERMENT,        _("Key Agreement or Data Encipherment"));
+    BIT_FLAGS_TO_LIST(KU_NS_GOVT_APPROVED,                     _("Government Approved"));
 
-    if ((py_flags = PyList_New(0)) == NULL)
-        return NULL;
+    BIT_FLAGS_TO_LIST_EPILOGUE();
+}
 
-    if (flags & NSS_INIT_READONLY) {
-        flags &= ~NSS_INIT_READONLY;
-	if ((py_flag = PyString_FromString("READONLY")) == NULL) {
-            Py_DECREF(py_flags);
-            return NULL;
-        }
-        PyList_Append(py_flags, py_flag);
-	Py_DECREF(py_flag);
-    }
-    if (flags & NSS_INIT_NOCERTDB) {
-        flags &= ~NSS_INIT_NOCERTDB;
-	if ((py_flag = PyString_FromString("NOCERTDB")) == NULL) {
-            Py_DECREF(py_flags);
-            return NULL;
-        }
-        PyList_Append(py_flags, py_flag);
-	Py_DECREF(py_flag);
-    }
-    if (flags & NSS_INIT_NOMODDB) {
-        flags &= ~NSS_INIT_NOMODDB;
-	if ((py_flag = PyString_FromString("NOMODDB")) == NULL) {
-            Py_DECREF(py_flags);
-            return NULL;
-        }
-        PyList_Append(py_flags, py_flag);
-	Py_DECREF(py_flag);
-    }
-    if (flags & NSS_INIT_FORCEOPEN) {
-        flags &= ~NSS_INIT_FORCEOPEN;
-	if ((py_flag = PyString_FromString("FORCEOPEN")) == NULL) {
-            Py_DECREF(py_flags);
-            return NULL;
-        }
-        PyList_Append(py_flags, py_flag);
-	Py_DECREF(py_flag);
-    }
-    if (flags & NSS_INIT_NOROOTINIT) {
-        flags &= ~NSS_INIT_NOROOTINIT;
-	if ((py_flag = PyString_FromString("NOROOTINIT")) == NULL) {
-            Py_DECREF(py_flags);
-            return NULL;
-        }
-        PyList_Append(py_flags, py_flag);
-	Py_DECREF(py_flag);
-    }
-    if (flags & NSS_INIT_OPTIMIZESPACE) {
-        flags &= ~NSS_INIT_OPTIMIZESPACE;
-	if ((py_flag = PyString_FromString("OPTIMIZESPACE")) == NULL) {
-            Py_DECREF(py_flags);
-            return NULL;
-        }
-        PyList_Append(py_flags, py_flag);
-	Py_DECREF(py_flag);
-    }
-    if (flags & NSS_INIT_PK11THREADSAFE) {
-        flags &= ~NSS_INIT_PK11THREADSAFE;
-	if ((py_flag = PyString_FromString("PK11THREADSAFE")) == NULL) {
-            Py_DECREF(py_flags);
-            return NULL;
-        }
-        PyList_Append(py_flags, py_flag);
-	Py_DECREF(py_flag);
-    }
-    if (flags & NSS_INIT_PK11RELOAD) {
-        flags &= ~NSS_INIT_PK11RELOAD;
-	if ((py_flag = PyString_FromString("PK11RELOAD")) == NULL) {
-            Py_DECREF(py_flags);
-            return NULL;
-        }
-        PyList_Append(py_flags, py_flag);
-	Py_DECREF(py_flag);
-    }
-    if (flags & NSS_INIT_NOPK11FINALIZE) {
-        flags &= ~NSS_INIT_NOPK11FINALIZE;
-	if ((py_flag = PyString_FromString("NOPK11FINALIZE")) == NULL) {
-            Py_DECREF(py_flags);
-            return NULL;
-        }
-        PyList_Append(py_flags, py_flag);
-	Py_DECREF(py_flag);
-    }
-    if (flags & NSS_INIT_RESERVED) {
-        flags &= ~NSS_INIT_RESERVED;
-	if ((py_flag = PyString_FromString("RESERVED")) == NULL) {
-            Py_DECREF(py_flags);
-            return NULL;
-        }
-        PyList_Append(py_flags, py_flag);
-	Py_DECREF(py_flag);
-    }
+static PyObject *
+cert_type_flags(unsigned int flags, RepresentationKind repr_kind)
+{
+    BIT_FLAGS_TO_LIST_PROLOGUE();
 
-    if (flags) {
-        if ((py_flag = PyString_FromFormat("unknown bit flags %#x", flags)) == NULL) {
-            Py_DECREF(py_flags);
-            return NULL;
-        }
-        PyList_Append(py_flags, py_flag);
-	Py_DECREF(py_flag);
-    }
+    BIT_FLAGS_TO_LIST(NS_CERT_TYPE_SSL_CLIENT,        _("SSL Client"));
+    BIT_FLAGS_TO_LIST(NS_CERT_TYPE_SSL_SERVER,        _("SSL Server"));
+    BIT_FLAGS_TO_LIST(NS_CERT_TYPE_EMAIL,             _("Email"));
+    BIT_FLAGS_TO_LIST(NS_CERT_TYPE_OBJECT_SIGNING,    _("Object Signing"));
+    BIT_FLAGS_TO_LIST(NS_CERT_TYPE_RESERVED,          _("Reserved"));
+    BIT_FLAGS_TO_LIST(NS_CERT_TYPE_SSL_CA,            _("SSL CA"));
+    BIT_FLAGS_TO_LIST(NS_CERT_TYPE_EMAIL_CA,          _("Email CA"));
+    BIT_FLAGS_TO_LIST(NS_CERT_TYPE_OBJECT_SIGNING_CA, _("Object Signing CA"));
+    /*
+     * The following flags are not actual cert types but they get
+     * OR'ed into a cert type bitmask.
+     */
+   BIT_FLAGS_TO_LIST(EXT_KEY_USAGE_TIME_STAMP,        _("Key Usage Timestamp"));
+   BIT_FLAGS_TO_LIST(EXT_KEY_USAGE_STATUS_RESPONDER,  _("Key Usage Status Responder"));
 
-    if (PyList_Sort(py_flags) == -1) {
-            Py_DECREF(py_flags);
-            return NULL;
-    }
+   BIT_FLAGS_TO_LIST_EPILOGUE();
+}
 
-    return py_flags;
+static PyObject *
+nss_init_flags(unsigned int flags, RepresentationKind repr_kind)
+{
+    BIT_FLAGS_TO_LIST_PROLOGUE();
+
+    BIT_FLAGS_TO_LIST(NSS_INIT_READONLY,       _("Read Only"));
+    BIT_FLAGS_TO_LIST(NSS_INIT_NOCERTDB,       _("No Certificate Database"));
+    BIT_FLAGS_TO_LIST(NSS_INIT_NOMODDB,        _("No Module Database"));
+    BIT_FLAGS_TO_LIST(NSS_INIT_FORCEOPEN,      _("Force Open"));
+    BIT_FLAGS_TO_LIST(NSS_INIT_NOROOTINIT,     _("No Root Init"));
+    BIT_FLAGS_TO_LIST(NSS_INIT_OPTIMIZESPACE,  _("Optimize Space"));
+    BIT_FLAGS_TO_LIST(NSS_INIT_PK11THREADSAFE, _("PK11 Thread Safe"));
+    BIT_FLAGS_TO_LIST(NSS_INIT_PK11RELOAD,     _("PK11 Reload"));
+    BIT_FLAGS_TO_LIST(NSS_INIT_NOPK11FINALIZE, _("No PK11 Finalize"));
+    BIT_FLAGS_TO_LIST(NSS_INIT_RESERVED,       _("Reserved"));
+
+    BIT_FLAGS_TO_LIST_EPILOGUE();
 }
 
 
@@ -5161,8 +5184,6 @@ RSAPSSParams_format_lines(SECItem *item, int level)
     PyObject *obj = NULL;
     PyObject *obj1 = NULL;
 
-    TraceMethodEnter(self);
-
     /* allocate an arena to use */
     if ((arena = PORT_NewArena(DER_DEFAULT_CHUNKSIZE)) == NULL ) {
         set_nspr_error(NULL);
@@ -5690,7 +5711,7 @@ RSAGenParams_set_key_size(RSAGenParams *self, PyObject *value, void *closure)
     TraceMethodEnter(self);
 
     if (value == NULL) {
-        PyErr_SetString(PyExc_TypeError, "Cannot delete the classproperty attribute");
+        PyErr_SetString(PyExc_TypeError, "Cannot delete the key_size attribute");
         return -1;
     }
 
@@ -5720,7 +5741,7 @@ RSAGenParams_set_public_exponent(RSAGenParams *self, PyObject *value, void *clos
     TraceMethodEnter(self);
 
     if (value == NULL) {
-        PyErr_SetString(PyExc_TypeError, "Cannot delete the classproperty attribute");
+        PyErr_SetString(PyExc_TypeError, "Cannot delete the public_exponent attribute");
         return -1;
     }
 
@@ -7880,6 +7901,21 @@ CertificateExtension_format_lines(CertificateExtension *self, PyObject *args, Py
         APPEND_LINE_TUPLES_AND_CLEAR(lines, obj_lines, fail);
         break;
 
+    case SEC_OID_NS_CERT_EXT_CERT_TYPE:
+        FMT_LABEL_AND_APPEND(lines, _("Types"), level, fail);
+        if ((tmp_args = Py_BuildValue("(O)", self->py_value)) == NULL) {
+            goto fail;
+        }
+        if ((obj = cert_x509_cert_type(NULL, tmp_args, NULL)) == NULL) {
+            goto fail;
+        }
+        Py_CLEAR(tmp_args);
+        if ((obj_lines = make_line_fmt_tuples(level+1, obj)) == NULL) {
+            goto fail;
+        }
+        APPEND_LINE_TUPLES_AND_CLEAR(lines, obj_lines, fail);
+        break;
+
     case SEC_OID_X509_SUBJECT_KEY_ID:
         FMT_LABEL_AND_APPEND(lines, _("Data"), level, fail);
         if ((obj_lines = SECItem_der_to_hex(&self->py_value->item,
@@ -8259,7 +8295,7 @@ Certificate_get_ssl_trust_str(Certificate *self, void *closure)
     TraceMethodEnter(self);
 
     if (self->cert->trust)
-        return cert_trust_flags_str(self->cert->trust->sslFlags);
+        return cert_trust_flags_str(self->cert->trust->sslFlags, AsEnumDescription);
     else
         Py_RETURN_NONE;
 }
@@ -8270,7 +8306,7 @@ Certificate_get_email_trust_str(Certificate *self, void *closure)
     TraceMethodEnter(self);
 
     if (self->cert->trust)
-        return cert_trust_flags_str(self->cert->trust->emailFlags);
+        return cert_trust_flags_str(self->cert->trust->emailFlags, AsEnumDescription);
     else
         Py_RETURN_NONE;
 }
@@ -8281,7 +8317,7 @@ Certificate_get_signing_trust_str(Certificate *self, void *closure)
     TraceMethodEnter(self);
 
     if (self->cert->trust)
-        return cert_trust_flags_str(self->cert->trust->objectSigningFlags);
+        return cert_trust_flags_str(self->cert->trust->objectSigningFlags, AsEnumDescription);
     else
         Py_RETURN_NONE;
 }
@@ -8328,6 +8364,14 @@ Certificate_get_extensions(Certificate *self, void *closure)
     }
 
     return extensions_tuple;
+}
+
+static PyObject *
+Certificate_get_cert_type(Certificate *self, void *closure)
+{
+    TraceMethodEnter(self);
+
+    return PyInt_FromLong(self->cert->nsCertType);
 }
 
 static
@@ -8382,6 +8426,10 @@ PyGetSetDef Certificate_getseters[] = {
 
     {"extensions", (getter)Certificate_get_extensions, NULL,
      "certificate extensions as a tuple of CertificateExtension objects",  NULL},
+
+    {"cert_type",               (getter)Certificate_get_cert_type,                NULL,
+     "integer bitmask of NS_CERT_TYPE_* flags, see `nss.cert_type_flags()`",  NULL},
+
     {NULL}  /* Sentinel */
 };
 
@@ -8574,33 +8622,67 @@ Returns one of:\n\
 static PyObject *
 Certificate_check_valid_times(Certificate *self, PyObject *args, PyObject *kwds)
 {
-    static char *kwlist[] = {"time", NULL};
-    PyObject *py_time = NULL;
+    static char *kwlist[] = {"time", "allow_override", NULL};
     int allow_override = 0;
-    PRTime time;
+    PRTime pr_time = 0;
     SECCertTimeValidity validity;
 
     TraceMethodEnter(self);
 
-    if (!PyArg_ParseTupleAndKeywords(args, kwds, "|Oi:check_valid_times", kwlist, &py_time, &allow_override))
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "|O&i:check_valid_times", kwlist,
+                                     PRTimeConvert, &pr_time, &allow_override))
         return NULL;
 
-    if (py_time) {
-        if (PyFloat_Check(py_time)) {
-            LL_D2L(time, PyFloat_AsDouble(py_time));
-        } else if (PyInt_Check(py_time)) {
-            LL_I2L(time, PyInt_AsLong(py_time)); /* FIXME: should be PyLong_AsLongLong? */
-        } else {
-            PyErr_SetString(PyExc_TypeError, "check_valid_times: time must be a float or an integer");
-            return NULL;
-        }
-    } else {
-        time = PR_Now();
+    if (!pr_time) {
+        pr_time = PR_Now();
     }
 
-    validity = CERT_CheckCertValidTimes(self->cert, time, allow_override);
+    validity = CERT_CheckCertValidTimes(self->cert, pr_time, allow_override);
 
     return PyInt_FromLong(validity);
+}
+
+PyDoc_STRVAR(Certificate_is_ca_cert_doc,
+"is_ca_cert(return_cert_type=False) -> boolean\n\
+is_ca_cert(True) -> boolean, cert_type\n\
+\n\
+:Parameters:\n\
+    return_cert_type : boolean\n\
+        If True returns both boolean result and certficate\n\
+        type bitmask. If False return only boolean result\n\
+\n\
+Returns True if the cert is a CA cert, False otherwise.\n\
+\n\
+The function optionally can return a bitmask of NS_CERT_TYPE_*\n\
+flags if return_cert_type is True. This is the updated cert type\n\
+after applying logic in the context of deciding if the cert is a\n\
+CA cert or not. Hint: the cert_type value can be converted to text\n\
+with `nss.cert_type_flags()`. Hint: the unmodified cert type flags\n\
+can be obtained with the `Certificate.cert_type` property.\n\
+\n\
+");
+static PyObject *
+Certificate_is_ca_cert(Certificate *self, PyObject *args, PyObject *kwds)
+{
+    static char *kwlist[] = {"return_cert_type", NULL};
+    int return_cert_type = false;
+    PRBool is_ca = PR_FALSE;
+    unsigned int cert_type = 0;
+
+    TraceMethodEnter(self);
+
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "|i:is_ca_cert", kwlist,
+                                     &return_cert_type))
+        return NULL;
+
+    is_ca = CERT_IsCACert(self->cert, return_cert_type ? &cert_type : NULL);
+
+
+    if (return_cert_type) {
+        return Py_BuildValue("NI", PyBool_FromLong(is_ca), cert_type);
+    } else {
+        return PyBool_FromLong(is_ca);
+    }
 }
 
 PyDoc_STRVAR(Certificate_verify_now_doc,
@@ -8642,6 +8724,9 @@ required usages, otherwise it is for all possible usages.\n\
 \n\
 Hint: You can obtain a printable representation of the usage flags\n\
 via `cert_usage_flags`.\n\
+\n\
+Note: See the `Certificate.verify` documentation for details on how\n\
+the Certificate verification functions handle errors.\n\
 ");
 
 static PyObject *
@@ -8655,7 +8740,7 @@ Certificate_verify_now(Certificate *self, PyObject *args)
     PyObject *py_check_sig = NULL;
     PRBool check_sig = 0;
     long required_usages = 0;
-    SECCertificateUsage returned_usages;
+    SECCertificateUsage returned_usages = 0;
 
     TraceMethodEnter(self);
 
@@ -8683,12 +8768,231 @@ Certificate_verify_now(Certificate *self, PyObject *args)
                                   required_usages, pin_args, &returned_usages) != SECSuccess) {
 	Py_BLOCK_THREADS
         Py_DECREF(pin_args);
-        return set_nspr_error(NULL);
+        return set_cert_verify_error(returned_usages, NULL, NULL);
     }
     Py_END_ALLOW_THREADS
     Py_DECREF(pin_args);
 
     return PyInt_FromLong(returned_usages);
+}
+
+PyDoc_STRVAR(Certificate_verify_doc,
+"verify(certdb, check_sig, required_usages, time, [user_data1, ...]) -> valid_usages\n\
+\n\
+:Parameters:\n\
+    certdb : CertDB object\n\
+        CertDB certificate database object\n\
+    check_sig : bool\n\
+        True if certificate signatures should be checked\n\
+    required_usages : integer\n\
+        A bitfield of all cert usages that are required for verification\n\
+        to succeed. If zero return all possible valid usages.\n\
+    time : number\n\
+        an optional point in time as number of microseconds\n\
+        since the NSPR epoch, midnight (00:00:00) 1 January\n\
+        1970 UTC, either as an integer or a float. If time \n\
+        is not specified the current time is used.\n\
+    user_dataN : object\n\
+        zero or more caller supplied parameters which will\n\
+        be passed to the password callback function\n\
+\n\
+Verify a certificate by checking if it's valid and that we\n\
+trust the issuer.\n\
+\n\
+Possible usage bitfield values are:\n\
+    - certificateUsageCheckAllUsages\n\
+    - certificateUsageSSLClient\n\
+    - certificateUsageSSLServer\n\
+    - certificateUsageSSLServerWithStepUp\n\
+    - certificateUsageSSLCA\n\
+    - certificateUsageEmailSigner\n\
+    - certificateUsageEmailRecipient\n\
+    - certificateUsageObjectSigner\n\
+    - certificateUsageUserCertImport\n\
+    - certificateUsageVerifyCA\n\
+    - certificateUsageProtectedObjectSigner\n\
+    - certificateUsageStatusResponder\n\
+    - certificateUsageAnyCA\n\
+\n\
+Returns valid_usages, a bitfield of certificate usages.\n\
+\n\
+If required_usages is non-zero, the returned bitmap is only for those\n\
+required usages, otherwise it is for all possible usages.\n\
+\n\
+Hint: You can obtain a printable representation of the usage flags\n\
+via `cert_usage_flags`.\n\
+\n\
+Note: Anytime a NSPR or NSS function returns an error in python-nss it\n\
+raises a NSPRError exception. When an exception is raised the normal\n\
+return values are discarded because the flow of control continues at\n\
+the first except block prepared to catch the exception. Normally this\n\
+is what is desired because the return values would be invalid due to\n\
+the error. However the certificate verification functions are an\n\
+exception (no pun intended). An error might be returned indicating the\n\
+cert failed verification but you may still need access to the returned\n\
+usage bitmask and the log (if using the log variant). To handle this a\n\
+special error exception `CertVerifyError` (derived from `NSPRError`)\n\
+is defined which in addition to the normal NSPRError fields will also\n\
+contain the returned usages and optionally the CertVerifyLog\n\
+object. If no exception is raised these are returned as normal return\n\
+values.\n\
+");
+
+static PyObject *
+Certificate_verify(Certificate *self, PyObject *args)
+{
+    Py_ssize_t n_base_args = 4;
+    Py_ssize_t argc;
+    PyObject *parse_args = NULL;
+    PyObject *pin_args = NULL;
+    CertDB *py_certdb = NULL;
+    PyObject *py_check_sig = NULL;
+    PRBool check_sig = 0;
+    PRTime pr_time = 0;
+    long required_usages = 0;
+    SECCertificateUsage returned_usages = 0;
+
+    TraceMethodEnter(self);
+
+    argc = PyTuple_Size(args);
+    if (argc == n_base_args) {
+        Py_INCREF(args);
+        parse_args = args;
+    } else {
+        parse_args = PyTuple_GetSlice(args, 0, n_base_args);
+    }
+    if (!PyArg_ParseTuple(parse_args, "O!O!lO&:verify",
+                          &CertDBType, &py_certdb,
+                          &PyBool_Type, &py_check_sig,
+                          &required_usages,
+                          PRTimeConvert, &pr_time)) {
+        Py_DECREF(parse_args);
+        return NULL;
+    }
+    Py_DECREF(parse_args);
+
+    check_sig = PyBoolAsPRBool(py_check_sig);
+    pin_args = PyTuple_GetSlice(args, n_base_args, argc);
+
+    Py_BEGIN_ALLOW_THREADS
+    if (CERT_VerifyCertificate(py_certdb->handle, self->cert, check_sig,
+                               required_usages, pr_time, pin_args,
+                               NULL, &returned_usages) != SECSuccess) {
+	Py_BLOCK_THREADS
+        Py_DECREF(pin_args);
+        return set_cert_verify_error(returned_usages, NULL, NULL);
+    }
+    Py_END_ALLOW_THREADS
+    Py_DECREF(pin_args);
+
+    return PyInt_FromLong(returned_usages);
+}
+
+PyDoc_STRVAR(Certificate_verify_with_log_doc,
+"verify_with_log(certdb, check_sig, required_usages, time, [user_data1, ...]) -> valid_usages, log\n\
+\n\
+:Parameters:\n\
+    certdb : CertDB object\n\
+        CertDB certificate database object\n\
+    check_sig : bool\n\
+        True if certificate signatures should be checked\n\
+    required_usages : integer\n\
+        A bitfield of all cert usages that are required for verification\n\
+        to succeed. If zero return all possible valid usages.\n\
+    time : number\n\
+        an optional point in time as number of microseconds\n\
+        since the NSPR epoch, midnight (00:00:00) 1 January\n\
+        1970 UTC, either as an integer or a float. If time \n\
+        is not specified the current time is used.\n\
+    user_dataN : object\n\
+        zero or more caller supplied parameters which will\n\
+        be passed to the password callback function\n\
+\n\
+Verify a certificate by checking if it's valid and that we\n\
+trust the issuer.\n\
+\n\
+Possible usage bitfield values are:\n\
+    - certificateUsageCheckAllUsages\n\
+    - certificateUsageSSLClient\n\
+    - certificateUsageSSLServer\n\
+    - certificateUsageSSLServerWithStepUp\n\
+    - certificateUsageSSLCA\n\
+    - certificateUsageEmailSigner\n\
+    - certificateUsageEmailRecipient\n\
+    - certificateUsageObjectSigner\n\
+    - certificateUsageUserCertImport\n\
+    - certificateUsageVerifyCA\n\
+    - certificateUsageProtectedObjectSigner\n\
+    - certificateUsageStatusResponder\n\
+    - certificateUsageAnyCA\n\
+\n\
+Returns valid_usages, a bitfield of certificate usages and a `nss.CertVerifyLog`\n\
+object with diagnostic information detailing the reasons for a validation failure.\n\
+\n\
+If required_usages is non-zero, the returned bitmap is only for those\n\
+required usages, otherwise it is for all possible usages.\n\
+\n\
+Hint: You can obtain a printable representation of the usage flags\n\
+via `cert_usage_flags`.\n\
+\n\
+Note: See the `Certificate.verify` documentation for details on how\n\
+the Certificate verification functions handle errors.\n\
+");
+
+static PyObject *
+Certificate_verify_with_log(Certificate *self, PyObject *args)
+{
+    Py_ssize_t n_base_args = 4;
+    Py_ssize_t argc;
+    PyObject *parse_args = NULL;
+    PyObject *pin_args = NULL;
+    CertDB *py_certdb = NULL;
+    PyObject *py_check_sig = NULL;
+    PRBool check_sig = 0;
+    PRTime pr_time = 0;
+    CertVerifyLog *py_log = NULL;
+    long required_usages = 0;
+    SECCertificateUsage returned_usages = 0;
+
+    TraceMethodEnter(self);
+
+    argc = PyTuple_Size(args);
+    if (argc == n_base_args) {
+        Py_INCREF(args);
+        parse_args = args;
+    } else {
+        parse_args = PyTuple_GetSlice(args, 0, n_base_args);
+    }
+    if (!PyArg_ParseTuple(parse_args, "O!O!lO&:verify_with_log",
+                          &CertDBType, &py_certdb,
+                          &PyBool_Type, &py_check_sig,
+                          &required_usages,
+                          PRTimeConvert, &pr_time)) {
+        Py_DECREF(parse_args);
+        return NULL;
+    }
+    Py_DECREF(parse_args);
+
+    check_sig = PyBoolAsPRBool(py_check_sig);
+    pin_args = PyTuple_GetSlice(args, n_base_args, argc);
+
+    if ((py_log = (CertVerifyLog *)CertVerifyLog_new(&CertVerifyLogType, NULL, NULL)) == NULL) {
+        Py_DECREF(pin_args);
+        return NULL;
+    }
+
+    Py_BEGIN_ALLOW_THREADS
+    if (CERT_VerifyCertificate(py_certdb->handle, self->cert, check_sig,
+                               required_usages, pr_time, pin_args,
+                               &py_log->log, &returned_usages) != SECSuccess) {
+	Py_BLOCK_THREADS
+        Py_DECREF(pin_args);
+        return set_cert_verify_error(returned_usages, (PyObject *)py_log, NULL);
+    }
+    Py_END_ALLOW_THREADS
+    Py_DECREF(pin_args);
+
+    return Py_BuildValue("KN", returned_usages, py_log);
 }
 
 PyDoc_STRVAR(Certificate_get_extension_doc,
@@ -8798,6 +9102,86 @@ Certificate_get_extension(Certificate *self, PyObject *args, PyObject *kwds)
 
     return CertificateExtension_new_from_CERTCertExtension(extension);
 
+}
+
+PyDoc_STRVAR(Certificate_get_cert_chain_doc,
+"get_cert_chain(time=now, usages=certUsageAnyCA) -> (`Certificate`, ...)\n\
+\n\
+:Parameters:\n\
+    time : number\n\
+        an optional point in time as number of microseconds\n\
+        since the NSPR epoch, midnight (00:00:00) 1 January\n\
+        1970 UTC, either as an integer or a float. If time \n\
+        is not specified the current time is used.\n\
+    usages : integer\n\
+        a certUsage* enumerated constant\n\
+\n\
+Returns a tuple of `Certificate` objects.\n\
+");
+
+static PyObject *
+Certificate_get_cert_chain(Certificate *self, PyObject *args, PyObject *kwds)
+{
+    static char *kwlist[] = {"time", "usages", NULL};
+    PRTime pr_time = 0;
+    int usages = certUsageAnyCA;
+    CERTCertList *cert_list = NULL;
+    PyObject *tuple = NULL;
+
+    TraceMethodEnter(self);
+
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "|O&i:get_cert_chain", kwlist,
+                                     PRTimeConvert, &pr_time, &usages))
+        return NULL;
+
+    if ((cert_list = CERT_GetCertChainFromCert(self->cert, pr_time, usages)) == NULL) {
+        return set_nspr_error(NULL);
+    }
+
+    tuple = CERTCertList_to_tuple(cert_list);
+    CERT_DestroyCertList(cert_list);
+    return tuple;
+}
+
+static PyObject *
+Certificate_summary_format_lines(Certificate *self, int level, PyObject *lines)
+{
+    PyObject *obj = NULL;
+    PyObject *obj1 = NULL;
+    PyObject *obj2 = NULL;
+
+    if ((obj = Certificate_get_subject(self, NULL)) == NULL) {
+        goto fail;
+    }
+    FMT_OBJ_AND_APPEND(lines, _("Subject"), obj, level, fail);
+    Py_CLEAR(obj);
+
+    if ((obj = Certificate_get_issuer(self, NULL)) == NULL) {
+        goto fail;
+    }
+    FMT_OBJ_AND_APPEND(lines, _("Issuer"), obj, level, fail);
+    Py_CLEAR(obj);
+
+    if ((obj1 = Certificate_get_valid_not_before_str(self, NULL)) == NULL) {
+        goto fail;
+    }
+    if ((obj2 = Certificate_get_valid_not_after_str(self, NULL)) == NULL) {
+        goto fail;
+    }
+    if ((obj = obj_sprintf("[%s] - [%s]", obj1, obj2)) == NULL) {
+        goto fail;
+    }
+    Py_CLEAR(obj1);
+    Py_CLEAR(obj2);
+    FMT_OBJ_AND_APPEND(lines, _("Validity"), obj, level, fail);
+    Py_CLEAR(obj);
+
+    return lines;
+ fail:
+    Py_XDECREF(obj);
+    Py_XDECREF(obj1);
+    Py_XDECREF(obj2);
+    return NULL;
 }
 
 static PyObject *
@@ -8998,8 +9382,12 @@ static PyMethodDef Certificate_methods[] = {
     {"make_ca_nickname",       (PyCFunction)Certificate_make_ca_nickname,       METH_NOARGS,                Certificate_make_ca_nickname_doc},
     {"has_signer_in_ca_names", (PyCFunction)Certificate_has_signer_in_ca_names, METH_VARARGS,               Certificate_has_signer_in_ca_names_doc},
     {"verify_hostname",        (PyCFunction)Certificate_verify_hostname,        METH_VARARGS,               Certificate_verify_hostname_doc},
-    {"check_valid_times",      (PyCFunction)Certificate_check_valid_times,      METH_VARARGS,               Certificate_check_valid_times_doc},
+    {"check_valid_times",      (PyCFunction)Certificate_check_valid_times,      METH_VARARGS|METH_KEYWORDS, Certificate_check_valid_times_doc},
+    {"is_ca_cert",             (PyCFunction)Certificate_is_ca_cert,             METH_VARARGS|METH_KEYWORDS, Certificate_is_ca_cert_doc},
     {"verify_now",             (PyCFunction)Certificate_verify_now,             METH_VARARGS,               Certificate_verify_now_doc},
+    {"verify",                 (PyCFunction)Certificate_verify,                 METH_VARARGS,               Certificate_verify_doc},
+    {"verify_with_log",        (PyCFunction)Certificate_verify_with_log,        METH_VARARGS,               Certificate_verify_with_log_doc},
+    {"get_cert_chain",         (PyCFunction)Certificate_get_cert_chain,         METH_VARARGS|METH_KEYWORDS, Certificate_get_cert_chain_doc},
     {"get_extension",          (PyCFunction)Certificate_get_extension,          METH_VARARGS|METH_KEYWORDS, Certificate_get_extension_doc},
     {"format_lines",           (PyCFunction)Certificate_format_lines,           METH_VARARGS|METH_KEYWORDS, generic_format_lines_doc},
     {"format",                 (PyCFunction)Certificate_format,                 METH_VARARGS|METH_KEYWORDS, generic_format_doc},
@@ -9138,7 +9526,9 @@ Certificate_new_from_CERTCertificate(CERTCertificate *cert)
         return NULL;
     }
 
-    self->cert = cert;
+    if ((self->cert = CERT_DupCertificate(cert)) == NULL) {
+        return set_nspr_error(NULL);
+    }
 
     TraceObjNewLeave(self);
     return (PyObject *) self;
@@ -12492,6 +12882,29 @@ PK11Slot_generate_key_pair(PK11Slot *self, PyObject *args)
     return NULL;
 }
 
+PyDoc_STRVAR(PK11Slot_list_certs_doc,
+"list_certs() -> (`Certificate`, ...)\n\
+\n\
+Returns a tuple of `Certificate` objects found in the slot.\n\
+");
+
+static PyObject *
+PK11Slot_list_certs(PK11Slot *self, PyObject *args)
+{
+    CERTCertList *cert_list = NULL;
+    PyObject *tuple = NULL;
+
+    TraceMethodEnter(self);
+
+    if ((cert_list = PK11_ListCertsInSlot(self->slot)) == NULL) {
+        return set_nspr_error(NULL);
+    }
+
+    tuple = CERTCertList_to_tuple(cert_list);
+    CERT_DestroyCertList(cert_list);
+    return tuple;
+}
+
 static PyMethodDef PK11Slot_methods[] = {
     {"is_hw",                             (PyCFunction)PK11Slot_is_hw,                             METH_NOARGS,                PK11Slot_is_hw_doc},
     {"is_present",                        (PyCFunction)PK11Slot_is_present,                        METH_NOARGS,                PK11Slot_is_present_doc},
@@ -12514,6 +12927,7 @@ static PyMethodDef PK11Slot_methods[] = {
     {"get_best_key_length",               (PyCFunction)PK11Slot_get_best_key_length,               METH_VARARGS,               PK11Slot_get_best_key_length_doc},
     {"key_gen",                           (PyCFunction)PK11Slot_key_gen,                           METH_VARARGS,               PK11Slot_key_gen_doc},
     {"generate_key_pair",                 (PyCFunction)PK11Slot_generate_key_pair,                 METH_VARARGS,               PK11Slot_generate_key_pair_doc},
+    {"list_certs",                        (PyCFunction)PK11Slot_list_certs,                        METH_NOARGS,                PK11Slot_list_certs_doc},
     {NULL, NULL}  /* Sentinel */
 };
 
@@ -13346,7 +13760,7 @@ CRLDistributionPt_get_crl_issuer(CRLDistributionPt *self, void *closure)
 static
 PyGetSetDef CRLDistributionPt_getseters[] = {
     {"issuer", (getter)CRLDistributionPt_get_crl_issuer, (setter)NULL,
-     "returns the CRL Issuer as a GeneralName object if defined, returns None if not defined", NULL},
+     "returns the CRL Issuer as a `GeneralName` object if defined, returns None if not defined", NULL},
     {NULL}  /* Sentinel */
 };
 
@@ -17047,6 +17461,576 @@ static PyTypeObject PKCS12DecoderType = {
     PKCS12Decoder_new,				/* tp_new */
 };
 
+
+/* ========================================================================== */
+/* ======================== CertVerifyLogNode Class ========================= */
+/* ========================================================================== */
+
+/* ============================ Attribute Access ============================ */
+
+static PyObject *
+CertVerifyLogNode_get_certificate(CertVerifyLogNode *self, void *closure)
+{
+    TraceMethodEnter(self);
+
+    return Certificate_new_from_CERTCertificate(self->node.cert);
+}
+
+static PyObject *
+CertVerifyLogNode_get_error(CertVerifyLogNode *self, void *closure)
+{
+    TraceMethodEnter(self);
+
+    return PyInt_FromLong(self->node.error);
+}
+
+static PyObject *
+CertVerifyLogNode_get_depth(CertVerifyLogNode *self, void *closure)
+{
+    TraceMethodEnter(self);
+
+    return PyInt_FromLong(self->node.depth);
+}
+
+static
+PyGetSetDef CertVerifyLogNode_getseters[] = {
+    {"certificate", (getter)CertVerifyLogNode_get_certificate, NULL,
+     "returns the certificate as a `Certificate` object", NULL},
+    {"error", (getter)CertVerifyLogNode_get_error, NULL,
+     "returns the error code as an integer", NULL},
+    {"depth", (getter)CertVerifyLogNode_get_depth, NULL,
+     "returns the chain position as an integer", NULL},
+    {NULL}  /* Sentinel */
+};
+
+static PyMemberDef CertVerifyLogNode_members[] = {
+    {NULL}  /* Sentinel */
+};
+
+/* ============================== Class Methods ============================= */
+
+static PyObject *
+CertVerifyLogNodeError_format_lines(CertVerifyLogNode *self, int level, PyObject *lines)
+{
+    RepresentationKind repr_kind = AsEnumName;
+    PyObject *obj = NULL;
+    PyObject *py_cert = NULL;
+    NSPRErrorDesc const *error_desc = NULL;
+    CERTVerifyLogNode *node = NULL;
+
+    if (!lines) {
+        goto fail;
+    }
+
+    node = &self->node;
+
+    if ((error_desc = lookup_nspr_error(node->error)) == NULL) {
+        if ((obj = PyString_FromFormat(_("Unknown error code %ld (%#lx)"),
+                                       node->error, node->error)) == NULL) {
+            goto fail;
+        }
+    } else {
+        if ((obj = PyString_FromFormat("[%s] %s",
+                                       error_desc->name,
+                                       error_desc->string)) == NULL) {
+            goto fail;
+        }
+    }
+    FMT_OBJ_AND_APPEND(lines, _("Error"), obj, level, fail);
+    Py_CLEAR(obj);
+
+    switch (node->error) {
+    case SEC_ERROR_INADEQUATE_KEY_USAGE: {
+        unsigned int flags = (unsigned int)node->arg;
+
+        if ((obj = key_usage_flags(flags, repr_kind)) == NULL) {
+            goto fail;
+        }
+        FMT_OBJ_AND_APPEND(lines, _("Inadequate Key Usage"), obj, level, fail);
+        Py_CLEAR(obj);
+    } break;
+    case SEC_ERROR_INADEQUATE_CERT_TYPE: {
+        unsigned int flags = (unsigned int)node->arg;
+
+        if ((obj = cert_type_flags(flags, repr_kind)) == NULL) {
+            goto fail;
+        }
+        FMT_OBJ_AND_APPEND(lines, _("Inadequate Cert Type"), obj, level, fail);
+        Py_CLEAR(obj);
+    } break;
+    case SEC_ERROR_UNKNOWN_ISSUER:
+    case SEC_ERROR_UNTRUSTED_ISSUER:
+    case SEC_ERROR_EXPIRED_ISSUER_CERTIFICATE:
+        if ((py_cert = Certificate_new_from_CERTCertificate(node->cert)) == NULL) {
+            goto fail;
+        }
+        if ((obj = Certificate_get_issuer((Certificate *)py_cert, NULL)) == NULL) {
+            goto fail;
+        }
+        Py_CLEAR(py_cert);
+
+        FMT_OBJ_AND_APPEND(lines, _("Issuer"), obj, level, fail);
+        Py_CLEAR(obj);
+        break;
+    default:
+        break;
+    }
+    
+    return lines;
+ fail:
+    Py_XDECREF(py_cert);
+    Py_XDECREF(obj);
+    return NULL;
+}
+
+static PyObject *
+CertVerifyLogNode_format_lines(CertVerifyLogNode *self, PyObject *args, PyObject *kwds)
+{
+    static char *kwlist[] = {"level", NULL};
+    int level = 0;
+    PyObject *lines = NULL;
+    PyObject *obj = NULL;
+    Certificate *py_cert = NULL;
+    CERTVerifyLogNode *node = NULL;
+
+    TraceMethodEnter(self);
+
+    node = &self->node;
+
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "|i:format_lines", kwlist, &level))
+        return NULL;
+
+    if ((lines = PyList_New(0)) == NULL) {
+        return NULL;
+    }
+
+    FMT_LABEL_AND_APPEND(lines, _("Certificate"), level, fail);
+
+    if ((py_cert = (Certificate *)Certificate_new_from_CERTCertificate(node->cert)) == NULL) {
+        goto fail;
+    }
+
+    if (Certificate_summary_format_lines(py_cert, level+1, lines) == NULL) {
+        goto fail;
+    }
+
+    if ((obj = PyInt_FromLong(node->depth)) == NULL){
+        goto fail;
+    }
+    FMT_OBJ_AND_APPEND(lines, _("Depth"), obj, level, fail);
+    Py_CLEAR(obj);
+
+    if (CertVerifyLogNodeError_format_lines(self, level, lines) == NULL) {
+        goto fail;
+    }
+
+    return lines;
+ fail:
+    Py_XDECREF(py_cert);
+    Py_XDECREF(obj);
+    Py_XDECREF(lines);
+    return NULL;
+}
+
+static PyObject *
+CertVerifyLogNode_format(CertVerifyLogNode *self, PyObject *args, PyObject *kwds)
+{
+    TraceMethodEnter(self);
+
+    return format_from_lines((format_lines_func)CertVerifyLogNode_format_lines, (PyObject *)self, args, kwds);
+}
+
+static PyObject *
+CertVerifyLogNode_str(CertVerifyLogNode *self)
+{
+    PyObject *py_formatted_result = NULL;
+
+    TraceMethodEnter(self);
+
+    py_formatted_result =  CertVerifyLogNode_format(self, empty_tuple, NULL);
+    return py_formatted_result;
+
+}
+
+
+static PyMethodDef CertVerifyLogNode_methods[] = {
+    {"format_lines", (PyCFunction)CertVerifyLogNode_format_lines,   METH_VARARGS|METH_KEYWORDS, generic_format_lines_doc},
+    {"format",       (PyCFunction)CertVerifyLogNode_format,         METH_VARARGS|METH_KEYWORDS, generic_format_doc},
+    {NULL, NULL}  /* Sentinel */
+};
+
+/* =========================== Class Construction =========================== */
+
+static PyObject *
+CertVerifyLogNode_new(PyTypeObject *type, PyObject *args, PyObject *kwds)
+{
+    CertVerifyLogNode *self;
+
+    TraceObjNewEnter(type);
+
+    if ((self = (CertVerifyLogNode *)type->tp_alloc(type, 0)) == NULL) {
+        return NULL;
+    }
+
+    memset(&self->node, 0, sizeof(self->node));
+
+    TraceObjNewLeave(self);
+    return (PyObject *)self;
+}
+
+static void
+CertVerifyLogNode_dealloc(CertVerifyLogNode* self)
+{
+    TraceMethodEnter(self);
+
+    if (self->node.cert) {
+        CERT_DestroyCertificate(self->node.cert);
+    }
+
+    self->ob_type->tp_free((PyObject*)self);
+}
+
+PyDoc_STRVAR(CertVerifyLogNode_doc,
+"CertVerifyLogNode()\n\
+\n\
+An object detailing specific diagnostic information concerning\n\
+a single failure during certification validation.\n\
+These are collected in a `CertVerifyLog` object.\n\
+");
+
+static PyTypeObject CertVerifyLogNodeType = {
+    PyObject_HEAD_INIT(NULL)
+    0,						/* ob_size */
+    "nss.nss.CertVerifyLogNode",				/* tp_name */
+    sizeof(CertVerifyLogNode),				/* tp_basicsize */
+    0,						/* tp_itemsize */
+    (destructor)CertVerifyLogNode_dealloc,		/* tp_dealloc */
+    0,						/* tp_print */
+    0,						/* tp_getattr */
+    0,						/* tp_setattr */
+    0,						/* tp_compare */
+    0,						/* tp_repr */
+    0,						/* tp_as_number */
+    0,						/* tp_as_sequence */
+    0,						/* tp_as_mapping */
+    0,						/* tp_hash */
+    0,						/* tp_call */
+    (reprfunc)CertVerifyLogNode_str,			/* tp_str */
+    0,						/* tp_getattro */
+    0,						/* tp_setattro */
+    0,						/* tp_as_buffer */
+    Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE,	/* tp_flags */
+    CertVerifyLogNode_doc,				/* tp_doc */
+    (traverseproc)0,				/* tp_traverse */
+    (inquiry)0,					/* tp_clear */
+    0,						/* tp_richcompare */
+    0,						/* tp_weaklistoffset */
+    0,						/* tp_iter */
+    0,						/* tp_iternext */
+    CertVerifyLogNode_methods,				/* tp_methods */
+    CertVerifyLogNode_members,				/* tp_members */
+    CertVerifyLogNode_getseters,				/* tp_getset */
+    0,						/* tp_base */
+    0,						/* tp_dict */
+    0,						/* tp_descr_get */
+    0,						/* tp_descr_set */
+    0,						/* tp_dictoffset */
+    0,						/* tp_init */
+    0,						/* tp_alloc */
+    CertVerifyLogNode_new,			/* tp_new */
+};
+
+static PyObject *
+CertVerifyLogNode_new_from_CERTVerifyLogNode(CERTVerifyLogNode *node)
+{
+    CertVerifyLogNode *self = NULL;
+
+    TraceObjNewEnter(NULL);
+
+    if ((self = (CertVerifyLogNode *) CertVerifyLogNodeType.tp_new(&CertVerifyLogNodeType, NULL, NULL)) == NULL) {
+        return NULL;
+    }
+
+    self->node.cert  = CERT_DupCertificate(node->cert);
+    self->node.error = node->error;
+    self->node.depth = node->depth;
+    self->node.arg   = node->arg;
+    self->node.next  = NULL;
+    self->node.prev  = NULL;
+
+    TraceObjNewLeave(self);
+
+    return (PyObject *) self;
+}
+/* ========================================================================== */
+/* ========================== CertVerifyLog Class =========================== */
+/* ========================================================================== */
+
+/* ============================ Attribute Access ============================ */
+
+static PyObject *
+CertVerifyLog_get_count(CertVerifyLog *self, void *closure)
+{
+    TraceMethodEnter(self);
+
+    return PyInt_FromLong(self->log.count);
+}
+
+static
+PyGetSetDef CertVerifyLog_getseters[] = {
+    {"count", (getter)CertVerifyLog_get_count,    NULL,
+     "number of validation errors", NULL},
+    {NULL}  /* Sentinel */
+};
+
+static PyMemberDef CertVerifyLog_members[] = {
+    {NULL}  /* Sentinel */
+};
+
+/* ============================== Class Methods ============================= */
+
+static PyObject *
+CertVerifyLog_format_lines(CertVerifyLog *self, PyObject *args, PyObject *kwds)
+{
+    static char *kwlist[] = {"level", NULL};
+    int level = 0;
+    PyObject *lines = NULL;
+    PyObject *obj = NULL;
+    Py_ssize_t i, n_items;
+    unsigned int depth = ~0;
+    CertVerifyLogNode *py_node = NULL;
+    Certificate *py_cert = NULL;
+
+    TraceMethodEnter(self);
+
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "|i:format_lines", kwlist, &level))
+        return NULL;
+
+    if ((lines = PyList_New(0)) == NULL) {
+        return NULL;
+    }
+    
+    if ((obj = PyInt_FromLong(self->log.count)) == NULL) {
+        goto fail;
+    }
+    FMT_OBJ_AND_APPEND(lines, _("Validation Errors"), obj, level, fail);
+    Py_CLEAR(obj);
+
+
+    n_items = CertVerifyLog_length(self);
+
+    for (i = 0; i < n_items; i++) {
+        CERTVerifyLogNode *node = NULL;
+
+        py_node = (CertVerifyLogNode *)CertVerifyLog_item(self, i);
+        node = &py_node->node;
+
+        if (depth != node->depth) {
+            depth = node->depth;
+
+            if ((obj = PyString_FromFormat(_("Certificate at chain depth %u"), node->depth)) == NULL) {
+                goto fail;
+            }
+            FMT_LABEL_AND_APPEND(lines, PyString_AsString(obj), level, fail);
+            Py_CLEAR(obj);
+
+            if ((py_cert = (Certificate *)Certificate_new_from_CERTCertificate(node->cert)) == NULL) {
+                goto fail;
+            }
+
+            if (Certificate_summary_format_lines(py_cert, level+1, lines) == NULL) {
+                goto fail;
+            }
+
+            Py_CLEAR(py_cert);
+
+            /* Add blank line between cert and errors */
+            FMT_LABEL_AND_APPEND(lines, NULL, level, fail);
+        }
+
+        if ((obj = PyString_FromFormat(_("Validation Error #%u"), i+1)) == NULL) {
+            goto fail;
+        }
+        FMT_LABEL_AND_APPEND(lines, PyString_AsString(obj), level+1, fail);
+        Py_CLEAR(obj);
+
+        if (CertVerifyLogNodeError_format_lines(py_node, level+2, lines) == NULL) {
+            goto fail;
+        }
+
+        Py_CLEAR(py_node);
+
+        //if (i < n_items-1) {    /* blank separator line */
+        //    FMT_LABEL_AND_APPEND(lines, NULL, level, fail);
+        //}
+
+    }
+
+    return lines;
+ fail:
+    Py_XDECREF(py_node);
+    Py_XDECREF(py_cert);
+    Py_XDECREF(obj);
+    Py_XDECREF(lines);
+    return NULL;
+}
+
+static PyObject *
+CertVerifyLog_format(CertVerifyLog *self, PyObject *args, PyObject *kwds)
+{
+    TraceMethodEnter(self);
+
+    return format_from_lines((format_lines_func)CertVerifyLog_format_lines, (PyObject *)self, args, kwds);
+}
+
+static PyObject *
+CertVerifyLog_str(CertVerifyLog *self)
+{
+    PyObject *py_formatted_result = NULL;
+
+    TraceMethodEnter(self);
+
+    py_formatted_result =  CertVerifyLog_format(self, empty_tuple, NULL);
+    return py_formatted_result;
+
+}
+
+static PyMethodDef CertVerifyLog_methods[] = {
+    {"format_lines", (PyCFunction)CertVerifyLog_format_lines,   METH_VARARGS|METH_KEYWORDS, generic_format_lines_doc},
+    {"format",       (PyCFunction)CertVerifyLog_format,         METH_VARARGS|METH_KEYWORDS, generic_format_doc},
+    {NULL, NULL}  /* Sentinel */
+};
+
+/* =========================== Sequence Protocol ============================ */
+static Py_ssize_t
+CertVerifyLog_length(CertVerifyLog *self)
+{
+    return self->log.count;
+}
+
+static PyObject *
+CertVerifyLog_item(CertVerifyLog *self, register Py_ssize_t i)
+{
+    CERTVerifyLogNode *node = NULL;
+    Py_ssize_t index;
+
+    for (node = self->log.head, index = 0;
+         node && index <= i;
+         node = node->next, index++) {
+        if (i == index) {
+            return CertVerifyLogNode_new_from_CERTVerifyLogNode(node);
+        }
+    }
+
+    PyErr_SetString(PyExc_IndexError, "CertVerifyLog index out of range");
+    return NULL;
+}
+
+
+/* =========================== Class Construction =========================== */
+
+static PyObject *
+CertVerifyLog_new(PyTypeObject *type, PyObject *args, PyObject *kwds)
+{
+    CertVerifyLog *self;
+
+    TraceObjNewEnter(type);
+
+    if ((self = (CertVerifyLog *)type->tp_alloc(type, 0)) == NULL) {
+        return NULL;
+    }
+
+    if ((self->log.arena = PORT_NewArena(DER_DEFAULT_CHUNKSIZE)) == NULL) {
+        type->tp_free(self);
+        return set_nspr_error(NULL);
+    }
+
+    self->log.count = 0;
+    self->log.head = NULL;
+    self->log.tail = NULL;
+
+    TraceObjNewLeave(self);
+    return (PyObject *)self;
+}
+
+static void
+CertVerifyLog_dealloc(CertVerifyLog* self)
+{
+    CERTVerifyLogNode *node = NULL;
+
+    TraceMethodEnter(self);
+
+    for (node = self->log.head; node; node = node->next) {
+        if (node->cert) {
+            CERT_DestroyCertificate(node->cert);
+        }
+    }
+    PORT_FreeArena(self->log.arena, PR_FALSE);
+    
+    self->ob_type->tp_free((PyObject*)self);
+}
+
+PyDoc_STRVAR(CertVerifyLog_doc,
+"CertVerifyLog()\n\
+\n\
+An object which collects diagnostic information during\n\
+certification validation.\n\
+");
+
+static PySequenceMethods CertVerifyLog_as_sequence = {
+    (lenfunc)CertVerifyLog_length,		/* sq_length */
+    0,						/* sq_concat */
+    0,						/* sq_repeat */
+    (ssizeargfunc)CertVerifyLog_item,		/* sq_item */
+    0,						/* sq_slice */
+    0,						/* sq_ass_item */
+    0,						/* sq_ass_slice */
+    0,						/* sq_contains */
+    0,						/* sq_inplace_concat */
+    0,						/* sq_inplace_repeat */
+};
+
+static PyTypeObject CertVerifyLogType = {
+    PyObject_HEAD_INIT(NULL)
+    0,						/* ob_size */
+    "nss.nss.CertVerifyLog",			/* tp_name */
+    sizeof(CertVerifyLog),			/* tp_basicsize */
+    0,						/* tp_itemsize */
+    (destructor)CertVerifyLog_dealloc,		/* tp_dealloc */
+    0,						/* tp_print */
+    0,						/* tp_getattr */
+    0,						/* tp_setattr */
+    0,						/* tp_compare */
+    0,						/* tp_repr */
+    0,						/* tp_as_number */
+    &CertVerifyLog_as_sequence,			/* tp_as_sequence */
+    0,						/* tp_as_mapping */
+    0,						/* tp_hash */
+    0,						/* tp_call */
+    (reprfunc)CertVerifyLog_str,		/* tp_str */
+    0,						/* tp_getattro */
+    0,						/* tp_setattro */
+    0,						/* tp_as_buffer */
+    Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE,	/* tp_flags */
+    CertVerifyLog_doc,				/* tp_doc */
+    (traverseproc)0,				/* tp_traverse */
+    (inquiry)0,					/* tp_clear */
+    0,						/* tp_richcompare */
+    0,						/* tp_weaklistoffset */
+    0,						/* tp_iter */
+    0,						/* tp_iternext */
+    CertVerifyLog_methods,			/* tp_methods */
+    CertVerifyLog_members,			/* tp_members */
+    CertVerifyLog_getseters,			/* tp_getset */
+    0,						/* tp_base */
+    0,						/* tp_dict */
+    0,						/* tp_descr_get */
+    0,						/* tp_descr_set */
+    0,						/* tp_dictoffset */
+    0,						/* tp_init */
+    0,						/* tp_alloc */
+    CertVerifyLog_new,				/* tp_new */
+};
 /* ========================== PK11 Methods =========================== */
 
 static char *
@@ -17192,6 +18176,179 @@ pk11_set_password_callback(PyObject *self, PyObject *args)
     PK11_SetPasswordFunc(PK11_password_callback);
 
     Py_RETURN_NONE;
+}
+
+PyDoc_STRVAR(pk11_list_certs_doc,
+"list_certs(type, [user_data1, ...]) -> (`Certificate`, ...)\n\
+\n\
+:Parameters:\n\
+    type : int\n\
+        PK11CertList* enumerated constant.\n\
+    user_dataN : object ...\n\
+        zero or more caller supplied parameters which will\n\
+        be passed to the password callback function\n\
+\n\
+Given the type of certificates to list return a tuple of `Certificate`\n\
+objects matching that type.\n\
+");
+
+static PyObject *
+pk11_list_certs(PyObject *self, PyObject *args)
+{
+    Py_ssize_t n_base_args = 1;
+    Py_ssize_t argc;
+    PyObject *parse_args = NULL;
+    PyObject *pin_args = NULL;
+    int type = PK11CertListAll;
+    CERTCertList *cert_list = NULL;
+    PyObject *tuple = NULL;
+
+    TraceMethodEnter(self);
+
+    argc = PyTuple_Size(args);
+    if (argc == n_base_args) {
+        Py_INCREF(args);
+        parse_args = args;
+    } else {
+        parse_args = PyTuple_GetSlice(args, 0, n_base_args);
+    }
+    if (!PyArg_ParseTuple(parse_args, "i:list_certs", &type)) {
+        Py_DECREF(parse_args);
+        return NULL;
+    }
+    Py_DECREF(parse_args);
+
+    pin_args = PyTuple_GetSlice(args, n_base_args, argc);
+
+    Py_BEGIN_ALLOW_THREADS
+    if ((cert_list = PK11_ListCerts(type, pin_args)) == NULL) {
+	Py_BLOCK_THREADS
+        Py_DECREF(pin_args);
+        return set_nspr_error(NULL);
+    }
+    Py_END_ALLOW_THREADS
+
+    Py_DECREF(pin_args);
+
+    tuple = CERTCertList_to_tuple(cert_list);
+    CERT_DestroyCertList(cert_list);
+    return tuple;
+}
+
+PyDoc_STRVAR(pk11_find_certs_from_email_addr_doc,
+"find_certs_from_email_addr(email, [user_data1, ...]) -> (`Certificate`, ...)\n\
+\n\
+:Parameters:\n\
+    email : string\n\
+        email address.\n\
+    user_dataN : object ...\n\
+        zero or more caller supplied parameters which will\n\
+        be passed to the password callback function\n\
+\n\
+Given an email address return a tuple of `Certificate`\n\
+objects containing that address.\n\
+");
+
+static PyObject *
+pk11_find_certs_from_email_addr(PyObject *self, PyObject *args)
+{
+    Py_ssize_t n_base_args = 1;
+    Py_ssize_t argc;
+    PyObject *parse_args = NULL;
+    PyObject *pin_args = NULL;
+    char *email_addr = NULL;
+    CERTCertList *cert_list = NULL;
+    PyObject *tuple = NULL;
+
+    TraceMethodEnter(self);
+
+    argc = PyTuple_Size(args);
+    if (argc == n_base_args) {
+        Py_INCREF(args);
+        parse_args = args;
+    } else {
+        parse_args = PyTuple_GetSlice(args, 0, n_base_args);
+    }
+    if (!PyArg_ParseTuple(parse_args, "s:find_certs_from_email_addr",
+                          &email_addr)) {
+        Py_DECREF(parse_args);
+        return NULL;
+    }
+    Py_DECREF(parse_args);
+
+    pin_args = PyTuple_GetSlice(args, n_base_args, argc);
+
+    Py_BEGIN_ALLOW_THREADS
+    if ((cert_list = PK11_FindCertsFromEmailAddress(email_addr, pin_args)) == NULL) {
+	Py_BLOCK_THREADS
+        Py_DECREF(pin_args);
+        return set_nspr_error(NULL);
+    }
+    Py_END_ALLOW_THREADS
+
+    Py_DECREF(pin_args);
+
+    tuple = CERTCertList_to_tuple(cert_list);
+    CERT_DestroyCertList(cert_list);
+    return tuple;
+}
+
+PyDoc_STRVAR(pk11_find_certs_from_nickname_doc,
+"find_certs_from_nickname(email, [user_data1, ...]) -> (`Certificate`, ...)\n\
+\n\
+:Parameters:\n\
+    nickname : string\n\
+        certificate nickname.\n\
+    user_dataN : object ...\n\
+        zero or more caller supplied parameters which will\n\
+        be passed to the password callback function\n\
+\n\
+Given a certificate nickname return a tuple of `Certificate`\n\
+objects matching that nickname.\n\
+");
+
+static PyObject *
+pk11_find_certs_from_nickname(PyObject *self, PyObject *args)
+{
+    Py_ssize_t n_base_args = 1;
+    Py_ssize_t argc;
+    PyObject *parse_args = NULL;
+    PyObject *pin_args = NULL;
+    char *nickname = NULL;
+    CERTCertList *cert_list = NULL;
+    PyObject *tuple = NULL;
+
+    TraceMethodEnter(self);
+
+    argc = PyTuple_Size(args);
+    if (argc == n_base_args) {
+        Py_INCREF(args);
+        parse_args = args;
+    } else {
+        parse_args = PyTuple_GetSlice(args, 0, n_base_args);
+    }
+    if (!PyArg_ParseTuple(parse_args, "s:find_certs_from_nickname",
+                          &nickname)) {
+        Py_DECREF(parse_args);
+        return NULL;
+    }
+    Py_DECREF(parse_args);
+
+    pin_args = PyTuple_GetSlice(args, n_base_args, argc);
+
+    Py_BEGIN_ALLOW_THREADS
+    if ((cert_list = PK11_FindCertsFromNickname(nickname, pin_args)) == NULL) {
+	Py_BLOCK_THREADS
+        Py_DECREF(pin_args);
+        return set_nspr_error(NULL);
+    }
+    Py_END_ALLOW_THREADS
+
+    Py_DECREF(pin_args);
+
+    tuple = CERTCertList_to_tuple(cert_list);
+    CERT_DestroyCertList(cert_list);
+    return tuple;
 }
 
 PyDoc_STRVAR(pk11_find_cert_from_nickname_doc,
@@ -19266,6 +20423,51 @@ cert_x509_key_usage(PyObject *self, PyObject *args, PyObject *kwds)
     return result;
 }
 
+PyDoc_STRVAR(cert_x509_cert_type_doc,
+"x509_cert_type(bitstr, repr_kind=AsEnumDescription) -> (str, ...)\n\
+\n\
+:Parameters:\n\
+    bitstr : SecItem object\n\
+        A SecItem containing a DER encoded bit string.\n\
+    repr_kind : RepresentationKind constant\n\
+        Specifies what the contents of the returned tuple will be.\n\
+        May be one of:\n\
+\n\
+        AsEnum\n\
+            The enumerated constant.\n\
+            (e.g. nss.NS_CERT_TYPE_SSL_SERVER)\n\
+        AsEnumDescription\n\
+            A friendly human readable description of the enumerated constant as a string.\n\
+             (e.g. \"SSL Server\")\n\
+        AsIndex\n\
+            The bit position within the bit string.\n\
+\n\
+Return a tuple of string name for each enabled bit in the key\n\
+usage bit string.\n\
+");
+
+static PyObject *
+cert_x509_cert_type(PyObject *self, PyObject *args, PyObject *kwds)
+{
+    static char *kwlist[] = {"bitstr", "repr_kind", NULL};
+    PyObject *result;
+    SecItem *py_sec_item;
+    SECItem bitstr_item;
+    int repr_kind = AsEnumDescription;
+
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "O!|i:x509_cert_type", kwlist,
+                                     &SecItemType, &py_sec_item, &repr_kind))
+        return NULL;
+
+    if (der_bitstring_to_nss_bitstring(&bitstr_item, &py_sec_item->item) != SECSuccess) {
+        return set_nspr_error(NULL);
+    }
+
+    result = cert_type_bitstr_to_tuple(&bitstr_item, repr_kind);
+
+    return result;
+}
+
 PyDoc_STRVAR(cert_x509_ext_key_usage_doc,
 "x509_ext_key_usage(sec_item, repr_kind=AsString) -> (obj, ...)\n\
 \n\
@@ -19684,11 +20886,21 @@ cert_general_name_type_from_name(PyObject *self, PyObject *args)
 }
 
 PyDoc_STRVAR(cert_cert_usage_flags_doc,
-"cert_usage_flags(flags) -> ['flag_name', ...]\n\
+"cert_usage_flags(flags, repr_kind=AsEnumDescription) -> ['flag_name', ...]\n\
 \n\
 :Parameters:\n\
     flags : int\n\
         certificateUsage* bit flags\n\
+    repr_kind : RepresentationKind constant\n\
+        Specifies what the contents of the returned list will be.\n\
+        May be one of:\n\
+\n\
+        AsEnum\n\
+            The enumerated constant as an integer value.\n\
+        AsEnumName\n\
+            The name of the enumerated constant as a string.\n\
+        AsEnumDescription\n\
+            A friendly human readable description of the enumerated constant as a string.\n\
 \n\
 Given an integer with certificateUsage*\n\
 (e.g. nss.certificateUsageSSLServer) bit flags return a sorted\n\
@@ -19696,25 +20908,115 @@ list of their string names.\n\
 ");
 
 static PyObject *
-cert_cert_usage_flags(PyObject *self, PyObject *args)
+cert_cert_usage_flags(PyObject *self, PyObject *args, PyObject *kwds)
 {
+    static char *kwlist[] = {"flags", "repr_kind", NULL};
     int flags = 0;
+    RepresentationKind repr_kind = AsEnumDescription;
 
     TraceMethodEnter(self);
 
-    if (!PyArg_ParseTuple(args, "i:cert_usage_flags",
-                          &flags))
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "i|i:cert_usage_flags", kwlist,
+                                     &flags, &repr_kind))
         return NULL;
 
-    return cert_usage_flags(flags);
+    return cert_usage_flags(flags, repr_kind);
+}
+
+PyDoc_STRVAR(cert_key_usage_flags_doc,
+"key_usage_flags(flags, repr_kind=AsEnumName) -> ['flag_name', ...]\n\
+\n\
+:Parameters:\n\
+    flags : int\n\
+        KU_* bit flags\n\
+    repr_kind : RepresentationKind constant\n\
+        Specifies what the contents of the returned list will be.\n\
+        May be one of:\n\
+\n\
+        AsEnum\n\
+            The enumerated constant as an integer value.\n\
+        AsEnumName\n\
+            The name of the enumerated constant as a string.\n\
+        AsEnumDescription\n\
+            A friendly human readable description of the enumerated constant as a string.\n\
+\n\
+Given an integer with KU_*\n\
+(e.g. nss.KU_DIGITAL_SIGNATURE) bit flags return a sorted\n\
+list of their string names.\n\
+");
+
+static PyObject *
+cert_key_usage_flags(PyObject *self, PyObject *args, PyObject *kwds)
+{
+    static char *kwlist[] = {"flags", "repr_kind", NULL};
+    int flags = 0;
+    RepresentationKind repr_kind = AsEnumName;
+
+    TraceMethodEnter(self);
+
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "i|i:key_usage_flags", kwlist,
+                                     &flags, &repr_kind))
+        return NULL;
+
+    return key_usage_flags(flags, repr_kind);
+}
+
+PyDoc_STRVAR(cert_cert_type_flags_doc,
+"cert_type_flags(flags, repr_kind=AsEnumName) -> ['flag_name', ...]\n\
+\n\
+:Parameters:\n\
+    flags : int\n\
+        KU_* bit flags\n\
+    repr_kind : RepresentationKind constant\n\
+        Specifies what the contents of the returned list will be.\n\
+        May be one of:\n\
+\n\
+        AsEnum\n\
+            The enumerated constant as an integer value.\n\
+        AsEnumName\n\
+            The name of the enumerated constant as a string.\n\
+        AsEnumDescription\n\
+            A friendly human readable description of the enumerated constant as a string.\n\
+\n\
+\n\
+Given an integer with NS_CERT_TYPE_*\n\
+(e.g. nss.NS_CERT_TYPE_SSL_SERVER) bit flags return a sorted\n\
+list of their string names.\n\
+");
+
+static PyObject *
+cert_cert_type_flags(PyObject *self, PyObject *args, PyObject *kwds)
+{
+    static char *kwlist[] = {"flags", "repr_kind", NULL};
+    int flags = 0;
+    RepresentationKind repr_kind = AsEnumName;
+
+    TraceMethodEnter(self);
+
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "i|i:cert_type_flags", kwlist,
+                          &flags, &repr_kind))
+        return NULL;
+
+    return cert_type_flags(flags, repr_kind);
 }
 
 PyDoc_STRVAR(nss_nss_init_flags_doc,
-"nss_init_flags(flags) -> ['flag_name', ...]\n\
+"nss_init_flags(flags, repr_kind=AsEnumName) -> ['flag_name', ...]\n\
 \n\
 :Parameters:\n\
     flags : int\n\
         NSS_INIT* bit flags\n\
+    repr_kind : RepresentationKind constant\n\
+        Specifies what the contents of the returned list will be.\n\
+        May be one of:\n\
+\n\
+        AsEnum\n\
+            The enumerated constant as an integer value.\n\
+        AsEnumName\n\
+            The name of the enumerated constant as a string.\n\
+        AsEnumDescription\n\
+            A friendly human readable description of the enumerated constant as a string.\n\
+\n\
 \n\
 Given an integer with NSS_INIT*\n\
 (e.g. nss.NSS_INIT_READONLY) bit flags return a sorted\n\
@@ -19722,17 +21024,19 @@ list of their string names.\n\
 ");
 
 static PyObject *
-nss_nss_init_flags(PyObject *self, PyObject *args)
+nss_nss_init_flags(PyObject *self, PyObject *args, PyObject *kwds)
 {
+    static char *kwlist[] = {"flags", "repr_kind", NULL};
     int flags = 0;
+    RepresentationKind repr_kind = AsEnumName;
 
     TraceMethodEnter(self);
 
-    if (!PyArg_ParseTuple(args, "i:nss_init_flags",
-                          &flags))
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "i:nss_init_flags", kwlist,
+                          &flags, &repr_kind))
         return NULL;
 
-    return nss_init_flags(flags);
+    return nss_init_flags(flags, repr_kind);
 }
 
 PyDoc_STRVAR(pkcs12_enable_cipher_doc,
@@ -20176,6 +21480,68 @@ nss_fingerprint_format_lines(PyObject *self, PyObject *args, PyObject *kwds)
     return fingerprint_format_lines(der_item, level);
 }
 
+PyDoc_STRVAR(nss_get_use_pkix_for_validation_doc,
+"get_use_pkix_for_validation() -> flag\n\
+\n\
+Returns the current value of the flag used to enable or disable the\n\
+use of PKIX for certificate validation. See also:\n\
+`set_use_pkix_for_validation`.\n\
+");
+
+static PyObject *
+nss_get_use_pkix_for_validation(PyObject *self, PyObject *args)
+{
+    PRBool flag;
+
+    TraceMethodEnter(self);
+
+    flag = CERT_GetUsePKIXForValidation();
+
+    if (flag) {
+        Py_RETURN_TRUE;
+    } else {
+        Py_RETURN_FALSE;
+    }
+}
+
+PyDoc_STRVAR(nss_set_use_pkix_for_validation_doc,
+"set_use_pkix_for_validation(flag) -> prev_flag\n\
+\n\
+:Parameters:\n\
+    flag : boolean\n\
+        Boolean flag, True to enable PKIX validation,\n\
+        False to disable PKIX validation.\n\
+\n\
+Sets the flag to enable or disable the use of PKIX for certificate\n\
+validation. Returns the previous value of the flag.\n\
+See also: `get_use_pkix_for_validation`.\n\
+");
+
+static PyObject *
+nss_set_use_pkix_for_validation(PyObject *self, PyObject *args)
+{
+    int flag;
+    PRBool prev_flag;
+
+    TraceMethodEnter(self);
+
+    if (!PyArg_ParseTuple(args, "i:set_use_pkix_for_validation",
+                          &flag))
+        return NULL;
+
+    prev_flag = CERT_GetUsePKIXForValidation();
+
+    if (CERT_SetUsePKIXForValidation(flag ? PR_TRUE : PR_FALSE) != SECSuccess) {
+        return set_nspr_error(NULL);
+    }
+
+    if (prev_flag) {
+        Py_RETURN_TRUE;
+    } else {
+        Py_RETURN_FALSE;
+    }
+}
+
 /* List of functions exported by this module. */
 static PyMethodDef
 module_methods[] = {
@@ -20189,6 +21555,9 @@ module_methods[] = {
     {"nss_shutdown_context",             (PyCFunction)nss_nss_shutdown_context,            METH_VARARGS,               nss_nss_shutdown_context_doc},
     {"dump_certificate_cache_info",      (PyCFunction)nss_dump_certificate_cache_info,     METH_NOARGS,                nss_dump_certificate_cache_info_doc},
     {"set_password_callback",            (PyCFunction)pk11_set_password_callback,          METH_VARARGS,               pk11_set_password_callback_doc},
+    {"list_certs",                       (PyCFunction)pk11_list_certs,                     METH_VARARGS,               pk11_list_certs_doc},
+    {"find_certs_from_email_addr",       (PyCFunction)pk11_find_certs_from_email_addr,     METH_VARARGS,               pk11_find_certs_from_email_addr_doc},
+    {"find_certs_from_nickname",         (PyCFunction)pk11_find_certs_from_nickname,       METH_VARARGS,               pk11_find_certs_from_nickname_doc},
     {"find_cert_from_nickname",          (PyCFunction)pk11_find_cert_from_nickname,        METH_VARARGS,               pk11_find_cert_from_nickname_doc},
     {"find_key_by_any_cert",             (PyCFunction)pk11_find_key_by_any_cert,           METH_VARARGS,               pk11_find_key_by_any_cert_doc},
     {"generate_random",                  (PyCFunction)pk11_generate_random,                METH_VARARGS,               pk11_generate_random_doc},
@@ -20239,14 +21608,16 @@ module_methods[] = {
     {"need_pw_init",                     (PyCFunction)pk11_pk11_need_pw_init,              METH_NOARGS,                pk11_pk11_need_pw_init_doc},
     {"token_exists",                     (PyCFunction)pk11_pk11_token_exists,              METH_NOARGS,                pk11_pk11_token_exists_doc},
     {"is_fips",                          (PyCFunction)pk11_pk11_is_fips,                   METH_NOARGS,                pk11_pk11_is_fips_doc},
-    /* jrdpk11 */
     {"decode_der_crl",                   (PyCFunction)cert_decode_der_crl,                 METH_VARARGS|METH_KEYWORDS, cert_decode_der_crl_doc},
     {"read_der_from_file",               (PyCFunction)cert_read_der_from_file,             METH_VARARGS|METH_KEYWORDS, cert_read_der_from_file_doc},
     {"x509_key_usage",                   (PyCFunction)cert_x509_key_usage,                 METH_VARARGS|METH_KEYWORDS, cert_x509_key_usage_doc},
+    {"x509_cert_type",                   (PyCFunction)cert_x509_cert_type,                 METH_VARARGS|METH_KEYWORDS, cert_x509_cert_type_doc},
     {"x509_ext_key_usage",               (PyCFunction)cert_x509_ext_key_usage,             METH_VARARGS|METH_KEYWORDS, cert_x509_ext_key_usage_doc},
     {"x509_alt_name",                    (PyCFunction)cert_x509_alt_name,                  METH_VARARGS|METH_KEYWORDS, cert_x509_alt_name_doc},
-    {"cert_usage_flags",                 (PyCFunction)cert_cert_usage_flags,               METH_VARARGS,               cert_cert_usage_flags_doc},
-    {"nss_init_flags",                   (PyCFunction)nss_nss_init_flags,                  METH_VARARGS,               nss_nss_init_flags_doc},
+    {"cert_usage_flags",                 (PyCFunction)cert_cert_usage_flags,               METH_VARARGS|METH_KEYWORDS, cert_cert_usage_flags_doc},
+    {"key_usage_flags",                  (PyCFunction)cert_key_usage_flags,                METH_VARARGS|METH_KEYWORDS, cert_key_usage_flags_doc},
+    {"cert_type_flags",                  (PyCFunction)cert_cert_type_flags,                METH_VARARGS|METH_KEYWORDS, cert_cert_type_flags_doc},
+    {"nss_init_flags",                   (PyCFunction)nss_nss_init_flags,                  METH_VARARGS|METH_KEYWORDS, nss_nss_init_flags_doc},
     {"pkcs12_enable_cipher",             (PyCFunction)pkcs12_enable_cipher,                METH_VARARGS,               pkcs12_enable_cipher_doc},
     {"pkcs12_enable_all_ciphers",        (PyCFunction)pkcs12_enable_all_ciphers,           METH_NOARGS,                pkcs12_enable_all_ciphers_doc},
     {"pkcs12_set_preferred_cipher",      (PyCFunction)pkcs12_set_preferred_cipher,         METH_VARARGS,               pkcs12_set_preferred_cipher_doc},
@@ -20256,6 +21627,8 @@ module_methods[] = {
     {"pkcs12_set_nickname_collision_callback", (PyCFunction)PKCS12_pkcs12_set_nickname_collision_callback, METH_VARARGS,      PKCS12_pkcs12_set_nickname_collision_callback_doc},
     {"pkcs12_export",                    (PyCFunction)pkcs12_export,                       METH_VARARGS|METH_KEYWORDS, pkcs12_export_doc},
     {"fingerprint_format_lines",         (PyCFunction)nss_fingerprint_format_lines,        METH_VARARGS|METH_KEYWORDS, nss_fingerprint_format_lines_doc},
+    {"get_use_pkix_for_validation",      (PyCFunction)nss_get_use_pkix_for_validation,     METH_NOARGS,                nss_get_use_pkix_for_validation_doc},
+    {"set_use_pkix_for_validation",      (PyCFunction)nss_set_use_pkix_for_validation,     METH_VARARGS,               nss_set_use_pkix_for_validation_doc},
     {NULL, NULL} /* Sentinel */
 };
 
@@ -20298,7 +21671,6 @@ initnss(void)
     if ((empty_tuple = PyTuple_New(0)) == NULL) {
         return;
     }
-
     Py_INCREF(empty_tuple);
 
     TYPE_READY(SecItemType);
@@ -20331,6 +21703,8 @@ initnss(void)
     TYPE_READY(InitContextType);
     TYPE_READY(PKCS12DecodeItemType);
     TYPE_READY(PKCS12DecoderType);
+    TYPE_READY(CertVerifyLogNodeType);
+    TYPE_READY(CertVerifyLogType);
 
     /* Export C API */
     if (PyModule_AddObject(m, "_C_API", PyCObject_FromVoidPtr((void *)&nspr_nss_c_api, NULL)) != 0) {
@@ -20354,6 +21728,26 @@ initnss(void)
     AddIntConstant(generalName);
     AddIntConstant(relativeDistinguishedName);
 
+    AddIntConstant(PK11CertListUnique);
+    AddIntConstant(PK11CertListUser);
+    AddIntConstant(PK11CertListRootUnique);
+    AddIntConstant(PK11CertListCA);
+    AddIntConstant(PK11CertListCAUnique);
+    AddIntConstant(PK11CertListUserUnique);
+    AddIntConstant(PK11CertListAll);
+
+    AddIntConstant(certUsageSSLClient);
+    AddIntConstant(certUsageSSLServer);
+    AddIntConstant(certUsageSSLServerWithStepUp);
+    AddIntConstant(certUsageSSLCA);
+    AddIntConstant(certUsageEmailSigner);
+    AddIntConstant(certUsageEmailRecipient);
+    AddIntConstant(certUsageObjectSigner);
+    AddIntConstant(certUsageUserCertImport);
+    AddIntConstant(certUsageVerifyCA);
+    AddIntConstant(certUsageProtectedObjectSigner);
+    AddIntConstant(certUsageStatusResponder);
+    AddIntConstant(certUsageAnyCA);
 
     AddIntConstant(certificateUsageCheckAllUsages);
     AddIntConstant(certificateUsageSSLClient);
@@ -20417,6 +21811,18 @@ initnss(void)
     AddIntConstant(secCertTimeExpired);
     AddIntConstant(secCertTimeNotValidYet);
 
+    AddIntConstant(KU_DIGITAL_SIGNATURE);
+    AddIntConstant(KU_NON_REPUDIATION);
+    AddIntConstant(KU_KEY_ENCIPHERMENT);
+    AddIntConstant(KU_DATA_ENCIPHERMENT);
+    AddIntConstant(KU_KEY_AGREEMENT);
+    AddIntConstant(KU_KEY_CERT_SIGN);
+    AddIntConstant(KU_CRL_SIGN);
+    AddIntConstant(KU_ENCIPHER_ONLY);
+    AddIntConstant(KU_ALL);
+    AddIntConstant(KU_DIGITAL_SIGNATURE_OR_NON_REPUDIATION);
+    AddIntConstant(KU_KEY_AGREEMENT_OR_ENCIPHERMENT);
+    AddIntConstant(KU_NS_GOVT_APPROVED);
 
     /***************************************************************************
      * CRL Reason

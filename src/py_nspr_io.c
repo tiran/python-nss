@@ -1719,7 +1719,7 @@ Socket_set_socket_option(Socket *self, PyObject *args)
 {
     PyObject *py_option = NULL;
     int option;
-    int bool;
+    int boolean;
     unsigned int uint;
     NetworkAddress *mcaddr = NULL;
     NetworkAddress *ifaddr = NULL;
@@ -1742,25 +1742,25 @@ Socket_set_socket_option(Socket *self, PyObject *args)
 
     switch(option) {
     case PR_SockOpt_Nonblocking:
-        if (!PyArg_ParseTuple(args, "ii:set_socket_option", &option, &bool))
+        if (!PyArg_ParseTuple(args, "ii:set_socket_option", &option, &boolean))
             return NULL;
-        data.value.non_blocking = bool;
+        data.value.non_blocking = boolean;
         break;
     case PR_SockOpt_Linger:
-        if (!PyArg_ParseTuple(args, "iiI:set_socket_option", &option, &bool, &uint))
+        if (!PyArg_ParseTuple(args, "iiI:set_socket_option", &option, &boolean, &uint))
             return NULL;
-        data.value.linger.polarity = bool;
+        data.value.linger.polarity = boolean;
         data.value.linger.linger = uint;
         break;
     case PR_SockOpt_Reuseaddr:
-        if (!PyArg_ParseTuple(args, "ii:set_socket_option", &option, &bool))
+        if (!PyArg_ParseTuple(args, "ii:set_socket_option", &option, &boolean))
             return NULL;
-        data.value.reuse_addr = bool;
+        data.value.reuse_addr = boolean;
         break;
     case PR_SockOpt_Keepalive:
-        if (!PyArg_ParseTuple(args, "ii:set_socket_option", &option, &bool))
+        if (!PyArg_ParseTuple(args, "ii:set_socket_option", &option, &boolean))
             return NULL;
-        data.value.keep_alive = bool;
+        data.value.keep_alive = boolean;
         break;
     case PR_SockOpt_RecvBufferSize:
         if (!PyArg_ParseTuple(args, "iI:set_socket_option", &option, &uint))
@@ -1810,14 +1810,14 @@ Socket_set_socket_option(Socket *self, PyObject *args)
         data.value.mcast_ttl = uint;
         break;
     case PR_SockOpt_McastLoopback:
-        if (!PyArg_ParseTuple(args, "ii:set_socket_option", &option, &bool))
+        if (!PyArg_ParseTuple(args, "ii:set_socket_option", &option, &boolean))
             return NULL;
-        data.value.mcast_loopback = bool;
+        data.value.mcast_loopback = boolean;
         break;
     case PR_SockOpt_NoDelay:
-        if (!PyArg_ParseTuple(args, "ii:set_socket_option", &option, &bool))
+        if (!PyArg_ParseTuple(args, "ii:set_socket_option", &option, &boolean))
             return NULL;
-        data.value.no_delay = bool;
+        data.value.no_delay = boolean;
         break;
     case PR_SockOpt_MaxSegment:
         if (!PyArg_ParseTuple(args, "iI:set_socket_option", &option, &uint))
@@ -1825,9 +1825,9 @@ Socket_set_socket_option(Socket *self, PyObject *args)
         data.value.max_segment = uint;
         break;
     case PR_SockOpt_Broadcast:
-        if (!PyArg_ParseTuple(args, "ii:set_socket_option", &option, &bool))
+        if (!PyArg_ParseTuple(args, "ii:set_socket_option", &option, &boolean))
             return NULL;
-        data.value.broadcast = bool;
+        data.value.broadcast = boolean;
         break;
     default:
         PyErr_SetString(PyExc_ValueError, "set_socket_option: unknown option");
