@@ -326,7 +326,8 @@ def main(argv):
         Extension('nss.error',
                   sources            = ['src/py_nspr_error.c'],
                   include_dirs       = [nss_include_dir, nspr_include_dir],
-                  depends            = ['src/py_nspr_common.h', 'src/py_nspr_error.h'],
+                  depends            = ['src/py_nspr_common.h', 'src/py_nspr_error.h',
+                                         'src/NSPRerrs.h', 'src/SSLerrs.h', 'src/SECerrs.h'],
                   libraries          = ['nspr4'],
                   extra_compile_args = extra_compile_args,
                   )

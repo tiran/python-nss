@@ -1,9 +1,12 @@
-2012-10-24  John Dennis  <jdennis@redhat.com> 0.14
+2013-04-24  John Dennis  <jdennis@redhat.com> 0.14
   External Changes:
   -----------------
 
-  The primary enhancement in this version is support of certifcate
-  validation, especially CA certs which can be done via
+  The primary enhancements in this version is support of certifcate
+  validation, OCSP support, and support for the certificate "Authority
+  Information Access" extension.
+
+  Enhanced certifcate validation including CA certs can be done via
   Certificate.verify() or Certificate.is_ca_cert(). When cert
   validation fails you can now obtain diagnostic information as to why
   the cert failed to validate. This is encapsulated in the
@@ -14,19 +17,52 @@
   Support has also been added for the various key usage and cert type
   entities which feature prominently during cert validation.
 
+
+  * Certificate() constructor signature changed from
+
+    Certificate(data=None, der_is_signed=True)
+
+    to
+
+    Certificate(data, certdb=cert_get_default_certdb(), perm=False, nickname=None)
+
+    This change was necessary because all certs should be added to the
+    NSS temporary database when they are loaded, but earlier code
+    failed to to that. It's is not likely that an previous code was
+    failing to pass initialization data or the der_is_signed flag so
+    this change should be backwards compatible.
+
+  * Error constants were upgraded to include all new NSS and NSPR errors.
+
+  * The password callback did not allow for breaking out of a password
+    prompting loop, now if None is returned from the password callback
+    the password prompting is terminated.
+
+  * nss.nss_shutdown_context now called from InitContext destructor,
+    this assures the context is shutdown even if the programmer forgot
+    to. It's still best to explicitly shut it down, this is just
+    failsafe.
+
+  * Support was added for shutdown callbacks.
+
   * The following classes were added:
     - nss.CertVerifyLogNode
     - nss.CertVerifyLog
     - error.CertVerifyError (exception)
-	
+    - nss.AuthorityInfoAccess
+    - nss.AuthorityInfoAccesses
+
+
   * The following class methods were added:
     - nss.Certificate.is_ca_cert
     - nss.Certificate.verify
     - nss.Certificate.verify_with_log
     - nss.Certificate.get_cert_chain
+    - nss.Certificate.check_ocsp_status
     - nss.PK11Slot.list_certs
     - nss.CertVerifyLogNode.format_lines
     - nss.CertVerifyLog.format_lines
+    - nss.CRLDistributionPts.format_lines
 
   * The following class properties were added:
     - nss.CertVerifyLogNode.certificate
@@ -40,11 +76,24 @@
     - nss.list_certs
     - nss.find_certs_from_email_addr
     - nss.find_certs_from_nickname
+    - nss.nss_get_version
+    - nss.nss_version_check
+    - nss.set_shutdown_callback
     - nss.get_use_pkix_for_validation
     - nss.set_use_pkix_for_validation
+    - nss.enable_ocsp_checking
+    - nss.disable_ocsp_checking
+    - nss.set_ocsp_cache_settings
+    - nss.set_ocsp_failure_mode
+    - nss.set_ocsp_timeout
+    - nss.clear_ocsp_cache
+    - nss.set_ocsp_default_responder
+    - nss.enable_ocsp_default_responder
+    - nss.disable_ocsp_default_responder
 
   * The following files were added:
       doc/examples/verify_cert.py
+      test/test_misc.py
 
   * The following constants were added:
     - nss.KU_DIGITAL_SIGNATURE
@@ -78,6 +127,8 @@
     - nss.certUsageProtectedObjectSigner
     - nss.certUsageStatusResponder
     - nss.certUsageAnyCA
+    - nss.ocspMode_FailureIsVerificationFailure
+    - nss.ocspMode_FailureIsNotAVerificationFailure
 
   * cert_dump.py extended to print NS_CERT_TYPE_EXTENSION
 
@@ -120,11 +171,14 @@
   * Add PRTimeConvert(), used to convert Python time values
     to PRTime, centralizes conversion logic, reduces duplication
 
+  * Add UTF8OrNoneConvert to better handle unicode parameters which
+    are optional.
+
   * Add Certificate_summary_format_lines() utility to generate
     concise certificate identification info for output.
 
 
-	
+
 2012-10-05  John Dennis  <jdennis@redhat.com> 0.13
   * Fix NSS SECITEM_CompareItem bug via workaround.
 
@@ -134,7 +188,7 @@
     - cert_x509_key_usage
 
   * Fix bug when decoding certificate BasicConstraints extension
-	
+
   * Fix hang in setup_certs.
 
   * For NSS >= 3.13 support CERTDB_TERMINAL_RECORD

@@ -148,4 +148,3 @@ typedef PyObject *(*ssizessizeargfunc)(PyObject *, Py_ssize_t, Py_ssize_t);
 #define TraceObjNewEnter(_tp)
 #define TraceObjNewLeave(_obj)
 #endif
-

@@ -251,7 +251,7 @@ def usage():
                         debug, info, warn, error, critical
 -L --logfile filename   log to this file, empty string disables logging to a file
 -v --verbose            be chatty
--d --debug              show run information
+-D --debug              show run information
 -w --password           set the certificate database password
 -d --dbdir              set the datbase directory
 -s --server-subject     set the server's subject

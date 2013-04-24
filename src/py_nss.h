@@ -53,6 +53,7 @@ typedef enum SECItemKindEnum {
     SECITEM_oid,
     SECITEM_utf8_string,
     SECITEM_bit_string,
+    SECITEM_certificate,
 } SECItemKind;
 
 typedef struct {
@@ -282,6 +283,25 @@ typedef struct {
     PyObject_HEAD
     PyObject *py_pts;
 } CRLDistributionPts;
+
+/* ========================================================================== */
+/* ========================== AuthorityInfoAccess Class ===================== */
+/* ========================================================================== */
+
+typedef struct {
+    PyObject_HEAD
+    PRArenaPool *arena;
+    CERTAuthInfoAccess *aia;
+} AuthorityInfoAccess;
+
+/* ========================================================================== */
+/* ========================= AuthorityInfoAccesses Class ==================== */
+/* ========================================================================== */
+
+typedef struct {
+    PyObject_HEAD
+    PyObject *py_aias;
+} AuthorityInfoAccesses;
 
 /* ========================================================================== */
 /* ============================== AuthKeyID Class =========================== */

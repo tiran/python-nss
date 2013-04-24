@@ -49,9 +49,8 @@ def print_extension(level, extension):
 
     elif oid_tag == nss.SEC_OID_X509_CRL_DIST_POINTS:
         pts = nss.CRLDistributionPts(extension.value)
-        i = 1
         print nss.indented_format([(level, 'CRL Distribution Points: [%d total]' % len(pts))])
-        for pt in pts:
+        for i, pt in enumerate(pts):
             print nss.indented_format([(level+1, 'Point[%d]:' % i)])
             names = pt.get_general_names()
             print nss.indented_format([(level+2, 'General Names: [%d total]' % len(names))])
@@ -59,6 +58,14 @@ def print_extension(level, extension):
                 print nss.indented_format([(level+3, '%s:' % name)])
             print nss.indented_format([(level+2, 'Reasons: %s' % (pt.get_reasons(),))])
             print nss.indented_format([(level+2, 'Issuer: %s' % pt.issuer)])
+
+    elif oid_tag == nss.SEC_OID_X509_AUTH_INFO_ACCESS:
+        aias = nss.AuthorityInfoAccesses(extension.value)
+        print nss.indented_format([(level, 'Authority Information Access: [%d total]' % len(aias))])
+        for i, aia in enumerate(aias):
+            print nss.indented_format([(level+1, 'Info[%d]:' % i)])
+            print nss.indented_format([(level+2, 'Method: %s' % (aia.method_str,))])
+            print nss.indented_format([(level+2, 'Location: (%s) %s' % (aia.location.type_string, aia.location.name))])
 
     elif oid_tag == nss.SEC_OID_X509_AUTH_KEY_ID:
         auth_key_id = nss.AuthKeyID(extension.value)
@@ -87,16 +94,17 @@ def print_extension(level, extension):
 # -----------------------------------------------------------------------------
 
 usage_str = '''
--p --pem read the certifcate in PEM ascii format (default)
--d --der read the certifcate in DER binary format
+-p --pem        read the certifcate in PEM ascii format (default)
+-d --der        read the certifcate in DER binary format
+-P --print-cert print the cert using the internal rendering code
 '''
 
 def usage():
     print usage_str
 
 try:
-    opts, args = getopt.getopt(sys.argv[1:], "hpd",
-                               ["help", "pem", "der"])
+    opts, args = getopt.getopt(sys.argv[1:], "hpdP",
+                               ["help", "pem", "der", "print-cert"])
 except getopt.GetoptError:
     # print help information and exit:
     usage()
@@ -105,6 +113,7 @@ except getopt.GetoptError:
 
 filename = 'cert.der'
 is_pem_format = True
+print_cert = False
 
 for o, a in opts:
     if o in ("-H", "--help"):
@@ -114,6 +123,8 @@ for o, a in opts:
         is_pem_format = True
     elif o in ("-d", "--der"):
         is_pem_format = False
+    elif o in ("-P", "--print-cert"):
+        print_cert = True
 
 
 filename = sys.argv[1]
@@ -130,6 +141,10 @@ print "certificate filename=%s" % (filename)
 si = nss.read_der_from_file(filename, is_pem_format)
 # Parse the DER encoded data returning a Certificate object
 cert = nss.Certificate(si)
+
+# Useful for comparing the internal cert rendering to what this script generates.
+if print_cert:
+    print cert
 
 # Get the extension list from the certificate
 extensions = cert.extensions
@@ -164,4 +179,3 @@ print nss.indented_format([(1, 'Fingerprint (SHA1):')])
 print nss.indented_format(nss.make_line_fmt_tuples(2,
                                                    nss.data_to_hex(nss.sha1_digest(cert.der_data),
                                                                    nss.OCTETS_PER_LINE_DEFAULT)))
-

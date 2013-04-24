@@ -352,8 +352,6 @@ NewType_new_from_NSSType(NSSType *id)
 // SECKEY_DestroyPrivateKeyList	   SECKEY_DestroyPublicKey
 // SECKEY_DestroyPublicKeyList	   SECKEY_DestroySubjectPublicKeyInfo
 
-#define CERT_DecodeDERCertificate __CERT_DecodeDERCertificate
-
 #define PY_SSIZE_T_CLEAN
 #include "Python.h"
 #include "structmember.h"
@@ -373,6 +371,7 @@ NewType_new_from_NSSType(NSSType *id)
 #include "secpkcs5.h"
 #include "p12plcy.h"
 #include "ciferfam.h"
+#include "ocsp.h"
 
 #if (NSS_VMAJOR > 3) || (NSS_VMAJOR == 3 && NSS_VMINOR >= 13)
 #define HAVE_RSA_PSS
@@ -1392,43 +1391,43 @@ static AsciiEscapes ascii_encoding_table[256] = {
 };
 
 /* From nss/cmd/certutil/keystuff.c */
-static const unsigned char P[] = { 0, 
-       0x98, 0xef, 0x3a, 0xae, 0x70, 0x98, 0x9b, 0x44, 
-       0xdb, 0x35, 0x86, 0xc1, 0xb6, 0xc2, 0x47, 0x7c, 
-       0xb4, 0xff, 0x99, 0xe8, 0xae, 0x44, 0xf2, 0xeb, 
-       0xc3, 0xbe, 0x23, 0x0f, 0x65, 0xd0, 0x4c, 0x04, 
-       0x82, 0x90, 0xa7, 0x9d, 0x4a, 0xc8, 0x93, 0x7f, 
-       0x41, 0xdf, 0xf8, 0x80, 0x6b, 0x0b, 0x68, 0x7f, 
-       0xaf, 0xe4, 0xa8, 0xb5, 0xb2, 0x99, 0xc3, 0x69, 
-       0xfb, 0x3f, 0xe7, 0x1b, 0xd0, 0x0f, 0xa9, 0x7a, 
-       0x4a, 0x04, 0xbf, 0x50, 0x9e, 0x22, 0x33, 0xb8, 
-       0x89, 0x53, 0x24, 0x10, 0xf9, 0x68, 0x77, 0xad, 
-       0xaf, 0x10, 0x68, 0xb8, 0xd3, 0x68, 0x5d, 0xa3, 
-       0xc3, 0xeb, 0x72, 0x3b, 0xa0, 0x0b, 0x73, 0x65, 
-       0xc5, 0xd1, 0xfa, 0x8c, 0xc0, 0x7d, 0xaa, 0x52, 
-       0x29, 0x34, 0x44, 0x01, 0xbf, 0x12, 0x25, 0xfe, 
-       0x18, 0x0a, 0xc8, 0x3f, 0xc1, 0x60, 0x48, 0xdb, 
+static const unsigned char P[] = { 0,
+       0x98, 0xef, 0x3a, 0xae, 0x70, 0x98, 0x9b, 0x44,
+       0xdb, 0x35, 0x86, 0xc1, 0xb6, 0xc2, 0x47, 0x7c,
+       0xb4, 0xff, 0x99, 0xe8, 0xae, 0x44, 0xf2, 0xeb,
+       0xc3, 0xbe, 0x23, 0x0f, 0x65, 0xd0, 0x4c, 0x04,
+       0x82, 0x90, 0xa7, 0x9d, 0x4a, 0xc8, 0x93, 0x7f,
+       0x41, 0xdf, 0xf8, 0x80, 0x6b, 0x0b, 0x68, 0x7f,
+       0xaf, 0xe4, 0xa8, 0xb5, 0xb2, 0x99, 0xc3, 0x69,
+       0xfb, 0x3f, 0xe7, 0x1b, 0xd0, 0x0f, 0xa9, 0x7a,
+       0x4a, 0x04, 0xbf, 0x50, 0x9e, 0x22, 0x33, 0xb8,
+       0x89, 0x53, 0x24, 0x10, 0xf9, 0x68, 0x77, 0xad,
+       0xaf, 0x10, 0x68, 0xb8, 0xd3, 0x68, 0x5d, 0xa3,
+       0xc3, 0xeb, 0x72, 0x3b, 0xa0, 0x0b, 0x73, 0x65,
+       0xc5, 0xd1, 0xfa, 0x8c, 0xc0, 0x7d, 0xaa, 0x52,
+       0x29, 0x34, 0x44, 0x01, 0xbf, 0x12, 0x25, 0xfe,
+       0x18, 0x0a, 0xc8, 0x3f, 0xc1, 0x60, 0x48, 0xdb,
        0xad, 0x93, 0xb6, 0x61, 0x67, 0xd7, 0xa8, 0x2d };
 static const unsigned char Q[] = { 0,
-       0xb5, 0xb0, 0x84, 0x8b, 0x44, 0x29, 0xf6, 0x33, 
-       0x59, 0xa1, 0x3c, 0xbe, 0xd2, 0x7f, 0x35, 0xa1, 
+       0xb5, 0xb0, 0x84, 0x8b, 0x44, 0x29, 0xf6, 0x33,
+       0x59, 0xa1, 0x3c, 0xbe, 0xd2, 0x7f, 0x35, 0xa1,
        0x76, 0x27, 0x03, 0x81                         };
-static const unsigned char G[] = { 
-       0x04, 0x0e, 0x83, 0x69, 0xf1, 0xcd, 0x7d, 0xe5, 
-       0x0c, 0x78, 0x93, 0xd6, 0x49, 0x6f, 0x00, 0x04, 
-       0x4e, 0x0e, 0x6c, 0x37, 0xaa, 0x38, 0x22, 0x47, 
-       0xd2, 0x58, 0xec, 0x83, 0x12, 0x95, 0xf9, 0x9c, 
-       0xf1, 0xf4, 0x27, 0xff, 0xd7, 0x99, 0x57, 0x35, 
-       0xc6, 0x64, 0x4c, 0xc0, 0x47, 0x12, 0x31, 0x50, 
-       0x82, 0x3c, 0x2a, 0x07, 0x03, 0x01, 0xef, 0x30, 
-       0x09, 0x89, 0x82, 0x41, 0x76, 0x71, 0xda, 0x9e, 
-       0x57, 0x8b, 0x76, 0x38, 0x37, 0x5f, 0xa5, 0xcd, 
-       0x32, 0x84, 0x45, 0x8d, 0x4c, 0x17, 0x54, 0x2b, 
-       0x5d, 0xc2, 0x6b, 0xba, 0x3e, 0xa0, 0x7b, 0x95, 
-       0xd7, 0x00, 0x42, 0xf7, 0x08, 0xb8, 0x83, 0x87, 
-       0x60, 0xe1, 0xe5, 0xf4, 0x1a, 0x54, 0xc2, 0x20, 
-       0xda, 0x38, 0x3a, 0xd1, 0xb6, 0x10, 0xf4, 0xcb, 
-       0x35, 0xda, 0x97, 0x92, 0x87, 0xd6, 0xa5, 0x37, 
+static const unsigned char G[] = {
+       0x04, 0x0e, 0x83, 0x69, 0xf1, 0xcd, 0x7d, 0xe5,
+       0x0c, 0x78, 0x93, 0xd6, 0x49, 0x6f, 0x00, 0x04,
+       0x4e, 0x0e, 0x6c, 0x37, 0xaa, 0x38, 0x22, 0x47,
+       0xd2, 0x58, 0xec, 0x83, 0x12, 0x95, 0xf9, 0x9c,
+       0xf1, 0xf4, 0x27, 0xff, 0xd7, 0x99, 0x57, 0x35,
+       0xc6, 0x64, 0x4c, 0xc0, 0x47, 0x12, 0x31, 0x50,
+       0x82, 0x3c, 0x2a, 0x07, 0x03, 0x01, 0xef, 0x30,
+       0x09, 0x89, 0x82, 0x41, 0x76, 0x71, 0xda, 0x9e,
+       0x57, 0x8b, 0x76, 0x38, 0x37, 0x5f, 0xa5, 0xcd,
+       0x32, 0x84, 0x45, 0x8d, 0x4c, 0x17, 0x54, 0x2b,
+       0x5d, 0xc2, 0x6b, 0xba, 0x3e, 0xa0, 0x7b, 0x95,
+       0xd7, 0x00, 0x42, 0xf7, 0x08, 0xb8, 0x83, 0x87,
+       0x60, 0xe1, 0xe5, 0xf4, 0x1a, 0x54, 0xc2, 0x20,
+       0xda, 0x38, 0x3a, 0xd1, 0xb6, 0x10, 0xf4, 0xcb,
+       0x35, 0xda, 0x97, 0x92, 0x87, 0xd6, 0xa5, 0x37,
        0x62, 0xb4, 0x93, 0x4a, 0x15, 0x21, 0xa5, 0x10 };
 
 static const SECKEYPQGParams default_pqg_params = {
@@ -1481,6 +1480,7 @@ static PyTypeObject CertVerifyLogType;
 
 /* === Forward Declarations */
 
+static PyTypeObject CertDBType;
 static PyTypeObject CertificateType;
 static PyTypeObject PK11SlotType;
 
@@ -1666,10 +1666,8 @@ set_thread_local(const char *name, PyObject *obj);
 static PyObject *
 get_thread_local(const char *name);
 
-#if 0                           /* not currently used */
 static int
 del_thread_local(const char *name);
-#endif
 
 static PyObject *
 SECItem_to_hex(SECItem *item, int octets_per_line, char *separator);
@@ -1685,6 +1683,9 @@ cert_x509_cert_type(PyObject *self, PyObject *args, PyObject *kwds);
 
 PyObject *
 CRLDistributionPts_new_from_SECItem(SECItem *item);
+
+PyObject *
+AuthorityInfoAccesses_new_from_SECItem(SECItem *item);
 
 PyObject *
 AuthKeyID_new_from_SECItem(SECItem *item);
@@ -1704,14 +1705,8 @@ DN_new_from_CERTName(CERTName *name);
 PyObject *
 AlgorithmID_new_from_SECAlgorithmID(SECAlgorithmID *id);
 
-static int
-Certificate_init_from_signed_der_secitem(Certificate *self, SECItem *der);
-
 static PyObject *
 Certificate_new_from_signed_der_secitem(SECItem *der);
-
-static int
-Certificate_init_from_unsigned_der_secitem(Certificate *self, SECItem *der);
 
 static PyObject *
 Certificate_get_subject(Certificate *self, void *closure);
@@ -2164,7 +2159,7 @@ CERTCertList_to_tuple(CERTCertList *cert_list)
     if ((tuple = PyTuple_New(n_certs)) == NULL) {
         return NULL;
     }
-    
+
     for (node = CERT_LIST_HEAD(cert_list), i = 0;
          !CERT_LIST_END(node, cert_list);
          node = CERT_LIST_NEXT(node), i++) {
@@ -2550,6 +2545,47 @@ CERT_CopyAuthKeyID(PRArenaPool *arena, CERTAuthKeyID **pdst, CERTAuthKeyID *src)
     return result;
 }
 
+/*
+ * NSS WART
+ * There is no public API to copy a CERTAuthInfoAccess
+ */
+static SECStatus
+CERT_CopyAuthInfoAccess(PRArenaPool *arena, CERTAuthInfoAccess **pdst, CERTAuthInfoAccess *src)
+{
+    SECStatus result = SECSuccess;
+    void *mark = NULL;
+    CERTAuthInfoAccess *dst;
+
+    mark = PORT_ArenaMark(arena);
+
+    if ((dst = PORT_ArenaZNew(arena, CERTAuthInfoAccess)) == NULL) {
+        result = SECFailure;
+        goto exit;
+    }
+
+    if ((result = SECITEM_CopyItem(arena, &dst->method, &src->method)) != SECSuccess) {
+        goto exit;
+    }
+
+    if ((result = SECITEM_CopyItem(arena, &dst->derLocation, &src->derLocation)) != SECSuccess) {
+        goto exit;
+    }
+
+    if ((result = CERT_CopyGeneralName(arena, &dst->location, src->location)) != SECSuccess) {
+        goto exit;
+    }
+
+ exit:
+    if (result == SECSuccess) {
+        *pdst = dst;
+        PORT_ArenaUnmark(arena, mark);
+    } else {
+        *pdst = NULL;
+        PORT_ArenaRelease(arena, mark);
+    }
+    return result;
+}
+
 static int
 oid_tag_from_name(const char *name)
 {
@@ -2888,7 +2924,7 @@ get_thread_local(const char *name)
     return PyDict_GetItemString(thread_local_dict, name);
 }
 
-#if 0                           /* not currently used */
+
 /* Remove named item from thread local storage, return 0 for success, -1 on failure */
 static int
 del_thread_local(const char *name)
@@ -2913,7 +2949,6 @@ del_thread_local(const char *name)
 
     return PyDict_DelItemString(thread_local_dict, name);
 }
-#endif
 
 static int
 PRTimeConvert(PyObject *obj, PRTime *param)
@@ -2943,6 +2978,7 @@ PRTimeConvert(PyObject *obj, PRTime *param)
     return 0;
 }
 
+// FIXME, should invoke PK11_GetInternalKeySlot(), return PK11SlotInfo *slot;
 static int
 PK11SlotOrNoneConvert(PyObject *obj, PyObject **param)
 {
@@ -3012,6 +3048,38 @@ SymKeyOrNoneConvert(PyObject *obj, PyObject **param)
 
     PyErr_Format(PyExc_TypeError, "must be %.50s or None, not %.50s",
                  PK11SymKeyType.tp_name, Py_TYPE(obj)->tp_name);
+    return 0;
+}
+
+static int
+UTF8OrNoneConvert(PyObject *obj, PyObject **param)
+{
+    if (!obj) {
+        *param = NULL;
+        return 1;
+    }
+
+    if (PyNone_Check(obj)) {
+        *param = NULL;
+        return 1;
+    }
+
+    if (PyString_Check(obj)) {
+        Py_INCREF(obj);
+        *param = obj;
+        return 1;
+    }
+
+    if  (PyUnicode_Check(obj)) {
+        if ((*param = PyUnicode_AsUTF8String(obj)) == NULL) {
+            return 0;
+        }
+        return 1;
+    }
+
+    PyErr_Format(PyExc_TypeError, "must be a string or None, not %.200s",
+                 Py_TYPE(obj)->tp_name);
+
     return 0;
 }
 
@@ -4436,7 +4504,7 @@ cert_trust_flags_str(unsigned int flags, RepresentationKind repr_kind)
 {
     BIT_FLAGS_TO_LIST_PROLOGUE();
 
-#if NSS_VMAJOR >= 3 && NSS_VMINOR >= 13
+#if (NSS_VMAJOR > 3) || (NSS_VMAJOR == 3 && NSS_VMINOR >= 13)
     BIT_FLAGS_TO_LIST(CERTDB_TERMINAL_RECORD,   _("Terminal Record"));
 #else
     BIT_FLAGS_TO_LIST(CERTDB_VALID_PEER,        _("Valid Peer"));
@@ -7735,7 +7803,7 @@ static PyTypeObject CertDBType = {
 };
 
 PyObject *
-CertDB_new_from_CERTCertDBHandle(CERTCertDBHandle *cert_handle)
+CertDB_new_from_CERTCertDBHandle(CERTCertDBHandle *certdb_handle)
 {
     CertDB *self = NULL;
 
@@ -7744,7 +7812,7 @@ CertDB_new_from_CERTCertDBHandle(CERTCertDBHandle *cert_handle)
         return NULL;
     }
 
-    self->handle = cert_handle;
+    self->handle = certdb_handle;
 
     TraceObjNewLeave(self);
     return (PyObject *) self;
@@ -7854,7 +7922,6 @@ CertificateExtension_format_lines(CertificateExtension *self, PyObject *args, Py
 {
     static char *kwlist[] = {"level", NULL};
     int level = 0;
-    Py_ssize_t len, i;
     PyObject *lines = NULL;
     PyObject *obj = NULL;
     PyObject *obj1 = NULL;
@@ -7929,26 +7996,16 @@ CertificateExtension_format_lines(CertificateExtension *self, PyObject *args, Py
         if ((obj = CRLDistributionPts_new_from_SECItem(&self->py_value->item)) == NULL) {
             goto fail;
         }
-        len = PyObject_Size(obj);
-        if ((obj1 = PyString_FromFormat("CRL Distribution Points: [%d total]", len)) == NULL) {
+        CALL_FORMAT_LINES_AND_APPEND(lines, obj, level, fail);
+        Py_CLEAR(obj);
+        break;
+
+    case SEC_OID_X509_AUTH_INFO_ACCESS:
+        if ((obj = AuthorityInfoAccesses_new_from_SECItem(&self->py_value->item)) == NULL) {
             goto fail;
         }
-        FMT_OBJ_AND_APPEND(lines, NULL, obj1, level, fail);
-        Py_CLEAR(obj1);
-
-        for (i = 0; i < len; i++) {
-            if ((obj1 = PyString_FromFormat("Point [%d]:", i+1)) == NULL) {
-                goto fail;
-            }
-            FMT_OBJ_AND_APPEND(lines, NULL, obj1, level+1, fail);
-            Py_CLEAR(obj1);
-            if ((obj1 = PySequence_GetItem(obj, i)) == NULL) {
-                goto fail;
-            }
-            CALL_FORMAT_LINES_AND_APPEND(lines, obj1, level+2, fail);
-            Py_CLEAR(obj1);
-        }
-
+        CALL_FORMAT_LINES_AND_APPEND(lines, obj, level, fail);
+        Py_CLEAR(obj);
         break;
 
     case SEC_OID_X509_AUTH_KEY_ID:
@@ -8600,11 +8657,11 @@ PyDoc_STRVAR(Certificate_check_valid_times_doc,
 "check_valid_times(time=now, allow_override=False) --> validity\n\
 \n\
 :Parameters:\n\
-    time : number\n\
+    time : number or None\n\
         an optional point in time as number of microseconds\n\
         since the NSPR epoch, midnight (00:00:00) 1 January\n\
         1970 UTC, either as an integer or a float. If time \n\
-        is not specified the current time is used.\n\
+        is None the current time is used.\n\
     allow_override : bool\n\
         If True then check to see if the invalidity has\n\
         been overridden by the user, defaults to False.\n\
@@ -8787,11 +8844,11 @@ PyDoc_STRVAR(Certificate_verify_doc,
     required_usages : integer\n\
         A bitfield of all cert usages that are required for verification\n\
         to succeed. If zero return all possible valid usages.\n\
-    time : number\n\
+    time : number or None\n\
         an optional point in time as number of microseconds\n\
         since the NSPR epoch, midnight (00:00:00) 1 January\n\
         1970 UTC, either as an integer or a float. If time \n\
-        is not specified the current time is used.\n\
+        is None the current time is used.\n\
     user_dataN : object\n\
         zero or more caller supplied parameters which will\n\
         be passed to the password callback function\n\
@@ -8899,11 +8956,11 @@ PyDoc_STRVAR(Certificate_verify_with_log_doc,
     required_usages : integer\n\
         A bitfield of all cert usages that are required for verification\n\
         to succeed. If zero return all possible valid usages.\n\
-    time : number\n\
+    time : number or None\n\
         an optional point in time as number of microseconds\n\
         since the NSPR epoch, midnight (00:00:00) 1 January\n\
         1970 UTC, either as an integer or a float. If time \n\
-        is not specified the current time is used.\n\
+        is None the current time is used.\n\
     user_dataN : object\n\
         zero or more caller supplied parameters which will\n\
         be passed to the password callback function\n\
@@ -8993,6 +9050,99 @@ Certificate_verify_with_log(Certificate *self, PyObject *args)
     Py_DECREF(pin_args);
 
     return Py_BuildValue("KN", returned_usages, py_log);
+}
+
+PyDoc_STRVAR(Certificate_check_ocsp_status_doc,
+"check_ocsp_status(certdb, time, [user_data1, ...]) -> boolean\n\
+\n\
+:Parameters:\n\
+    certdb : CertDB object\n\
+        CertDB certificate database object.\n\
+    time : number or None\n\
+        Time for which status is to be determined.\n\
+        Time as number of microseconds since the NSPR epoch, midnight\n\
+        (00:00:00) 1 January 1970 UTC, either as an integer or a\n\
+        float. If time is None the current time is used.\n\
+    user_dataN : object\n\
+        zero or more caller supplied parameters which will\n\
+        be passed to the password callback function\n\
+\n\
+Checks the status of a certificate via OCSP.  Will only check status for\n\
+a certificate that has an AIA (Authority Information Access) extension\n\
+for OCSP or when a \"default responder\" is specified and enabled.\n\
+(If no AIA extension for OCSP and no default responder in place, the\n\
+cert is considered to have a good status.\n\
+\n\
+Returns True if an approved OCSP responder knows the cert\n\
+and returns a non-revoked status for it. Otherwise a `error.NSPRError`\n\
+is raised and it's error_code property may be one of the following:\n\
+\n\
+    - SEC_ERROR_OCSP_BAD_HTTP_RESPONSE\n\
+    - SEC_ERROR_OCSP_FUTURE_RESPONSE\n\
+    - SEC_ERROR_OCSP_MALFORMED_REQUEST\n\
+    - SEC_ERROR_OCSP_MALFORMED_RESPONSE\n\
+    - SEC_ERROR_OCSP_OLD_RESPONSE\n\
+    - SEC_ERROR_OCSP_REQUEST_NEEDS_SIG\n\
+    - SEC_ERROR_OCSP_SERVER_ERROR\n\
+    - SEC_ERROR_OCSP_TRY_SERVER_LATER\n\
+    - SEC_ERROR_OCSP_UNAUTHORIZED_REQUEST\n\
+    - SEC_ERROR_OCSP_UNAUTHORIZED_RESPONSE\n\
+    - SEC_ERROR_OCSP_UNKNOWN_CERT\n\
+    - SEC_ERROR_OCSP_UNKNOWN_RESPONSE_STATUS\n\
+    - SEC_ERROR_OCSP_UNKNOWN_RESPONSE_TYPE\n\
+\n\
+    - SEC_ERROR_BAD_SIGNATURE\n\
+    - SEC_ERROR_CERT_BAD_ACCESS_LOCATION\n\
+    - SEC_ERROR_INVALID_TIME\n\
+    - SEC_ERROR_REVOKED_CERTIFICATE\n\
+    - SEC_ERROR_UNKNOWN_ISSUER\n\
+    - SEC_ERROR_UNKNOWN_SIGNER\n\
+\n\
+Other errors are possible failures in cert verification\n\
+(e.g. SEC_ERROR_REVOKED_CERTIFICATE, SEC_ERROR_UNTRUSTED_ISSUER) when\n\
+verifying the signer's cert, or other low-level problems.\n\
+");
+static PyObject *
+Certificate_check_ocsp_status(Certificate *self, PyObject *args)
+{
+    Py_ssize_t n_base_args = 2;
+    CertDB *py_certdb = NULL;
+    Py_ssize_t argc;
+    PyObject *parse_args = NULL;
+    PyObject *pin_args = NULL;
+
+    PRTime pr_time = 0;
+
+    TraceMethodEnter(self);
+
+    argc = PyTuple_Size(args);
+    if (argc == n_base_args) {
+        Py_INCREF(args);
+        parse_args = args;
+    } else {
+        parse_args = PyTuple_GetSlice(args, 0, n_base_args);
+    }
+    if (!PyArg_ParseTuple(args, "O&O&:check_ocsp_status",
+                          &CertDBType, &py_certdb,
+                          PRTimeConvert, &pr_time)) {
+        Py_DECREF(parse_args);
+        return NULL;
+    }
+    Py_DECREF(parse_args);
+
+    pin_args = PyTuple_GetSlice(args, n_base_args, argc);
+
+    Py_BEGIN_ALLOW_THREADS
+    if (CERT_CheckOCSPStatus(py_certdb->handle, self->cert,
+                             pr_time, pin_args) != SECSuccess) {
+	Py_BLOCK_THREADS
+        Py_DECREF(pin_args);
+        return set_nspr_error(NULL);
+    }
+    Py_END_ALLOW_THREADS
+
+    Py_DECREF(pin_args);
+    Py_RETURN_TRUE;
 }
 
 PyDoc_STRVAR(Certificate_get_extension_doc,
@@ -9108,11 +9258,11 @@ PyDoc_STRVAR(Certificate_get_cert_chain_doc,
 "get_cert_chain(time=now, usages=certUsageAnyCA) -> (`Certificate`, ...)\n\
 \n\
 :Parameters:\n\
-    time : number\n\
+    time : number or None\n\
         an optional point in time as number of microseconds\n\
         since the NSPR epoch, midnight (00:00:00) 1 January\n\
         1970 UTC, either as an integer or a float. If time \n\
-        is not specified the current time is used.\n\
+        is None the current time is used.\n\
     usages : integer\n\
         a certUsage* enumerated constant\n\
 \n\
@@ -9387,6 +9537,7 @@ static PyMethodDef Certificate_methods[] = {
     {"verify_now",             (PyCFunction)Certificate_verify_now,             METH_VARARGS,               Certificate_verify_now_doc},
     {"verify",                 (PyCFunction)Certificate_verify,                 METH_VARARGS,               Certificate_verify_doc},
     {"verify_with_log",        (PyCFunction)Certificate_verify_with_log,        METH_VARARGS,               Certificate_verify_with_log_doc},
+    {"check_ocsp_status",      (PyCFunction)Certificate_check_ocsp_status,      METH_VARARGS,               Certificate_check_ocsp_status_doc},
     {"get_cert_chain",         (PyCFunction)Certificate_get_cert_chain,         METH_VARARGS|METH_KEYWORDS, Certificate_get_cert_chain_doc},
     {"get_extension",          (PyCFunction)Certificate_get_extension,          METH_VARARGS|METH_KEYWORDS, Certificate_get_extension_doc},
     {"format_lines",           (PyCFunction)Certificate_format_lines,           METH_VARARGS|METH_KEYWORDS, generic_format_lines_doc},
@@ -9425,45 +9576,93 @@ Certificate_dealloc(Certificate* self)
 }
 
 PyDoc_STRVAR(Certificate_doc,
-"Certificate(data=None, der_is_signed=True)\n\
+"Certificate(data, certdb=get_default_certdb(), perm=False, nickname=None)\n\
 \n\
 :Parameters:\n\
     data : SecItem or str or any buffer compatible object\n\
         Data to initialize the certificate from, must be in DER format\n\
-    der_is_signed : bool\n\
-        True if certficate DER data is wrapped by signed DER data.\n\
-        If False then DER data is certifcate only.\n\
+    certdb : CertDB object or None\n\
+        CertDB certificate database object, if None then the default\n\
+        certdb will be supplied by calling `nss.get_default_certdb()`.\n\
+    perm : bool\n\
+        True if certificate should be permantely stored in the certdb.\n\
+    nickname : string\n\
+        certificate nickname.\n\
 \n\
-An object representing a Certificate");
+An X509 Certificate object.\n\
+\n\
+The Certificate is initialized from the supplied DER data. The\n\
+Certificate is added to the NSS temporary database. If perm is True\n\
+then the Certificate is also permanently written into certdb.\n\
+");
 
 static int
 Certificate_init(Certificate *self, PyObject *args, PyObject *kwds)
 {
-    static char *kwlist[] = {"data", "der_is_signed", NULL};
+    static char *kwlist[] = {"data", "certdb", "perm", "nickname", NULL};
     PyObject *py_data = NULL;
-    int der_is_signed = 1;
+    CertDB *py_certdb = NULL;
+    PyObject *py_perm = NULL;
+    PyObject *py_nickname = NULL;
+
     SECItem tmp_item;
     SECItem *der_item = NULL;
+    CERTCertDBHandle *certdb_handle = NULL;
+    SECItem *der_certs = NULL;
+    CERTCertificate **certs = NULL;
+    PRBool perm = PR_FALSE;
+    unsigned int n_certs = 1;
+    int result = 0;
 
     TraceMethodEnter(self);
 
-    if (!PyArg_ParseTupleAndKeywords(args, kwds, "|Oi:Certificate", kwlist,
-                                     &py_data, &der_is_signed))
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "O|O!O!O&:Certificate", kwlist,
+                                     &py_data,
+                                     &CertDBType, &py_certdb,
+                                     &PyBool_Type, &py_perm,
+                                     UTF8OrNoneConvert, &py_nickname))
         return -1;
 
     SECITEM_PARAM(py_data, der_item, tmp_item, false, "data");
 
-    if (py_data) {
-        if (der_is_signed) {
-            return Certificate_init_from_signed_der_secitem(self, der_item);
-        } else {
-            return Certificate_init_from_unsigned_der_secitem(self, der_item);
-        }
+    if (py_certdb) {
+        certdb_handle = py_certdb->handle;
+    } else {
+        certdb_handle = CERT_GetDefaultCertDB();
     }
 
-    return 0;
-}
+    if (py_perm) {
+        perm = PyBoolAsPRBool(py_perm);
+    }
 
+    der_certs = der_item;
+
+    Py_BEGIN_ALLOW_THREADS
+    if (CERT_ImportCerts(certdb_handle, certUsageUserCertImport,
+                         n_certs, &der_certs, &certs,
+                         perm, PR_FALSE,
+                         py_nickname ? PyString_AsString(py_nickname) : NULL) != SECSuccess) {
+        Py_BLOCK_THREADS
+        set_nspr_error(NULL);
+        result = -1;
+        goto exit;
+    }
+    Py_END_ALLOW_THREADS
+
+    if ((self->cert = CERT_DupCertificate(certs[0])) == NULL) {
+        set_nspr_error(NULL);
+        result = -1;
+        goto exit;
+    }
+
+ exit:
+    Py_XDECREF(py_nickname);
+    if (certs != NULL) {
+	CERT_DestroyCertArray(certs, n_certs);
+    }
+
+    return result;
+}
 
 
 static PyObject *
@@ -9534,93 +9733,59 @@ Certificate_new_from_CERTCertificate(CERTCertificate *cert)
     return (PyObject *) self;
 }
 
-static int
-Certificate_init_from_signed_der_secitem(Certificate *self, SECItem *der)
-{
-    CERTCertificate *cert = NULL;
-
-    if ((cert = CERT_DecodeDERCertificate(der, PR_TRUE, NULL)) == NULL) {
-        set_nspr_error("bad signed certificate DER data");
-        return -1;
-    }
-
-    self->cert = cert;
-    return 0;
-}
-
 static PyObject *
 Certificate_new_from_signed_der_secitem(SECItem *der)
 {
-    Certificate *self = NULL;
-
-    TraceObjNewEnter(NULL);
-
-    if ((self = (Certificate *) CertificateType.tp_new(&CertificateType, NULL, NULL)) == NULL) {
-        TraceObjNewLeave(self);
-        return NULL;
-    }
-
-    if (Certificate_init_from_signed_der_secitem(self, der) != 0) {
-        Py_CLEAR(self);
-        TraceObjNewLeave(self);
-        return NULL;
-    }
-
-    TraceObjNewLeave(self);
-    return (PyObject *) self;
-}
-
-static int
-Certificate_init_from_unsigned_der_secitem(Certificate *self, SECItem *der)
-{
-    CERTCertificate *cert = NULL;
+#if 0
+    PyObject *py_der = NULL;
+    PyObject *py_cert = NULL;
     PRArenaPool *arena = NULL;
+    CERTSignedData *sd = NULL;
 
     if ((arena = PORT_NewArena(DER_DEFAULT_CHUNKSIZE)) == NULL) {
         set_nspr_error(NULL);
-        return -1;
+        goto exit;
     }
 
-    if ((cert = PORT_ArenaZNew(arena, CERTCertificate)) == NULL) {
+    if ((sd = PORT_ArenaZNew(arena, CERTSignedData)) == NULL) {
         set_nspr_error(NULL);
-        PORT_FreeArena(arena, PR_FALSE);
-        return -1;
-    }
-    cert->arena = arena;
-
-    if (SEC_ASN1DecodeItem(arena, cert, SEC_ASN1_GET(CERT_CertificateTemplate), der) != SECSuccess) {
-        set_nspr_error("bad unsigned certificate DER data");
-        PORT_FreeArena(arena, PR_FALSE);
-        return -1;
+        goto exit;
     }
 
-    self->cert = cert;
-    return 0;
-}
-
-#if 0                           /* currently unused */
-static PyObject *
-Certificate_new_from_unsigned_der_secitem(SECItem *der)
-{
-    Certificate *self = NULL;
-
-    TraceObjNewEnter(NULL);
-
-    if ((self = (Certificate *) CertificateType.tp_new(&CertificateType, NULL, NULL)) == NULL) {
-        TraceObjNewLeave(self);
-        return NULL;
+    if (SEC_ASN1DecodeItem(arena, sd, SEC_ASN1_GET(CERT_SignedDataTemplate), der) != SECSuccess) {
+        set_nspr_error("bad signed certificate DER data");
+        goto exit;
     }
 
-    if (Certificate_init_from_unsigned_der_secitem(self, der) != 0) {
-        Py_CLEAR(self);
-        TraceObjNewLeave(self);
-        return NULL;
+    if ((py_der = SecItem_new_from_SECItem(&sd->data, SECITEM_certificate)) == NULL) {
+        goto exit;
     }
 
-    TraceObjNewLeave(self);
-    return (PyObject *) self;
-}
+    if ((py_cert = PyObject_CallFunction((PyObject *)&CertificateType, "O", py_der)) == NULL) {
+        goto exit;
+    }
+
+ exit:
+    Py_XDECREF(py_der);
+    PORT_FreeArena(arena, PR_FALSE);
+    return py_cert;
+#else
+    PyObject *py_der = NULL;
+    PyObject *py_cert = NULL;
+
+    if ((py_der = SecItem_new_from_SECItem(der, SECITEM_certificate)) == NULL) {
+        goto exit;
+    }
+
+    if ((py_cert = PyObject_CallFunction((PyObject *)&CertificateType, "O", py_der)) == NULL) {
+        goto exit;
+    }
+
+ exit:
+    Py_XDECREF(py_der);
+    return py_cert;
 #endif
+}
 
 /* ========================================================================== */
 /* ============================= PrivateKey Class =========================== */
@@ -11581,6 +11746,17 @@ DN_new_from_CERTName(CERTName *name)
 /* ============================ Attribute Access ============================ */
 
 static PyObject *
+GeneralName_get_name_string(GeneralName *self, void *closure)
+{
+    TraceMethodEnter(self);
+
+    if (!self->name) {
+        return PyErr_Format(PyExc_ValueError, "%s is uninitialized", Py_TYPE(self)->tp_name);
+    }
+    return CERTGeneralName_to_pystr(self->name);
+}
+
+static PyObject *
 GeneralName_get_type_enum(GeneralName *self, void *closure)
 {
     TraceMethodEnter(self);
@@ -11615,6 +11791,8 @@ GeneralName_get_type_string(GeneralName *self, void *closure)
 
 static
 PyGetSetDef GeneralName_getseters[] = {
+    {"name",      (getter)GeneralName_get_name_string, (setter)NULL,
+     "Returns the general name as a string", NULL},
     {"type_enum", (getter)GeneralName_get_type_enum, (setter)NULL,
      "Returns the general name type enumerated constant", NULL},
     {"type_name", (getter)GeneralName_get_type_name, (setter)NULL,
@@ -11659,7 +11837,7 @@ Returns the value of the GeneralName according to the representation type parame
 static PyObject *
 GeneralName_get_name(GeneralName *self, PyObject *args, PyObject *kwds)
 {
-    static char *kwlist[] = {"arg1", NULL};
+    static char *kwlist[] = {"repr_kind", NULL};
     PyObject *name;
     int repr_kind = AsString;
 
@@ -11911,15 +12089,15 @@ Returns the default certificate database as a CertDB object\n\
 static PyObject *
 cert_get_default_certdb(PyObject *self, PyObject *args)
 {
-    CERTCertDBHandle *cert_handle;
+    CERTCertDBHandle *certdb_handle;
 
     TraceMethodEnter(self);
 
-    if ((cert_handle = CERT_GetDefaultCertDB()) == NULL) {
+    if ((certdb_handle = CERT_GetDefaultCertDB()) == NULL) {
         Py_RETURN_NONE;
     }
 
-    return CertDB_new_from_CERTCertDBHandle(cert_handle);
+    return CertDB_new_from_CERTCertDBHandle(certdb_handle);
 }
 
 PyDoc_STRVAR(cert_get_cert_nicknames_doc,
@@ -11949,8 +12127,8 @@ cert_get_cert_nicknames(PyObject *self, PyObject *args)
     Py_ssize_t argc;
     PyObject *parse_args = NULL;
     PyObject *pin_args = NULL;
-    int what;
     CertDB *py_certdb = NULL;
+    int what;
     CERTCertNicknames *cert_nicknames = NULL;
     PyObject *py_nicknames = NULL;
     PyObject *py_nickname = NULL;
@@ -12576,9 +12754,8 @@ optional user_data parameters to the password callback.\n\
 ");
 
 static PyObject *
-PK11Slot_authenticate(PK11Slot *self, PyObject *args, PyObject *kwds)
+PK11Slot_authenticate(PK11Slot *self, PyObject *args)
 {
-    static char *kwlist[] = {"load_certs", NULL};
     PyObject *py_load_certs;
     Py_ssize_t n_base_args = 1;
     Py_ssize_t argc;
@@ -12595,14 +12772,16 @@ PK11Slot_authenticate(PK11Slot *self, PyObject *args, PyObject *kwds)
     } else {
         parse_args = PyTuple_GetSlice(args, 0, n_base_args);
     }
-    if (!PyArg_ParseTupleAndKeywords(parse_args, kwds, "|O!:authenticate", kwlist,
-                                     &PyBool_Type, &py_load_certs)) {
+    if (!PyArg_ParseTuple(parse_args, "|O!:authenticate",
+                          &PyBool_Type, &py_load_certs)) {
         Py_DECREF(parse_args);
         return NULL;
     }
     Py_DECREF(parse_args);
 
-    load_certs = PyBoolAsPRBool(py_load_certs);
+    if (py_load_certs) {
+        load_certs = PyBoolAsPRBool(py_load_certs);
+    }
     pin_args = PyTuple_GetSlice(args, n_base_args, argc);
 
     Py_BEGIN_ALLOW_THREADS
@@ -12921,7 +13100,7 @@ static PyMethodDef PK11Slot_methods[] = {
     {"get_disabled_reason",               (PyCFunction)PK11Slot_get_disabled_reason,               METH_NOARGS,                PK11Slot_get_disabled_reason_doc},
     {"user_disable",                      (PyCFunction)PK11Slot_user_disable,                      METH_NOARGS,                PK11Slot_user_disable_doc},
     {"user_enable",                       (PyCFunction)PK11Slot_user_enable,                       METH_NOARGS,                PK11Slot_user_enable_doc},
-    {"authenticate",                      (PyCFunction)PK11Slot_authenticate,                      METH_VARARGS|METH_KEYWORDS, PK11Slot_authenticate_doc},
+    {"authenticate",                      (PyCFunction)PK11Slot_authenticate,                      METH_VARARGS,               PK11Slot_authenticate_doc},
     {"logout",                            (PyCFunction)PK11Slot_logout,                            METH_NOARGS,                PK11Slot_logout_doc},
     {"get_best_wrap_mechanism",           (PyCFunction)PK11Slot_get_best_wrap_mechanism,           METH_NOARGS,                PK11Slot_get_best_wrap_mechanism_doc},
     {"get_best_key_length",               (PyCFunction)PK11Slot_get_best_key_length,               METH_VARARGS,               PK11Slot_get_best_key_length_doc},
@@ -14209,6 +14388,72 @@ static PyMemberDef CRLDistributionPts_members[] = {
 
 /* ============================== Class Methods ============================= */
 
+static PyObject *
+CRLDistributionPts_format_lines(CRLDistributionPts *self, PyObject *args, PyObject *kwds)
+{
+    static char *kwlist[] = {"level", NULL};
+    int level = 0;
+    PyObject *lines = NULL;
+    PyObject *obj = NULL;
+    Py_ssize_t len, i;
+
+    TraceMethodEnter(self);
+
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "|i:format_lines", kwlist, &level))
+        return NULL;
+
+    if ((lines = PyList_New(0)) == NULL) {
+        return NULL;
+    }
+
+    //
+    len = PyObject_Size((PyObject *)self);
+    if ((obj = PyString_FromFormat("CRL Distribution Points: [%d total]", len)) == NULL) {
+        goto fail;
+    }
+    FMT_OBJ_AND_APPEND(lines, NULL, obj, level, fail);
+    Py_CLEAR(obj);
+
+    for (i = 0; i < len; i++) {
+        if ((obj = PyString_FromFormat("Point [%d]:", i+1)) == NULL) {
+            goto fail;
+        }
+        FMT_OBJ_AND_APPEND(lines, NULL, obj, level+1, fail);
+        Py_CLEAR(obj);
+        if ((obj = PySequence_GetItem((PyObject *)self, i)) == NULL) {
+            goto fail;
+        }
+        CALL_FORMAT_LINES_AND_APPEND(lines, obj, level+2, fail);
+        Py_CLEAR(obj);
+    }
+
+    return lines;
+ fail:
+    Py_XDECREF(obj);
+    Py_XDECREF(lines);
+    return NULL;
+}
+
+static PyObject *
+CRLDistributionPts_format(CRLDistributionPts *self, PyObject *args, PyObject *kwds)
+{
+    TraceMethodEnter(self);
+
+    return format_from_lines((format_lines_func)CRLDistributionPts_format_lines, (PyObject *)self, args, kwds);
+}
+
+static PyObject *
+CRLDistributionPts_str(CRLDistributionPts *self)
+{
+    PyObject *py_formatted_result = NULL;
+
+    TraceMethodEnter(self);
+
+    py_formatted_result =  CRLDistributionPts_format(self, empty_tuple, NULL);
+    return py_formatted_result;
+
+}
+
 /* =========================== Sequence Protocol ============================ */
 
 static Py_ssize_t
@@ -14244,6 +14489,8 @@ CRLDistributionPts_item(CRLDistributionPts *self, register Py_ssize_t i)
 }
 
 static PyMethodDef CRLDistributionPts_methods[] = {
+    {"format_lines", (PyCFunction)CRLDistributionPts_format_lines,   METH_VARARGS|METH_KEYWORDS, generic_format_lines_doc},
+    {"format",       (PyCFunction)CRLDistributionPts_format,         METH_VARARGS|METH_KEYWORDS, generic_format_doc},
     {NULL, NULL}  /* Sentinel */
 };
 
@@ -14393,7 +14640,7 @@ static PyTypeObject CRLDistributionPtsType = {
     0,						/* tp_as_mapping */
     0,						/* tp_hash */
     0,						/* tp_call */
-    0,						/* tp_str */
+    (reprfunc)CRLDistributionPts_str,		/* tp_str */
     0,						/* tp_getattro */
     0,						/* tp_setattro */
     0,						/* tp_as_buffer */
@@ -14430,6 +14677,566 @@ CRLDistributionPts_new_from_SECItem(SECItem *item)
     }
 
     if (CRLDistributionPts_init_from_SECItem(self, item) < 0) {
+        Py_CLEAR(self);
+        return NULL;
+    }
+
+    TraceObjNewLeave(self);
+    return (PyObject *) self;
+}
+
+/* ========================================================================== */
+/* ======================= AuthorityInfoAccess Class ======================== */
+/* ========================================================================== */
+
+/* ============================ Attribute Access ============================ */
+
+static PyObject *
+AuthorityInfoAccess_get_method_oid(AuthorityInfoAccess *self, void *closure)
+{
+    TraceMethodEnter(self);
+
+    return SecItem_new_from_SECItem(&self->aia->method, SECITEM_oid);
+}
+
+static PyObject *
+AuthorityInfoAccess_get_method_tag(AuthorityInfoAccess *self, void *closure)
+{
+    TraceMethodEnter(self);
+
+    return oid_secitem_to_pyint_tag(&self->aia->method);
+}
+
+static PyObject *
+AuthorityInfoAccess_get_method_str(AuthorityInfoAccess *self, void *closure)
+{
+    TraceMethodEnter(self);
+
+    return oid_secitem_to_pystr_desc(&self->aia->method);
+}
+
+static PyObject *
+AuthorityInfoAccess_get_location(AuthorityInfoAccess *self, void *closure)
+{
+    TraceMethodEnter(self);
+
+    return GeneralName_new_from_CERTGeneralName(self->aia->location);
+}
+
+static
+PyGetSetDef AuthorityInfoAccess_getseters[] = {
+    {"method_oid", (getter)AuthorityInfoAccess_get_method_oid, (setter)NULL, "method OID as SecItem", NULL},
+    {"method_tag", (getter)AuthorityInfoAccess_get_method_tag, (setter)NULL, "method TAG as a enumerated constant (e.g. tag) ", NULL},
+    {"method_str", (getter)AuthorityInfoAccess_get_method_str, (setter)NULL, "method as string description", NULL},
+    {"location", (getter)AuthorityInfoAccess_get_location,     (setter)NULL, "location as a `nss.GeneralName` object", NULL},
+    {NULL}  /* Sentinel */
+};
+
+static PyMemberDef AuthorityInfoAccess_members[] = {
+    {NULL}  /* Sentinel */
+};
+
+/* ============================== Class Methods ============================= */
+
+static PyObject *
+AuthorityInfoAccess_format_lines(AuthorityInfoAccess *self, PyObject *args, PyObject *kwds)
+{
+    static char *kwlist[] = {"level", NULL};
+    int level = 0;
+    PyObject *lines = NULL;
+    PyObject *obj = NULL;
+
+    TraceMethodEnter(self);
+
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "|i:format_lines", kwlist, &level))
+        return NULL;
+
+    if ((lines = PyList_New(0)) == NULL) {
+        return NULL;
+    }
+
+    if (!self->aia) {
+        return lines;
+    }
+
+    if ((obj = oid_secitem_to_pystr_desc(&self->aia->method)) == NULL) {
+        goto fail;
+    }
+    FMT_OBJ_AND_APPEND(lines, _("Method"), obj, level, fail);
+    Py_CLEAR(obj);
+
+    if ((obj = CERTGeneralName_to_pystr_with_label(self->aia->location)) == NULL) {
+        goto fail;
+    }
+    FMT_OBJ_AND_APPEND(lines, _("Location"), obj, level, fail);
+    Py_CLEAR(obj);
+
+    return lines;
+ fail:
+    Py_XDECREF(obj);
+    Py_XDECREF(lines);
+    return NULL;
+}
+
+static PyObject *
+AuthorityInfoAccess_format(AuthorityInfoAccess *self, PyObject *args, PyObject *kwds)
+{
+    TraceMethodEnter(self);
+
+    return format_from_lines((format_lines_func)AuthorityInfoAccess_format_lines, (PyObject *)self, args, kwds);
+}
+
+static PyObject *
+AuthorityInfoAccess_str(AuthorityInfoAccess *self)
+{
+    PyObject *py_formatted_result = NULL;
+
+    TraceMethodEnter(self);
+
+    py_formatted_result =  AuthorityInfoAccess_format(self, empty_tuple, NULL);
+    return py_formatted_result;
+
+}
+
+static PyMethodDef AuthorityInfoAccess_methods[] = {
+    {"format_lines", (PyCFunction)AuthorityInfoAccess_format_lines,   METH_VARARGS|METH_KEYWORDS, generic_format_lines_doc},
+    {"format",       (PyCFunction)AuthorityInfoAccess_format,         METH_VARARGS|METH_KEYWORDS, generic_format_doc},
+    {NULL, NULL}  /* Sentinel */
+};
+
+/* =========================== Class Construction =========================== */
+
+static PyObject *
+AuthorityInfoAccess_new(PyTypeObject *type, PyObject *args, PyObject *kwds)
+{
+    AuthorityInfoAccess *self;
+
+    TraceObjNewEnter(type);
+
+    if ((self = (AuthorityInfoAccess *)type->tp_alloc(type, 0)) == NULL) {
+        return NULL;
+    }
+
+    if ((self->arena = PORT_NewArena(DER_DEFAULT_CHUNKSIZE)) == NULL) {
+        type->tp_free(self);
+        return set_nspr_error(NULL);
+    }
+
+    self->aia = NULL;
+
+    TraceObjNewLeave(self);
+    return (PyObject *)self;
+}
+
+
+static void
+AuthorityInfoAccess_dealloc(AuthorityInfoAccess* self)
+{
+    TraceMethodEnter(self);
+
+    self->ob_type->tp_free((PyObject*)self);
+}
+
+PyDoc_STRVAR(AuthorityInfoAccess_doc,
+"AuthorityInfoAccess(obj)\n\
+\n\
+:Parameters:\n\
+    obj : xxx\n\
+\n\
+An object representing AuthorityInfoAccess.\n\
+");
+
+static int
+AuthorityInfoAccess_init(AuthorityInfoAccess *self, PyObject *args, PyObject *kwds)
+{
+    static char *kwlist[] = {"arg", NULL};
+    PyObject *arg;
+
+    TraceMethodEnter(self);
+
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "O|i:AuthorityInfoAccess", kwlist,
+                                     &arg))
+        return -1;
+
+    return 0;
+}
+
+static PyTypeObject AuthorityInfoAccessType = {
+    PyObject_HEAD_INIT(NULL)
+    0,						/* ob_size */
+    "nss.nss.AuthorityInfoAccess",				/* tp_name */
+    sizeof(AuthorityInfoAccess),				/* tp_basicsize */
+    0,						/* tp_itemsize */
+    (destructor)AuthorityInfoAccess_dealloc,		/* tp_dealloc */
+    0,						/* tp_print */
+    0,						/* tp_getattr */
+    0,						/* tp_setattr */
+    0,						/* tp_compare */
+    0,						/* tp_repr */
+    0,						/* tp_as_number */
+    0,						/* tp_as_sequence */
+    0,						/* tp_as_mapping */
+    0,						/* tp_hash */
+    0,						/* tp_call */
+    (reprfunc)AuthorityInfoAccess_str,			/* tp_str */
+    0,						/* tp_getattro */
+    0,						/* tp_setattro */
+    0,						/* tp_as_buffer */
+    Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE,	/* tp_flags */
+    AuthorityInfoAccess_doc,				/* tp_doc */
+    (traverseproc)0,				/* tp_traverse */
+    (inquiry)0,					/* tp_clear */
+    0,						/* tp_richcompare */
+    0,						/* tp_weaklistoffset */
+    0,						/* tp_iter */
+    0,						/* tp_iternext */
+    AuthorityInfoAccess_methods,				/* tp_methods */
+    AuthorityInfoAccess_members,				/* tp_members */
+    AuthorityInfoAccess_getseters,				/* tp_getset */
+    0,						/* tp_base */
+    0,						/* tp_dict */
+    0,						/* tp_descr_get */
+    0,						/* tp_descr_set */
+    0,						/* tp_dictoffset */
+    (initproc)AuthorityInfoAccess_init,			/* tp_init */
+    0,						/* tp_alloc */
+    AuthorityInfoAccess_new,				/* tp_new */
+};
+
+static PyObject *
+AuthorityInfoAccess_new_from_CERTAuthInfoAccess(CERTAuthInfoAccess *aia)
+{
+    AuthorityInfoAccess *self = NULL;
+
+    TraceObjNewEnter(NULL);
+
+    if ((self = (AuthorityInfoAccess *) AuthorityInfoAccessType.tp_new(&AuthorityInfoAccessType, NULL, NULL)) == NULL) {
+        return NULL;
+    }
+
+    if (CERT_CopyAuthInfoAccess(self->arena, &self->aia, aia) != SECSuccess) {
+        set_nspr_error(NULL);
+        Py_CLEAR(self);
+        return NULL;
+    }
+
+    TraceObjNewLeave(self);
+    return (PyObject *) self;
+}
+/* ========================================================================== */
+/* ======================= AuthorityInfoAccesses Class ====================== */
+/* ========================================================================== */
+
+/* ============================ Attribute Access ============================ */
+
+/* ============================== Class Methods ============================= */
+
+static PyObject *
+AuthorityInfoAccesses_format_lines(AuthorityInfoAccesses *self, PyObject *args, PyObject *kwds)
+{
+    static char *kwlist[] = {"level", NULL};
+    int level = 0;
+    PyObject *lines = NULL;
+    PyObject *obj = NULL;
+    Py_ssize_t len, i;
+
+    TraceMethodEnter(self);
+
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "|i:format_lines", kwlist, &level))
+        return NULL;
+
+    if ((lines = PyList_New(0)) == NULL) {
+        return NULL;
+    }
+
+    len = PyObject_Size((PyObject *)self);
+    if ((obj = PyString_FromFormat("Authority Information Access: [%d total]", len)) == NULL) {
+        goto fail;
+    }
+    FMT_OBJ_AND_APPEND(lines, NULL, obj, level, fail);
+    Py_CLEAR(obj);
+
+
+    for (i = 0; i < len; i++) {
+        if ((obj = PyString_FromFormat("Info [%d]:", i+1)) == NULL) {
+            goto fail;
+        }
+        FMT_OBJ_AND_APPEND(lines, NULL, obj, level+1, fail);
+        Py_CLEAR(obj);
+        if ((obj = PySequence_GetItem((PyObject *)self, i)) == NULL) {
+            goto fail;
+        }
+        CALL_FORMAT_LINES_AND_APPEND(lines, obj, level+2, fail);
+        Py_CLEAR(obj);
+    }
+
+    return lines;
+
+ fail:
+    Py_XDECREF(obj);
+    Py_XDECREF(lines);
+    return NULL;
+}
+
+static PyObject *
+AuthorityInfoAccesses_format(AuthorityInfoAccesses *self, PyObject *args, PyObject *kwds)
+{
+    TraceMethodEnter(self);
+
+    return format_from_lines((format_lines_func)AuthorityInfoAccesses_format_lines, (PyObject *)self, args, kwds);
+}
+
+static PyObject *
+AuthorityInfoAccesses_str(AuthorityInfoAccesses *self)
+{
+    PyObject *py_formatted_result = NULL;
+
+    TraceMethodEnter(self);
+
+    py_formatted_result =  AuthorityInfoAccesses_format(self, empty_tuple, NULL);
+    return py_formatted_result;
+
+}
+
+
+static PyMethodDef AuthorityInfoAccesses_methods[] = {
+    {"format_lines", (PyCFunction)AuthorityInfoAccesses_format_lines,   METH_VARARGS|METH_KEYWORDS, generic_format_lines_doc},
+    {"format",       (PyCFunction)AuthorityInfoAccesses_format,         METH_VARARGS|METH_KEYWORDS, generic_format_doc},
+    {NULL, NULL}  /* Sentinel */
+};
+
+/* =========================== Sequence Protocol ============================ */
+static Py_ssize_t
+CERTAuthInfoAccess_count(CERTAuthInfoAccess **aias)
+{
+    CERTAuthInfoAccess **cur;
+    Py_ssize_t count;
+
+    if (aias == NULL) {
+        return 0;
+    }
+
+    for (count = 0, cur = aias; *cur; cur++, count++);
+
+    return count;
+}
+
+static Py_ssize_t
+AuthorityInfoAccesses_length(AuthorityInfoAccesses *self)
+{
+    if (!self->py_aias) return 0;
+    return PyTuple_Size(self->py_aias);
+}
+
+static PyObject *
+AuthorityInfoAccesses_item(AuthorityInfoAccesses *self, register Py_ssize_t i)
+{
+    PyObject *py_aia = NULL;
+
+    if (!self->py_aias) {
+        return PyErr_Format(PyExc_ValueError, "%s is uninitialized", Py_TYPE(self)->tp_name);
+    }
+
+    py_aia = PyTuple_GetItem(self->py_aias, i);
+    Py_XINCREF(py_aia);
+    return py_aia;
+}
+
+
+/* =========================== Class Construction =========================== */
+
+static int
+AuthorityInfoAccesses_init_from_SECItem(AuthorityInfoAccesses *self, SECItem *item)
+{
+    CERTAuthInfoAccess **aias;
+    PLArenaPool *arena;
+    Py_ssize_t count, i;
+    PyObject *py_aias = NULL;
+
+    Py_CLEAR(self->py_aias);
+
+    if ((arena = PORT_NewArena(DER_DEFAULT_CHUNKSIZE)) == NULL) {
+        return -1;
+    }
+
+    if ((aias = CERT_DecodeAuthInfoAccessExtension(arena, item)) == NULL) {
+        set_nspr_error("cannot decode Authority Access Info extension");
+        return -1;
+    }
+
+    if ((aias = CERT_DecodeAuthInfoAccessExtension(arena, item)) == NULL) {
+        PyErr_SetString(PyExc_ValueError, "Failed to parse Authority Information Access Extension");
+        PORT_FreeArena(arena, PR_FALSE);
+        return -1;
+    }
+
+    count = CERTAuthInfoAccess_count(aias);
+
+    if ((py_aias = PyTuple_New(count)) == NULL) {
+        PORT_FreeArena(arena, PR_FALSE);
+	return -1;
+    }
+
+    for (i = 0; i < count; i++) {
+        PyObject *py_aia;
+
+        if ((py_aia = AuthorityInfoAccess_new_from_CERTAuthInfoAccess(aias[i])) == NULL) {
+            PORT_FreeArena(arena, PR_FALSE);
+            Py_CLEAR(py_aias);
+            return -1;
+        }
+
+        PyTuple_SetItem(py_aias, i, py_aia);
+    }
+
+    ASSIGN_NEW_REF(self->py_aias, py_aias);
+
+    PORT_FreeArena(arena, PR_FALSE);
+
+    return 0;
+}
+
+static PyObject *
+AuthorityInfoAccesses_new(PyTypeObject *type, PyObject *args, PyObject *kwds)
+{
+    AuthorityInfoAccesses *self;
+
+    TraceObjNewEnter(type);
+
+    if ((self = (AuthorityInfoAccesses *)type->tp_alloc(type, 0)) == NULL) {
+        return NULL;
+    }
+
+    self->py_aias = NULL;
+
+    TraceObjNewLeave(self);
+    return (PyObject *)self;
+}
+
+static int
+AuthorityInfoAccesses_traverse(AuthorityInfoAccesses *self, visitproc visit, void *arg)
+{
+    Py_VISIT(self->py_aias);
+    return 0;
+}
+
+static int
+AuthorityInfoAccesses_clear(AuthorityInfoAccesses* self)
+{
+    TraceMethodEnter(self);
+
+    Py_CLEAR(self->py_aias);
+    return 0;
+}
+
+static void
+AuthorityInfoAccesses_dealloc(AuthorityInfoAccesses* self)
+{
+    TraceMethodEnter(self);
+
+    AuthorityInfoAccesses_clear(self);
+
+    self->ob_type->tp_free((PyObject*)self);
+}
+
+PyDoc_STRVAR(AuthorityInfoAccesses_doc,
+"AuthorityInfoAccesses(data)\n\
+\n\
+:Parameters:\n\
+    data : SecItem or str or any buffer compatible object\n\
+        Data to initialize the Authority Information Access\n\
+        from, must be in DER format\n\
+\n\
+An object representing AuthorityInfoAccess Extension.\n\
+");
+
+static int
+AuthorityInfoAccesses_init(AuthorityInfoAccesses *self, PyObject *args, PyObject *kwds)
+{
+    static char *kwlist[] = {"auth_info_accesses", NULL};
+    PyObject *py_data = NULL;
+    SECItem tmp_item;
+    SECItem *der_item = NULL;
+
+
+    TraceMethodEnter(self);
+
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "O:AuthorityInfoAccesses", kwlist,
+                                     &py_data))
+        return -1;
+
+    SECITEM_PARAM(py_data, der_item, tmp_item, false, "data");
+
+    return AuthorityInfoAccesses_init_from_SECItem(self, der_item);
+}
+
+static PySequenceMethods AuthorityInfoAccesses_as_sequence = {
+    (lenfunc)AuthorityInfoAccesses_length,	/* sq_length */
+    0,						/* sq_concat */
+    0,						/* sq_repeat */
+    (ssizeargfunc)AuthorityInfoAccesses_item,	/* sq_item */
+    0,						/* sq_slice */
+    0,						/* sq_ass_item */
+    0,						/* sq_ass_slice */
+    0,						/* sq_contains */
+    0,						/* sq_inplace_concat */
+    0,						/* sq_inplace_repeat */
+};
+
+static PyTypeObject AuthorityInfoAccessesType = {
+    PyObject_HEAD_INIT(NULL)
+    0,						/* ob_size */
+    "nss.nss.AuthorityInfoAccesses",		/* tp_name */
+    sizeof(AuthorityInfoAccesses),		/* tp_basicsize */
+    0,						/* tp_itemsize */
+    (destructor)AuthorityInfoAccesses_dealloc,	/* tp_dealloc */
+    0,						/* tp_print */
+    0,						/* tp_getattr */
+    0,						/* tp_setattr */
+    0,						/* tp_compare */
+    0,						/* tp_repr */
+    0,						/* tp_as_number */
+    &AuthorityInfoAccesses_as_sequence,		/* tp_as_sequence */
+    0,						/* tp_as_mapping */
+    0,						/* tp_hash */
+    0,						/* tp_call */
+    (reprfunc)AuthorityInfoAccesses_str,	/* tp_str */
+    0,						/* tp_getattro */
+    0,						/* tp_setattro */
+    0,						/* tp_as_buffer */
+    Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE | Py_TPFLAGS_HAVE_GC,	/* tp_flags */
+    AuthorityInfoAccesses_doc,				/* tp_doc */
+    (traverseproc)AuthorityInfoAccesses_traverse,	/* tp_traverse */
+    (inquiry)AuthorityInfoAccesses_clear,	/* tp_clear */
+    0,						/* tp_richcompare */
+    0,						/* tp_weaklistoffset */
+    0,						/* tp_iter */
+    0,						/* tp_iternext */
+    AuthorityInfoAccesses_methods,		/* tp_methods */
+    0,						/* tp_members */
+    0,						/* tp_getset */
+    0,						/* tp_base */
+    0,						/* tp_dict */
+    0,						/* tp_descr_get */
+    0,						/* tp_descr_set */
+    0,						/* tp_dictoffset */
+    (initproc)AuthorityInfoAccesses_init,	/* tp_init */
+    0,						/* tp_alloc */
+    AuthorityInfoAccesses_new,			/* tp_new */
+};
+
+PyObject *
+AuthorityInfoAccesses_new_from_SECItem(SECItem *item)
+{
+    AuthorityInfoAccesses *self = NULL;
+
+    TraceObjNewEnter(NULL);
+
+    if ((self = (AuthorityInfoAccesses *) AuthorityInfoAccessesType.tp_new(&AuthorityInfoAccessesType, NULL, NULL)) == NULL) {
+        return NULL;
+    }
+
+    if (AuthorityInfoAccesses_init_from_SECItem(self, item) < 0) {
         Py_CLEAR(self);
         return NULL;
     }
@@ -16406,6 +17213,32 @@ static PyTypeObject InitParametersType = {
 /* =========================== InitContext Class ============================ */
 /* ========================================================================== */
 
+/* ============================== Class Methods ============================= */
+
+PyDoc_STRVAR(InitContext_shutdown_doc,
+"shutdown()\n\
+\n\
+Shutdown NSS for this context.\n\
+");
+
+static PyObject *
+InitContext_shutdown(InitContext* self)
+{
+    TraceMethodEnter(self);
+
+    if (NSS_ShutdownContext(self->context) != SECSuccess) {
+        return set_nspr_error(NULL);
+    }
+
+    Py_RETURN_NONE;
+}
+
+
+static PyMethodDef InitContext_methods[] = {
+    {"shutdown", (PyCFunction)InitContext_shutdown,   METH_NOARGS, InitContext_shutdown_doc},
+    {NULL, NULL}  /* Sentinel */
+};
+
 /* =========================== Class Construction =========================== */
 
 static PyObject *
@@ -16429,6 +17262,14 @@ static void
 InitContext_dealloc(InitContext* self)
 {
     TraceMethodEnter(self);
+
+    /*
+     * Just in case shutdown_context was not called before the context
+     * is destroyed we call it here. If the context was already
+     * shutdown NSS_ShutdownContext will fail with
+     * SEC_ERROR_NOT_INITIALIZED but we don't bother to check for it.
+     */
+    NSS_ShutdownContext(self->context);
 
     self->ob_type->tp_free((PyObject*)self);
 }
@@ -16473,7 +17314,7 @@ static PyTypeObject InitContextType = {
     0,						/* tp_weaklistoffset */
     0,						/* tp_iter */
     0,						/* tp_iternext */
-    0,						/* tp_methods */
+    InitContext_methods,			/* tp_methods */
     0,						/* tp_members */
     0,						/* tp_getset */
     0,						/* tp_base */
@@ -17575,7 +18416,7 @@ CertVerifyLogNodeError_format_lines(CertVerifyLogNode *self, int level, PyObject
     default:
         break;
     }
-    
+
     return lines;
  fail:
     Py_XDECREF(py_cert);
@@ -17809,7 +18650,7 @@ CertVerifyLog_format_lines(CertVerifyLog *self, PyObject *args, PyObject *kwds)
     if ((lines = PyList_New(0)) == NULL) {
         return NULL;
     }
-    
+
     if ((obj = PyInt_FromLong(self->log.count)) == NULL) {
         goto fail;
     }
@@ -17966,7 +18807,7 @@ CertVerifyLog_dealloc(CertVerifyLog* self)
         }
     }
     PORT_FreeArena(self->log.arena, PR_FALSE);
-    
+
     self->ob_type->tp_free((PyObject*)self);
 }
 
@@ -18036,8 +18877,8 @@ static PyTypeObject CertVerifyLogType = {
 static char *
 PK11_password_callback(PK11SlotInfo *slot, PRBool retry, void *arg)
 {
-    Py_ssize_t n_base_args = 2;
     PyGILState_STATE gstate;
+    Py_ssize_t n_base_args = 2;
     PyObject *password_callback = NULL;
     PyObject *pin_args = arg; /* borrowed reference, don't decrement */
     PyObject *py_slot = NULL;
@@ -18112,12 +18953,21 @@ PK11_password_callback(PK11SlotInfo *slot, PRBool retry, void *arg)
         goto exit;
     }
 
-    if (!(PyString_Check(result) || PyUnicode_Check(result))) {
-        PySys_WriteStderr("Error, PK11 password callback expected string result.\n");
+    if (PyString_Check(result) || PyUnicode_Check(result)) {
+        PyObject *py_password = NULL;
+
+        if ((py_password = PyString_UTF8(result, "PK11 password callback result")) != NULL) {
+            password = PORT_Strdup(PyString_AsString(py_password));
+            Py_DECREF(py_password);
+        } else {
+            goto exit;
+        }
+    } else if (PyNone_Check(result)) {
+        password = NULL;
+    } else {
+        PySys_WriteStderr("Error, PK11 password callback expected string result or None.\n");
         goto exit;
     }
-
-    password = PORT_Strdup(PyString_AsString(result));
 
  exit:
     TraceMessage("PK11_password_callback: exiting");
@@ -18141,16 +18991,43 @@ PyDoc_STRVAR(pk11_set_password_callback_doc,
     callback : function pointer\n\
         The callback function\n\
         \n\
+\n\
+Defines a callback function used by the NSS libraries whenever\n\
+information protected by a password needs to be retrieved from the key\n\
+or certificate databases.\n\
+\n\
+Many tokens keep track of the number of attempts to enter a password\n\
+and do not allow further attempts after a certain point. Therefore, if\n\
+the retry argument is True, indicating that the password was tried and\n\
+is wrong, the callback function should return None to indicate that it\n\
+is unsuccessful, rather than attempting to return the same password\n\
+again. Failing to terminate when the retry argument is True can result\n\
+in an endless loop. The user_dataN arguments can also be used to keep\n\
+track of the number of times the callback has been invoked.\n\
+\n\
+Several functions in the NSS libraries use the password callback\n\
+function to obtain the password before performing operations that\n\
+involve the protected information.  The extra user_dataN parameters to\n\
+the password callback function is application-defined and can be used\n\
+for any purpose. When NSS libraries call the password callback\n\
+function the value they pass for the user_dataN arguments is\n\
+determined by `ssl.set_pkcs11_pin_arg()`.\n\
+\n\
 The callback has the signature::\n\
     \n\
-    password_callback(slot, retry, [user_data1, ...])\n\
+    password_callback(slot, retry, [user_data1, ...]) -> string or None\n\
 \n\
 slot\n\
     PK11Slot object\n\
 retry\n\
-    boolean indicating if this is a retry\n\
+    boolean indicating if this is a retry. This implies that the\n\
+    callback has previously returned the wrong password.\n\
 user_dataN\n\
     zero or more caller supplied optional parameters\n\
+\n\
+The callback should return a string or None to indicate a valid\n\
+password cannot be supplied. Returning None will prevent the callback\n\
+from being invoked again.\n\
 ");
 
 static PyObject *
@@ -18613,6 +19490,243 @@ pk11_pk11_is_fips(PyObject *self, PyObject *args, PyObject *kwds)
 }
 /* ============================== Module Methods ============================= */
 
+PyDoc_STRVAR(nss_nss_get_version_doc,
+"nss_get_version() -> string\n\
+\n\
+Return a string of the NSS library version\n\
+");
+
+static PyObject *
+nss_nss_get_version(PyObject *self, PyObject *args)
+{
+    const char *nss_version = NULL;
+
+    TraceMethodEnter(self);
+
+    Py_BEGIN_ALLOW_THREADS
+    if ((nss_version = NSS_GetVersion()) == NULL) {
+        Py_BLOCK_THREADS
+        return set_nspr_error(NULL);
+    }
+    Py_END_ALLOW_THREADS
+
+    return PyString_FromString(nss_version);
+}
+
+PyDoc_STRVAR(nss_nss_version_check_doc,
+"nss_version_check(version) --> bool\n\
+\n\
+:Parameters:\n\
+    version : string\n\
+        Required version\n\
+\n\
+Return a boolean that indicates whether the underlying NSS library\n\
+will perform as the caller expects.\n\
+\n\
+The the version parameter is a string identifier of the NSS\n\
+library. That string will be compared against a string that represents\n\
+the actual build version of the NSS library. Return True if supplied\n\
+version is compatible, False otherwise.\n\
+");
+
+static PyObject *
+nss_nss_version_check(PyObject *self, PyObject *args)
+{
+    char *version = NULL;
+    PRBool valid;
+
+    TraceMethodEnter(self);
+
+    if (!PyArg_ParseTuple(args, "s:nss_version_check", &version))
+        return NULL;
+
+    Py_BEGIN_ALLOW_THREADS
+    valid = NSS_VersionCheck(version);
+    Py_END_ALLOW_THREADS
+
+    if (valid) {
+        Py_RETURN_TRUE;
+    } else {
+        Py_RETURN_FALSE;
+    }
+}
+
+static SECStatus
+NSS_Shutdown_Callback(void *app_data, void *nss_data)
+{
+    PyGILState_STATE gstate;
+    Py_ssize_t n_base_args = 1;
+    Py_ssize_t argc;
+    PyObject *shutdown_callback = NULL;
+    PyObject *callback_args = app_data; /* borrowed reference, don't decrement */
+    PyObject *item;
+    PyObject *new_args = NULL;
+    PyObject *py_nss_data = NULL;
+    int i, j;
+    PyObject *py_result = NULL;
+    SECStatus status_result = SECSuccess;
+
+    gstate = PyGILState_Ensure();
+
+    TraceMessage("NSS_Shutdown_Callback: enter");
+
+    if ((shutdown_callback = get_thread_local("shutdown_callback")) == NULL) {
+        if (!PyErr_Occurred()) {
+            PySys_WriteStderr("shutdown callback undefined\n");
+        } else {
+            PyErr_Print();
+        }
+	PyGILState_Release(gstate);
+        return status_result;
+    }
+
+    argc = n_base_args;
+    if (callback_args) {
+        if (PyTuple_Check(callback_args)) {
+            argc += PyTuple_Size(callback_args);
+        } else {
+            PySys_WriteStderr("Error, shutdown callback expected args to be tuple\n");
+            PyErr_Print();
+        }
+    }
+
+    if ((new_args = PyTuple_New(argc)) == NULL) {
+        PySys_WriteStderr("shutdown callback: out of memory\n");
+        goto exit;
+    }
+
+    if ((py_nss_data = PyDict_New()) == NULL){
+        goto exit;
+    }
+
+    PyTuple_SetItem(new_args, 0, py_nss_data);
+
+    for (i = n_base_args, j = 0; i < argc; i++, j++) {
+        item = PyTuple_GetItem(callback_args, j);
+        Py_INCREF(item);
+        PyTuple_SetItem(new_args, i, item);
+    }
+
+    if ((py_result = PyObject_CallObject(shutdown_callback, new_args)) == NULL) {
+        PySys_WriteStderr("exception in shutdown callback\n");
+        PyErr_Print();  /* this also clears the error */
+        goto exit;
+    }
+
+    if (PyBool_Check(py_result)) {
+        status_result = py_result == Py_True ? SECSuccess : SECFailure;
+    } else {
+        PySys_WriteStderr("Error, shutdown callback expected int result, not %.50s\n",
+                      Py_TYPE(py_result)->tp_name);
+        status_result = SECFailure;
+        goto exit;
+    }
+
+ exit:
+    TraceMessage("NSS_Shutdown_Callback: exiting");
+
+    Py_XDECREF(py_nss_data);
+    Py_XDECREF(new_args);
+    Py_XDECREF(py_result);
+
+    PyGILState_Release(gstate);
+
+    return status_result;
+}
+
+PyDoc_STRVAR(nss_set_shutdown_callback_doc,
+"set_shutdown_callback(callback, [user_data1, ...])\n\
+\n\
+:Parameters:\n\
+    callback : function pointer or None\n\
+        The callback function. If None cancel the previous callback\n\
+        \n\
+    user_dataN : object\n\
+        zero or more caller supplied parameters which will\n\
+        be passed to the shutdown callback function\n\
+\n\
+Defines a callback function which is invoked when NSS is shutdown.\n\
+If the callback is None the previous callback is cancelled.\n\
+\n\
+After NSS is shutdown the shutdown callback is cancelled, you must\n\
+reset the shutdown callback again after initializing NSS.\n\
+\n\
+The callback has the signature::\n\
+    \n\
+    shutdown_callback(nss_data, [user_data1, ...]) -> bool\n\
+\n\
+nss_data\n\
+    dict of NSS values (currently empty)\n\
+user_dataN\n\
+    zero or more caller supplied optional parameters\n\
+\n\
+The callback should return True for success. If it returns False the\n\
+NSS shutdown function will complete but will result in an error.\n\
+");
+static PyObject *
+nss_set_shutdown_callback(PyObject *self, PyObject *args)
+{
+    Py_ssize_t n_base_args = 1;
+    Py_ssize_t argc;
+    PyObject *parse_args = NULL;
+    PyObject *new_callback_args = NULL;
+    PyObject *prev_callback_args = NULL;
+    PyObject *callback = NULL;
+
+    TraceMethodEnter(self);
+
+    argc = PyTuple_Size(args);
+    if (argc == n_base_args) {
+        Py_INCREF(args);
+        parse_args = args;
+    } else {
+        parse_args = PyTuple_GetSlice(args, 0, n_base_args);
+    }
+    if (!PyArg_ParseTuple(parse_args, "O:set_shutdown_callback",
+                          &callback)) {
+        Py_DECREF(parse_args);
+        return NULL;
+    }
+    Py_DECREF(parse_args);
+
+    new_callback_args = PyTuple_GetSlice(args, n_base_args, argc);
+
+    if (PyNone_Check(callback)) {
+        if ((prev_callback_args = get_thread_local("shutdown_callback_args")) != NULL) {
+            NSS_UnregisterShutdown(NSS_Shutdown_Callback, prev_callback_args);
+            Py_CLEAR(prev_callback_args);
+        }
+
+        del_thread_local("shutdown_callback");
+        del_thread_local("shutdown_callback_args");
+
+    } else {
+        if (!PyCallable_Check(callback)) {
+            PyErr_SetString(PyExc_TypeError, "callback must be callable");
+            return NULL;
+        }
+
+        if ((prev_callback_args = get_thread_local("shutdown_callback_args")) != NULL) {
+            NSS_UnregisterShutdown(NSS_Shutdown_Callback, prev_callback_args);
+            Py_CLEAR(prev_callback_args);
+        }
+
+        if (set_thread_local("shutdown_callback", callback) < 0) {
+            return NULL;
+        }
+
+        if (set_thread_local("shutdown_callback_args", new_callback_args) < 0) {
+            return NULL;
+        }
+
+        NSS_RegisterShutdown(NSS_Shutdown_Callback, new_callback_args);
+    }
+
+    Py_XDECREF(new_callback_args);
+
+    Py_RETURN_NONE;
+}
+
 PyDoc_STRVAR(nss_nss_is_initialized_doc,
 "nss_is_initialized() --> bool\n\
 \n\
@@ -18906,6 +20020,11 @@ PyDoc_STRVAR(nss_nss_init_context_doc,
 a single process wish to use NSS without colliding such as\n\
 libraries.\n\
 \n\
+You must hold onto the returned InitContext object and call shutdown\n\
+on it when you are done. The context will automatically be shutdown\n\
+when the InitContext object is destroyed if you have not already shut\n\
+it down.\n\
+\n\
 By default `nss_initialize()` and `nss_init_context()` open the\n\
 internal PK11 slot (see `get_internal_slot()`) in Read Write (RW) mode\n\
 as opposed to `nss_init()` which opens it in Read Only (RO) mode. If\n\
@@ -19025,7 +20144,8 @@ PyDoc_STRVAR(nss_nss_shutdown_context_doc,
         A `InitContext` returned from a previous\n\
         call to `nss_init_context`.\n\
 \n\
-xxx\n\
+Shutdown NSS for the users of this context. When all contexts\n\
+have been shutdown NSS will fully shutdown.\n\
 ");
 
 static PyObject *
@@ -21297,7 +22417,7 @@ pkcs12_export(PyObject *self, PyObject *args, PyObject *kwds)
                              "cert_cipher", "pin_args", NULL};
     char *utf8_nickname = NULL;
     char *utf8_pkcs12_password = NULL;
-    int utf8_pkcs12_password_len = 0;
+    Py_ssize_t utf8_pkcs12_password_len = 0;
     unsigned int key_cipher = SEC_OID_UNKNOWN;
     unsigned int cert_cipher = SEC_OID_UNKNOWN;
     PyObject *pin_args = Py_None;
@@ -21480,7 +22600,7 @@ nss_fingerprint_format_lines(PyObject *self, PyObject *args, PyObject *kwds)
     return fingerprint_format_lines(der_item, level);
 }
 
-PyDoc_STRVAR(nss_get_use_pkix_for_validation_doc,
+PyDoc_STRVAR(cert_get_use_pkix_for_validation_doc,
 "get_use_pkix_for_validation() -> flag\n\
 \n\
 Returns the current value of the flag used to enable or disable the\n\
@@ -21489,7 +22609,7 @@ use of PKIX for certificate validation. See also:\n\
 ");
 
 static PyObject *
-nss_get_use_pkix_for_validation(PyObject *self, PyObject *args)
+cert_get_use_pkix_for_validation(PyObject *self, PyObject *args)
 {
     PRBool flag;
 
@@ -21504,7 +22624,7 @@ nss_get_use_pkix_for_validation(PyObject *self, PyObject *args)
     }
 }
 
-PyDoc_STRVAR(nss_set_use_pkix_for_validation_doc,
+PyDoc_STRVAR(cert_set_use_pkix_for_validation_doc,
 "set_use_pkix_for_validation(flag) -> prev_flag\n\
 \n\
 :Parameters:\n\
@@ -21518,7 +22638,7 @@ See also: `get_use_pkix_for_validation`.\n\
 ");
 
 static PyObject *
-nss_set_use_pkix_for_validation(PyObject *self, PyObject *args)
+cert_set_use_pkix_for_validation(PyObject *self, PyObject *args)
 {
     int flag;
     PRBool prev_flag;
@@ -21542,9 +22662,344 @@ nss_set_use_pkix_for_validation(PyObject *self, PyObject *args)
     }
 }
 
+PyDoc_STRVAR(cert_enable_ocsp_checking_doc,
+"enable_ocsp_checking(certdb=get_default_certdb())\n\
+\n\
+:Parameters:\n\
+    certdb : CertDB object or None\n\
+        CertDB certificate database object, if None then the default\n\
+        certdb will be supplied by calling `nss.get_default_certdb()`.\n\
+\n\
+Turns on OCSP checking for the given certificate database.\n\
+");
+
+static PyObject *
+cert_enable_ocsp_checking(PyObject *self, PyObject *args, PyObject *kwds)
+{
+    static char *kwlist[] = {"certdb", NULL};
+    CertDB *py_certdb = NULL;
+    CERTCertDBHandle *certdb_handle = NULL;
+
+    TraceMethodEnter(self);
+
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "|O!:enable_ocsp_checking", kwlist,
+                                     &CertDBType, &py_certdb))
+        return NULL;
+
+    if (py_certdb) {
+        certdb_handle = py_certdb->handle;
+    } else {
+        certdb_handle = CERT_GetDefaultCertDB();
+    }
+
+    if (CERT_EnableOCSPChecking(certdb_handle) != SECSuccess) {
+        return set_nspr_error(NULL);
+    }
+
+    Py_RETURN_NONE;
+}
+
+PyDoc_STRVAR(cert_disable_ocsp_checking_doc,
+"disable_ocsp_checking(certdb=get_default_certdb())\n\
+\n\
+:Parameters:\n\
+    certdb : CertDB object or None\n\
+        CertDB certificate database object, if None then the default\n\
+        certdb will be supplied by calling `nss.get_default_certdb()`.\n\
+\n\
+Turns off OCSP checking for the given certificate database. It will\n\
+raise an exception with SEC_ERROR_OCSP_NOT_ENABLED as the error code\n\
+if OCSP checking is not enabled. It is safe to call it when OCSP\n\
+checking is disabled, you can just ignore the exception if it is\n\
+easier to just call it than to remember if it was enabled.\n\
+");
+
+static PyObject *
+cert_disable_ocsp_checking(PyObject *self, PyObject *args, PyObject *kwds)
+{
+    static char *kwlist[] = {"certdb", NULL};
+    CertDB *py_certdb = NULL;
+    CERTCertDBHandle *certdb_handle = NULL;
+
+    TraceMethodEnter(self);
+
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "|O!:disable_ocsp_checking", kwlist,
+                                     &CertDBType, &py_certdb))
+        return NULL;
+
+    if (py_certdb) {
+        certdb_handle = py_certdb->handle;
+    } else {
+        certdb_handle = CERT_GetDefaultCertDB();
+    }
+
+    if (CERT_DisableOCSPChecking(certdb_handle) != SECSuccess) {
+        return set_nspr_error(NULL);
+    }
+
+    Py_RETURN_NONE;
+}
+
+PyDoc_STRVAR(cert_set_ocsp_cache_settings_doc,
+"set_ocsp_cache_settings(max_cache_entries, min_secs_till_next_fetch, max_secs_till_next_fetch)\n\
+\n\
+:Parameters:\n\
+    max_cache_entries : int\n\
+        Maximum number of cache entries.\n\
+        Special values, -1 disables the cache, 0 indicates unlimited cache entries.\n\
+    min_secs_till_next_fetch : int\n\
+        Whenever an OCSP request was attempted or completed over the network,\n\
+        wait at least this number of seconds before trying to fetch again.\n\
+    max_secs_till_next_fetch : int\n\
+        The maximum age of a cached response we allow, until we try\n\
+        to fetch an updated response, even if the OCSP responder expects\n\
+        that a newer information update will not be available yet.\n\
+\n\
+Sets parameters that control NSS' internal OCSP cache.\n\
+");
+static PyObject *
+cert_set_ocsp_cache_settings(PyObject *self, PyObject *args)
+{
+    int max_cache_entries;
+    unsigned int min_secs_till_next_fetch;
+    unsigned int max_secs_till_next_fetch;
+
+    TraceMethodEnter(self);
+
+    if (!PyArg_ParseTuple(args, "iII:set_ocsp_cache_settings",
+                          &max_cache_entries,
+                          &min_secs_till_next_fetch, &max_secs_till_next_fetch))
+        return NULL;
+
+    if (CERT_OCSPCacheSettings(max_cache_entries,
+                               min_secs_till_next_fetch,
+                               max_secs_till_next_fetch) != SECSuccess) {
+        return set_nspr_error(NULL);
+    }
+
+    Py_RETURN_NONE;
+}
+
+PyDoc_STRVAR(cert_set_ocsp_failure_mode_doc,
+"set_ocsp_failure_mode(failure_mode)\n\
+\n\
+:Parameters:\n\
+    failure_mode : int\n\
+        A ocspMode_Failure* constant\n\
+\n\
+Set the desired behaviour on OCSP failures.\n\
+failure_mode may be one of:\n\
+    - ocspMode_FailureIsVerificationFailure\n\
+    - ocspMode_FailureIsNotAVerificationFailure\n\
+\n\
+");
+static PyObject *
+cert_set_ocsp_failure_mode(PyObject *self, PyObject *args)
+{
+    int failure_mode;
+
+    TraceMethodEnter(self);
+
+    if (!PyArg_ParseTuple(args, "i:set_ocsp_failure_mode",
+                          &failure_mode))
+        return NULL;
+
+    if (CERT_SetOCSPFailureMode(failure_mode) != SECSuccess) {
+        return set_nspr_error(NULL);
+    }
+
+    Py_RETURN_NONE;
+}
+
+PyDoc_STRVAR(cert_set_ocsp_timeout_doc,
+"set_ocsp_timeout(seconds)\n\
+\n\
+:Parameters:\n\
+    seconds : int\n\
+        Maximum number of seconds NSS will wait for an OCSP response.\n\
+\n\
+Configure the maximum time NSS will wait for an OCSP response.\n\
+\n\
+");
+static PyObject *
+cert_set_ocsp_timeout(PyObject *self, PyObject *args)
+{
+    unsigned int seconds;
+
+    TraceMethodEnter(self);
+
+    if (!PyArg_ParseTuple(args, "I:set_ocsp_timeout",
+                          &seconds))
+        return NULL;
+
+    if (CERT_SetOCSPTimeout(seconds) != SECSuccess) {
+        return set_nspr_error(NULL);
+    }
+
+    Py_RETURN_NONE;
+}
+
+PyDoc_STRVAR(cert_clear_ocsp_cache_doc,
+"clear_ocsp_cache()\n\
+\n\
+Removes all items currently stored in the OCSP cache.\n\
+\n\
+");
+static PyObject *
+cert_clear_ocsp_cache(PyObject *self, PyObject *args)
+{
+    TraceMethodEnter(self);
+
+    if (CERT_ClearOCSPCache() != SECSuccess) {
+        return set_nspr_error(NULL);
+    }
+
+    Py_RETURN_NONE;
+}
+
+PyDoc_STRVAR(cert_set_ocsp_default_responder_doc,
+"set_ocsp_default_responder(certdb, url, nickname)\n\
+\n\
+:Parameters:\n\
+    certdb : CertDB object\n\
+        CertDB certificate database object.\n\
+    url : string\n\
+        The location of the default responder (e.g. \"http://foo.com:80/ocsp\")\n\
+        Note that the location will not be tested until the first attempt\n\
+        to send a request there.\n\
+    nickname : string\n\
+        The nickname of the cert to trust (expected) to sign the OCSP responses.\n\
+        If the corresponding cert cannot be found, SECFailure is returned.\n\
+\n\
+Specify the location and cert of the default responder.  If OCSP\n\
+checking is already enabled and use of a default responder is also\n\
+already enabled, all OCSP checking from now on will go directly to the\n\
+specified responder. If OCSP checking is not enabled, or if it is\n\
+enabled but use of a default responder is not enabled, the information\n\
+will be recorded and take effect whenever both are enabled.\n\
+");
+
+static PyObject *
+cert_set_ocsp_default_responder(PyObject *self, PyObject *args)
+{
+    CertDB *py_certdb = NULL;
+    PyObject *py_url = NULL;
+    PyObject *py_url_utf8 = NULL;
+    PyObject *py_nickname = NULL;
+    PyObject *py_nickname_utf8 = NULL;
+
+    TraceMethodEnter(self);
+
+    if (!PyArg_ParseTuple(args, "O!OO:set_ocsp_default_responder",
+                          &CertDBType, &py_certdb,
+                          &py_url, &py_nickname))
+        return NULL;
+
+    if ((py_url_utf8 = PyString_UTF8(py_url, "url")) == NULL) {
+        goto exit;
+    }
+
+    if ((py_nickname_utf8 = PyString_UTF8(py_nickname, "nickname")) == NULL) {
+        goto exit;
+    }
+
+    if (CERT_SetOCSPDefaultResponder(py_certdb->handle,
+                                     PyString_AsString(py_url_utf8),
+                                     PyString_AsString(py_nickname_utf8)) != SECSuccess) {
+        return set_nspr_error(NULL);
+    }
+
+ exit:
+    Py_XDECREF(py_url_utf8);
+    Py_XDECREF(py_nickname_utf8);
+
+    Py_RETURN_NONE;
+}
+
+PyDoc_STRVAR(cert_enable_ocsp_default_responder_doc,
+"enable_ocsp_default_responder(certdb=get_default_certdb())\n\
+\n\
+:Parameters:\n\
+    certdb : CertDB object or None\n\
+        CertDB certificate database object, if None then the default\n\
+        certdb will be supplied by calling `nss.get_default_certdb()`.\n\
+\n\
+Turns on use of a default responder when OCSP checking.  If OCSP\n\
+checking is already enabled, this will make subsequent checks go\n\
+directly to the default responder.  (The location of the responder and\n\
+the nickname of the responder cert must already be specified.)  If\n\
+OCSP checking is not enabled, this will be recorded and take effect\n\
+whenever it is enabled.\n\
+");
+static PyObject *
+cert_enable_ocsp_default_responder(PyObject *self, PyObject *args, PyObject *kwds)
+{
+    static char *kwlist[] = {"certdb", NULL};
+    CertDB *py_certdb = NULL;
+    CERTCertDBHandle *certdb_handle = NULL;
+
+    TraceMethodEnter(self);
+
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "|O!:enable_ocsp_default_responder", kwlist,
+                                     &CertDBType, &py_certdb))
+        return NULL;
+
+    if (py_certdb) {
+        certdb_handle = py_certdb->handle;
+    } else {
+        certdb_handle = CERT_GetDefaultCertDB();
+    }
+
+    if (CERT_EnableOCSPDefaultResponder(certdb_handle) != SECSuccess) {
+        return set_nspr_error(NULL);
+    }
+
+    Py_RETURN_NONE;
+}
+
+PyDoc_STRVAR(cert_disable_ocsp_default_responder_doc,
+"disable_ocsp_default_responder(certdb=get_default_certdb())\n\
+\n\
+:Parameters:\n\
+    certdb : CertDB object or None\n\
+        CertDB certificate database object, if None then the default\n\
+        certdb will be supplied by calling `nss.get_default_certdb()`.\n\
+\n\
+Turns off use of a default responder when OCSP checking.\n\
+(Does nothing if use of a default responder is not enabled.)\n\
+");
+static PyObject *
+cert_disable_ocsp_default_responder(PyObject *self, PyObject *args, PyObject *kwds)
+{
+    static char *kwlist[] = {"certdb", NULL};
+    CertDB *py_certdb = NULL;
+    CERTCertDBHandle *certdb_handle = NULL;
+
+    TraceMethodEnter(self);
+
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "|O!:disable_ocsp_default_responder", kwlist,
+                                     &CertDBType, &py_certdb))
+        return NULL;
+
+    if (py_certdb) {
+        certdb_handle = py_certdb->handle;
+    } else {
+        certdb_handle = CERT_GetDefaultCertDB();
+    }
+
+    if (CERT_DisableOCSPDefaultResponder(certdb_handle) != SECSuccess) {
+        return set_nspr_error(NULL);
+    }
+
+    Py_RETURN_NONE;
+}
+
 /* List of functions exported by this module. */
 static PyMethodDef
 module_methods[] = {
+    {"nss_get_version",                  (PyCFunction)nss_nss_get_version,                 METH_NOARGS,                nss_nss_get_version_doc},
+    {"nss_version_check",                (PyCFunction)nss_nss_version_check,               METH_VARARGS,               nss_nss_version_check_doc},
+    {"set_shutdown_callback",            (PyCFunction)nss_set_shutdown_callback,           METH_VARARGS,               nss_set_shutdown_callback_doc},
     {"nss_is_initialized",               (PyCFunction)nss_nss_is_initialized,              METH_NOARGS,                nss_nss_is_initialized_doc},
     {"nss_init",                         (PyCFunction)nss_nss_init,                        METH_VARARGS,               nss_nss_init_doc},
     {"nss_init_read_write",              (PyCFunction)nss_nss_init_read_write,             METH_VARARGS,               nss_nss_init_read_write_doc},
@@ -21627,8 +23082,17 @@ module_methods[] = {
     {"pkcs12_set_nickname_collision_callback", (PyCFunction)PKCS12_pkcs12_set_nickname_collision_callback, METH_VARARGS,      PKCS12_pkcs12_set_nickname_collision_callback_doc},
     {"pkcs12_export",                    (PyCFunction)pkcs12_export,                       METH_VARARGS|METH_KEYWORDS, pkcs12_export_doc},
     {"fingerprint_format_lines",         (PyCFunction)nss_fingerprint_format_lines,        METH_VARARGS|METH_KEYWORDS, nss_fingerprint_format_lines_doc},
-    {"get_use_pkix_for_validation",      (PyCFunction)nss_get_use_pkix_for_validation,     METH_NOARGS,                nss_get_use_pkix_for_validation_doc},
-    {"set_use_pkix_for_validation",      (PyCFunction)nss_set_use_pkix_for_validation,     METH_VARARGS,               nss_set_use_pkix_for_validation_doc},
+    {"get_use_pkix_for_validation",      (PyCFunction)cert_get_use_pkix_for_validation,    METH_NOARGS,                cert_get_use_pkix_for_validation_doc},
+    {"set_use_pkix_for_validation",      (PyCFunction)cert_set_use_pkix_for_validation,    METH_VARARGS,               cert_set_use_pkix_for_validation_doc},
+    {"enable_ocsp_checking",             (PyCFunction)cert_enable_ocsp_checking,           METH_VARARGS|METH_KEYWORDS, cert_enable_ocsp_checking_doc},
+    {"disable_ocsp_checking",            (PyCFunction)cert_disable_ocsp_checking,          METH_VARARGS|METH_KEYWORDS, cert_disable_ocsp_checking_doc},
+    {"set_ocsp_cache_settings",          (PyCFunction)cert_set_ocsp_cache_settings,        METH_VARARGS,               cert_set_ocsp_cache_settings_doc},
+    {"set_ocsp_failure_mode",            (PyCFunction)cert_set_ocsp_failure_mode,          METH_VARARGS,               cert_set_ocsp_failure_mode_doc},
+    {"set_ocsp_timeout",                 (PyCFunction)cert_set_ocsp_timeout,               METH_VARARGS,               cert_set_ocsp_timeout_doc},
+    {"clear_ocsp_cache",                 (PyCFunction)cert_clear_ocsp_cache,               METH_NOARGS,                cert_clear_ocsp_cache_doc},
+    {"set_ocsp_default_responder",       (PyCFunction)cert_set_ocsp_default_responder,     METH_VARARGS,               cert_set_ocsp_default_responder_doc},
+    {"enable_ocsp_default_responder",    (PyCFunction)cert_enable_ocsp_default_responder,  METH_VARARGS|METH_KEYWORDS, cert_enable_ocsp_default_responder_doc},
+    {"disable_ocsp_default_responder",   (PyCFunction)cert_disable_ocsp_default_responder, METH_VARARGS|METH_KEYWORDS, cert_disable_ocsp_default_responder_doc},
     {NULL, NULL} /* Sentinel */
 };
 
@@ -21692,6 +23156,8 @@ initnss(void)
     TYPE_READY(PK11ContextType);
     TYPE_READY(CRLDistributionPtType);
     TYPE_READY(CRLDistributionPtsType);
+    TYPE_READY(AuthorityInfoAccessType);
+    TYPE_READY(AuthorityInfoAccessesType);
     TYPE_READY(AVAType);
     TYPE_READY(RDNType);
     TYPE_READY(DNType);
@@ -22807,6 +24273,12 @@ if (_AddIntConstantWithLookup(m, #constant, constant, \
     AddIntConstant(PK11_DIS_TOKEN_VERIFY_FAILED);  /* could not verify token */
     AddIntConstant(PK11_DIS_TOKEN_NOT_PRESENT);    /* token not present */
 
+    /***************************************************************************
+     * OCSP Failure Mode
+     ***************************************************************************/
+
+    AddIntConstant(ocspMode_FailureIsVerificationFailure);
+    AddIntConstant(ocspMode_FailureIsNotAVerificationFailure);
 
     /***************************************************************************
      * PKCS12
