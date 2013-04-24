@@ -798,7 +798,7 @@ SSLSocket_set_client_auth_data_callback(SSLSocket *self, PyObject *args)
     }
 
     callback_args = PyTuple_GetSlice(args, n_base_args, argc);
-    
+
     ASSIGN_REF(self->py_client_auth_data_callback, callback);
     ASSIGN_NEW_REF(self->py_client_auth_data_callback_data, callback_args);
 

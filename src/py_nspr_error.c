@@ -11,6 +11,7 @@
 #include "py_nspr_common.h"
 
 #include "nspr.h"
+#include "nss.h"
 #include "seccomon.h"
 
 #define ER2(a,b)   {a, #a, b},
@@ -200,7 +201,7 @@ set_nspr_error(const char *format, ...)
             return NULL;
         }
     }
-    
+
     exception_obj = PyObject_Call((PyObject *)&NSPRErrorType, empty_tuple, kwds);
     Py_DECREF(kwds);
 
@@ -236,7 +237,7 @@ set_cert_verify_error(unsigned int usages, PyObject *log, const char *format, ..
             return NULL;
         }
     }
-    
+
     if (PyDict_SetItemString(kwds, "usages", PyInt_FromLong(usages)) != 0) {
         return NULL;
     }
@@ -246,7 +247,7 @@ set_cert_verify_error(unsigned int usages, PyObject *log, const char *format, ..
             return NULL;
         }
     }
-    
+
     exception_obj = PyObject_Call((PyObject *)&CertVerifyErrorType, empty_tuple, kwds);
     Py_DECREF(kwds);
 
@@ -328,8 +329,8 @@ init_py_nspr_errors(PyObject *module)
 /*
  * Format a tuple into a string by calling the str() method on
  * each member of the tuple.
- * 
- * Tuples do not implement a str method only a repr with the 
+ *
+ * Tuples do not implement a str method only a repr with the
  * unfortunate result repr() is invoked on each of its members.
  */
 static PyObject *tuple_str(PyObject *tuple)
@@ -339,11 +340,11 @@ static PyObject *tuple_str(PyObject *tuple)
     PyObject *tmp_obj = NULL;
     PyObject *text = NULL;
     Py_ssize_t i, len;
-        
+
     if (!PyTuple_Check(tuple)) return NULL;
 
     len = PyTuple_GET_SIZE(tuple);
-    
+
     if (len == 0) {
         return PyString_FromString("()");
     }
@@ -492,7 +493,7 @@ A NSPRError contains the following attributes:\n\
     error_message\n\
         Optional message with details specific to the error (string).\n\
     errno\n\
-        Alias for errno.\n\
+        Alias for error_code.\n\
     strerr\n\
         Alias for error_desc.\n\
 \n\
@@ -741,7 +742,7 @@ CertVerifyError_init(CertVerifyError *self, PyObject *args, PyObject *kwds)
         Py_DECREF(super_kwds);
         return result;
     }
-    
+
 
     self->usages = usages;
 

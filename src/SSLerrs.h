@@ -359,6 +359,8 @@ ER3(SSL_ERROR_RX_UNEXPECTED_NEW_SESSION_TICKET, (SSL_ERROR_BASE + 109),
 ER3(SSL_ERROR_RX_MALFORMED_NEW_SESSION_TICKET, (SSL_ERROR_BASE + 110),
 "SSL received a malformed New Session Ticket handshake message.")
 
+#if (NSS_VMAJOR > 3) || (NSS_VMAJOR == 3 && NSS_VMINOR >= 13)
+
 ER3(SSL_ERROR_DECOMPRESSION_FAILURE,           (SSL_ERROR_BASE + 111),
 "SSL received a compressed record that could not be decompressed.")
 
@@ -374,6 +376,10 @@ ER3(SSL_ERROR_RX_UNEXPECTED_UNCOMPRESSED_RECORD, (SSL_ERROR_BASE + 114),
 ER3(SSL_ERROR_WEAK_SERVER_EPHEMERAL_DH_KEY,    (SSL_ERROR_BASE + 115),
 "SSL received a weak ephemeral Diffie-Hellman key in Server Key Exchange handshake message.")
 
+#endif
+
+#if (NSS_VMAJOR > 3) || (NSS_VMAJOR == 3 && NSS_VMINOR >= 14)
+
 ER3(SSL_ERROR_NEXT_PROTOCOL_DATA_INVALID,      (SSL_ERROR_BASE + 116),
 "SSL received invalid NPN extension data.")
 
@@ -386,27 +392,26 @@ ER3(SSL_ERROR_FEATURE_NOT_SUPPORTED_FOR_SERVERS, (SSL_ERROR_BASE + 118),
 ER3(SSL_ERROR_FEATURE_NOT_SUPPORTED_FOR_CLIENTS, (SSL_ERROR_BASE + 119),
 "SSL feature not supported for clients.")
 
-#ifdef SSL_ERROR_INVALID_VERSION_RANGE
 ER3(SSL_ERROR_INVALID_VERSION_RANGE,           (SSL_ERROR_BASE + 120),
 "SSL version range is not valid.")
-#endif
 
-#ifdef SSL_ERROR_CIPHER_DISALLOWED_FOR_VERSION
 ER3(SSL_ERROR_CIPHER_DISALLOWED_FOR_VERSION,   (SSL_ERROR_BASE + 121),
 "SSL peer selected a cipher suite disallowed for the selected protocol version.")
-#endif
 
-#ifdef SSL_ERROR_RX_MALFORMED_HELLO_VERIFY_REQUEST
 ER3(SSL_ERROR_RX_MALFORMED_HELLO_VERIFY_REQUEST, (SSL_ERROR_BASE + 122),
 "SSL received a malformed Hello Verify Request handshake message.")
-#endif
 
-#ifdef SSL_ERROR_RX_UNEXPECTED_HELLO_VERIFY_REQUEST
 ER3(SSL_ERROR_RX_UNEXPECTED_HELLO_VERIFY_REQUEST, (SSL_ERROR_BASE + 123),
 "SSL received an unexpected Hello Verify Request handshake message.")
-#endif
 
-#ifdef SSL_ERROR_FEATURE_NOT_SUPPORTED_FOR_VERSION
 ER3(SSL_ERROR_FEATURE_NOT_SUPPORTED_FOR_VERSION, (SSL_ERROR_BASE + 124),
 "SSL feature not supported for the protocol version.")
+
+#endif
+
+#if (NSS_VMAJOR > 3) || (NSS_VMAJOR == 3 && NSS_VMINOR >= 15)
+
+ER3(SSL_ERROR_RX_UNEXPECTED_CERT_STATUS,       (SSL_ERROR_BASE + 125),
+"SSL received an unexpected Certificate Status handshake message.")
+
 #endif

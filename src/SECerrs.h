@@ -115,7 +115,7 @@ ER3(SEC_ERROR_EXTENSION_NOT_FOUND,		(SEC_ERROR_BASE + 35),
 
 ER3(SEC_ERROR_CA_CERT_INVALID,			(SEC_ERROR_BASE + 36),
 "Issuer certificate is invalid.")
-   
+
 ER3(SEC_ERROR_PATH_LEN_CONSTRAINT_INVALID,	(SEC_ERROR_BASE + 37),
 "Certificate path length constraint is invalid.")
 
@@ -343,7 +343,7 @@ ER3(SEC_ERROR_JS_DEL_MOD_FAILURE, 		(SEC_ERROR_BASE + 109),
 
 ER3(SEC_ERROR_OLD_KRL,	     			(SEC_ERROR_BASE + 110),
 "New KRL is not later than the current one.")
- 
+
 ER3(SEC_ERROR_CKL_CONFLICT,	     		(SEC_ERROR_BASE + 111),
 "New CKL has different issuer than current CKL.  Delete current CKL.")
 
@@ -515,6 +515,9 @@ ER3(SEC_ERROR_BAD_INFO_ACCESS_LOCATION,    		(SEC_ERROR_BASE + 165),
 ER3(SEC_ERROR_LIBPKIX_INTERNAL,      		(SEC_ERROR_BASE + 166),
 "Libpkix internal error occurred during cert validation.")
 
+#if (NSS_VMAJOR > 3) || (NSS_VMAJOR == 3 && NSS_VMINOR >= 13)
+
+
 ER3(SEC_ERROR_PKCS11_GENERAL_ERROR,      		(SEC_ERROR_BASE + 167),
 "A PKCS #11 module returned CKR_GENERAL_ERROR, indicating that an unrecoverable error has occurred.")
 
@@ -542,16 +545,17 @@ ER3(SEC_ERROR_UNKNOWN_PKCS11_ERROR,        		(SEC_ERROR_BASE + 174),
 ER3(SEC_ERROR_BAD_CRL_DP_URL,			(SEC_ERROR_BASE + 175),
 "Invalid or unsupported URL in CRL distribution point name.")
 
+#endif
+
+#if (NSS_VMAJOR > 3) || (NSS_VMAJOR == 3 && NSS_VMINOR >= 14)
+
 ER3(SEC_ERROR_CERT_SIGNATURE_ALGORITHM_DISABLED,	(SEC_ERROR_BASE + 176),
 "The certificate was signed using a signature algorithm that is disabled because it is not secure.")
 
-#ifdef SEC_ERROR_LEGACY_DATABASE
 ER3(SEC_ERROR_LEGACY_DATABASE,			(SEC_ERROR_BASE + 177),
 "The certificate/key database is in an old, unsupported format.")
-#endif
 
-#ifdef SEC_ERROR_APPLICATION_CALLBACK_ERROR
 ER3(SEC_ERROR_APPLICATION_CALLBACK_ERROR,        (SEC_ERROR_BASE + 178),
 "The certificate was rejected by extra checks in the application.")
-#endif
 
+#endif
