@@ -233,7 +233,7 @@ NetworkAddress_init_from_address_string(NetworkAddress *self, const char *addr_s
                      addr_str, pr_family_str(family));
         return NULL;
     }
-      
+
     if ((canonical_name = PR_GetCanonNameFromAddrInfo(pr_addrinfo)) != NULL) {
         if ((self->py_hostname = PyString_FromString(canonical_name)) == NULL) {
             PR_FreeAddrInfo(pr_addrinfo);
@@ -419,7 +419,7 @@ NetworkAddress_set_from_string(NetworkAddress *self, PyObject *args, PyObject *k
             Py_DECREF(ascii_str);
             return NULL;
         }
-        
+
         result = NetworkAddress_init_from_address_string(self, addr_str,
                                                          PRNetAddr_port(&self->pr_netaddr),
                                                          family);
@@ -893,7 +893,7 @@ AddrInfo_init(AddrInfo *self, PyObject *args, PyObject *kwds)
     while ((iter = PR_EnumerateAddrInfo(iter, self->pr_addrinfo, 0, &pr_netaddr)) != NULL) {
         len++;
     }
-    
+
     if ((self->py_netaddrs = PyTuple_New(len)) == NULL) {
         return -1;
     }
@@ -908,7 +908,7 @@ AddrInfo_init(AddrInfo *self, PyObject *args, PyObject *kwds)
         PyTuple_SetItem(self->py_netaddrs, i, py_netaddr);
         i++;
     }
-    
+
     if ((canonical_name = PR_GetCanonNameFromAddrInfo(self->pr_addrinfo)) == NULL) {
         self->py_canonical_name = Py_None;
         Py_INCREF(self->py_canonical_name);
@@ -2611,7 +2611,7 @@ Socket_recv(Socket *self, PyObject *args, PyObject *kwds)
     if (!PyArg_ParseTupleAndKeywords(args, kwds, "l|I:recv", kwlist,
                                      &requested_amount, &timeout))
         return NULL;
-    
+
     return _recv(self, requested_amount, timeout);
 }
 
@@ -3242,7 +3242,7 @@ Socket_import_tcp_socket(Socket *unused_class, PyObject *args)
     Py_BEGIN_ALLOW_THREADS
     if (PR_GetSockName(sock, &addr) != PR_SUCCESS) {
         Py_BLOCK_THREADS
-	return_value = set_nspr_error(NULL);
+	set_nspr_error(NULL);
 	goto error;
     }
     Py_END_ALLOW_THREADS
@@ -3378,7 +3378,7 @@ Socket_init(Socket *self, PyObject *args, PyObject *kwds)
         if (PyErr_WarnEx(PyExc_DeprecationWarning,
                          "Socket initialization will require family parameter in future, default family parameter of PR_AF_INET is deprecated. Suggest using the family property of the NetworkAddress object associated with the socket, e.g. Socket(net_addr.family)", 1) < 0)
             return -1;
-        
+
     }
 
     /* If reinitializing, first close down previous socket */
