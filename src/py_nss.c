@@ -3578,7 +3578,7 @@ static PyObject *
 der_set_or_str_secitem_to_pylist_of_pystr(SECItem *item)
 {
     int constructed = item->data[0] & SEC_ASN1_CONSTRUCTED;
-    SECItem tmp_item = *item;
+    SECItem stripped_item = *item;
     PyObject *py_items = NULL;
     PyObject *py_item = NULL;
 
@@ -3586,7 +3586,7 @@ der_set_or_str_secitem_to_pylist_of_pystr(SECItem *item)
         return raw_data_to_hex(item->data, item->len, 0, HEX_SEPARATOR_DEFAULT);
     }
 
-    if (sec_strip_tag_and_length(&tmp_item) != SECSuccess) {
+    if (sec_strip_tag_and_length(&stripped_item) != SECSuccess) {
         Py_RETURN_NONE;
     }
 
@@ -3594,8 +3594,8 @@ der_set_or_str_secitem_to_pylist_of_pystr(SECItem *item)
         return NULL;
     }
 
-    while (tmp_item.len >= 2) {
-	SECItem  tmp_item = tmp_item;
+    while (stripped_item.len >= 2) {
+	SECItem  tmp_item = stripped_item;
 
         if (tmp_item.data[1] & 0x80) {
 	    unsigned int i;
@@ -3610,11 +3610,11 @@ der_set_or_str_secitem_to_pylist_of_pystr(SECItem *item)
 	} else {
 	    tmp_item.len = tmp_item.data[1] + 2;
 	}
-	if (tmp_item.len > tmp_item.len) {
-	    tmp_item.len = tmp_item.len;
+	if (tmp_item.len > stripped_item.len) {
+	    tmp_item.len = stripped_item.len;
 	}
-	tmp_item.data += tmp_item.len;
-	tmp_item.len  -= tmp_item.len;
+	stripped_item.data += tmp_item.len;
+	stripped_item.len  -= tmp_item.len;
 
         py_item = der_any_secitem_to_pystr(&tmp_item);
         PyList_Append(py_items, py_item);
@@ -4134,43 +4134,58 @@ cert_der_universal_secitem_fmt_lines(PyObject *self, PyObject *args, PyObject *k
     case SEC_ASN1_ENUMERATED:
     case SEC_ASN1_INTEGER:
         obj = der_integer_secitem_to_pystr(item);
+        break;
     case SEC_ASN1_OBJECT_ID:
         obj = der_oid_secitem_to_pystr_desc(item);
+        break;
     case SEC_ASN1_BOOLEAN:
         obj = der_boolean_secitem_to_pystr(item);
+        break;
     case SEC_ASN1_UTF8_STRING:
         obj = der_utf8_string_secitem_to_pyunicode(item);
+        break;
     case SEC_ASN1_PRINTABLE_STRING:
     case SEC_ASN1_VISIBLE_STRING:
     case SEC_ASN1_IA5_STRING:
     case SEC_ASN1_T61_STRING:
         obj = der_ascii_string_secitem_to_escaped_ascii_pystr(item);
+        break;
     case SEC_ASN1_GENERALIZED_TIME:
         obj = der_generalized_time_secitem_to_pystr(item);
+        break;
     case SEC_ASN1_UTC_TIME:
         obj = der_utc_time_secitem_to_pystr(item);
+        break;
     case SEC_ASN1_NULL:
         obj = PyString_FromString("(null)");
+        break;
     case SEC_ASN1_SET:
     case SEC_ASN1_SEQUENCE:
         obj = der_set_or_str_secitem_to_pylist_of_pystr(item);
+        break;
     case SEC_ASN1_OCTET_STRING:
         obj = der_octet_secitem_to_pystr(item, octets_per_line, hex_separator);
+        break;
     case SEC_ASN1_BIT_STRING:
         der_bit_string_secitem_to_pystr(item);
         break;
     case SEC_ASN1_BMP_STRING:
         obj = der_bmp_string_secitem_to_pyunicode(item);
+        break;
     case SEC_ASN1_UNIVERSAL_STRING:
         obj = der_universal_string_secitem_to_pyunicode(item);
+        break;
     default:
         obj = raw_data_to_hex(item->data, item->len, octets_per_line, hex_separator);
+        break;
     }
 
-    if (PyList_Check(obj)) {
-        APPEND_LINES_AND_CLEAR(lines, obj, level, fail);
-    } else {
-        FMT_OBJ_AND_APPEND(lines, NULL, obj, level, fail);
+    if (obj) {
+        if (PyList_Check(obj)) {
+            APPEND_LINES_AND_CLEAR(lines, obj, level, fail);
+        } else {
+            FMT_OBJ_AND_APPEND(lines, NULL, obj, level, fail);
+        }
     }
 
     return lines;
@@ -4954,6 +4969,10 @@ SecItem_compare(SecItem *self, SecItem *other)
         return 0;
     }
 
+    if (self->item.len == 0 && other->item.len == 0) {
+        return 0;
+    }
+
     if (self->item.len > other->item.len) {
         return 1;
     }
@@ -4962,7 +4981,11 @@ SecItem_compare(SecItem *self, SecItem *other)
         return -1;
     }
 
-    return memcmp(self->item.data, other->item.data, self->item.len);
+    if (self->item.data != NULL && other->item.data != NULL) {
+        return memcmp(self->item.data, other->item.data, self->item.len);
+    }
+
+    return 0;
 }
 
 /* =========================== Buffer Protocol ========================== */
@@ -6125,6 +6148,7 @@ parameters then they must all be passed.\n\
 static int
 KEYPQGParams_init(KEYPQGParams *self, PyObject *args, PyObject *kwds)
 {
+    static char *kwlist[] = {"prime", "subprime", "base", NULL};
     PyObject *py_prime = NULL;
     SECItem prime_tmp_item;
     SECItem *prime_item = NULL;
@@ -6141,6 +6165,10 @@ KEYPQGParams_init(KEYPQGParams *self, PyObject *args, PyObject *kwds)
 
     // FIXME: prime, subprime & base are really large ASN.1 integers
     // we should accept a python int or python long and convert to a SecItem
+
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "OOO:KEYPQGParams", kwlist,
+                                     &py_prime, &py_subprime, &py_base))
+        return -1;
 
     SECITEM_PARAM(py_prime, prime_item, prime_tmp_item, false, "prime");
     SECITEM_PARAM(py_subprime, subprime_item, subprime_tmp_item, false, "subprime");
@@ -8328,11 +8356,9 @@ Certificate_get_signature_algorithm(Certificate *self, void *closure)
 static PyObject *
 Certificate_get_signed_data(Certificate *self, void *closure)
 {
-    PyObject *py_signed_data = NULL;
-
     TraceMethodEnter(self);
 
-    return py_signed_data = SignedData_new_from_SECItem(&self->cert->derCert);
+    return SignedData_new_from_SECItem(&self->cert->derCert);
 }
 
 static PyObject *
@@ -15061,11 +15087,6 @@ AuthorityInfoAccesses_init_from_SECItem(AuthorityInfoAccesses *self, SECItem *it
 
     if ((aias = CERT_DecodeAuthInfoAccessExtension(arena, item)) == NULL) {
         set_nspr_error("cannot decode Authority Access Info extension");
-        return -1;
-    }
-
-    if ((aias = CERT_DecodeAuthInfoAccessExtension(arena, item)) == NULL) {
-        PyErr_SetString(PyExc_ValueError, "Failed to parse Authority Information Access Extension");
         PORT_FreeArena(arena, PR_FALSE);
         return -1;
     }
