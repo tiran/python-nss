@@ -991,7 +991,7 @@ py_indented_format(PyObject *self, PyObject *args, PyObject *kwds)
         tuple_len = PyTuple_Size(py_line_fmt_tuple);
 
         if (tuple_len < 1 || tuple_len > 3) {
-            PyErr_Format(PyExc_TypeError, "line_fmt_tuples[%zd] tuple must have 1-3 items, not %d items",
+            PyErr_Format(PyExc_TypeError, "line_fmt_tuples[%zd] tuple must have 1-3 items, not %zd items",
                          i, tuple_len);
             goto fail;
         }
@@ -3442,7 +3442,7 @@ read_hex(PyObject *self, PyObject *args, PyObject *kwds)
         case 'f': octet = 0xf << 4; break;
         default:
             PyMem_Free(data);
-            PyErr_Format(PyExc_ValueError, "invalid hexadecimal string beginning at offset %d \"%s\"",
+            PyErr_Format(PyExc_ValueError, "invalid hexadecimal string beginning at offset %td \"%s\"",
                          src - input, src);
             return NULL;
         }
@@ -3465,7 +3465,7 @@ read_hex(PyObject *self, PyObject *args, PyObject *kwds)
         case 'f': octet |= 0xf; break;
         default:
             PyMem_Free(data);
-            PyErr_Format(PyExc_ValueError, "invalid hexadecimal string beginning at offset %d \"%s\"",
+            PyErr_Format(PyExc_ValueError, "invalid hexadecimal string beginning at offset %td \"%s\"",
                          src - input, src);
             return NULL;
         }
@@ -4893,7 +4893,7 @@ SecItem_init(SecItem *self, PyObject *args, PyObject *kwds)
         self->item.type = type;
         self->item.len = buffer_len;
         if ((self->item.data = PyMem_MALLOC(buffer_len)) == NULL) {
-            PyErr_Format(PyExc_MemoryError, "not enough memory to copy buffer of size %d into SecItem",
+            PyErr_Format(PyExc_MemoryError, "not enough memory to copy buffer of size %zd into SecItem",
                          buffer_len);
             return -1;
         }
@@ -9437,7 +9437,7 @@ Certificate_format_lines(Certificate *self, PyObject *args, PyObject *kwds)
     }
 
     len = PyTuple_Size(extensions);
-    if ((obj = PyString_FromFormat("Signed Extensions: (%d)", len)) == NULL) {
+    if ((obj = PyString_FromFormat("Signed Extensions: (%zd)", len)) == NULL) {
         goto fail;
     }
     FMT_OBJ_AND_APPEND(lines, NULL, obj, level+1, fail);
@@ -10821,7 +10821,7 @@ RDN_init(RDN *self, PyObject *args, PyObject *kwds)
         }
         sequence_len = PySequence_Length(sequence);
         if (sequence_len > MAX_AVAS) {
-            PyErr_Format(PyExc_ValueError, "to many AVA items, maximum is %d, received %d",
+            PyErr_Format(PyExc_ValueError, "to many AVA items, maximum is %d, received %zd",
                          MAX_AVAS-1, sequence_len);
             return -1;
         }
@@ -10836,7 +10836,7 @@ RDN_init(RDN *self, PyObject *args, PyObject *kwds)
                 }
                 Py_DECREF(item);
             } else {
-                PyErr_Format(PyExc_TypeError, "item %d must be an AVA object, not %.200s",
+                PyErr_Format(PyExc_TypeError, "item %zd must be an AVA object, not %.200s",
                              i, Py_TYPE(item)->tp_name);
                 Py_DECREF(item);
                 return -1;
@@ -11593,7 +11593,7 @@ DN_init(DN *self, PyObject *args, PyObject *kwds)
         sequence_len = PySequence_Length(sequence);
 
         if (sequence_len > MAX_RDNS) {
-            PyErr_Format(PyExc_ValueError, "to many RDN items, maximum is %d, received %d",
+            PyErr_Format(PyExc_ValueError, "to many RDN items, maximum is %d, received %zd",
                          MAX_RDNS-1, sequence_len);
             return -1;
         }
@@ -11616,7 +11616,7 @@ DN_init(DN *self, PyObject *args, PyObject *kwds)
                 }
                 rdn_arg[i] = new_rdn;
             } else {
-                PyErr_Format(PyExc_TypeError, "item %d must be an RDN object, not %.200s",
+                PyErr_Format(PyExc_TypeError, "item %zd must be an RDN object, not %.200s",
                              i, Py_TYPE(item)->tp_name);
                 Py_DECREF(item);
                 return -1;
@@ -14063,7 +14063,7 @@ CRLDistributionPt_format_lines(CRLDistributionPt *self, PyObject *args, PyObject
         }
         len = PyTuple_GET_SIZE(obj);
 
-        if ((obj1 = PyString_FromFormat("General Names: [%d total]", len)) == NULL) {
+        if ((obj1 = PyString_FromFormat("General Names: [%zd total]", len)) == NULL) {
             goto fail;
         }
         FMT_OBJ_AND_APPEND(lines, NULL, obj1, level, fail);
@@ -14408,7 +14408,7 @@ CRLDistributionPts_format_lines(CRLDistributionPts *self, PyObject *args, PyObje
 
     //
     len = PyObject_Size((PyObject *)self);
-    if ((obj = PyString_FromFormat("CRL Distribution Points: [%d total]", len)) == NULL) {
+    if ((obj = PyString_FromFormat("CRL Distribution Points: [%zd total]", len)) == NULL) {
         goto fail;
     }
     FMT_OBJ_AND_APPEND(lines, NULL, obj, level, fail);
@@ -14950,7 +14950,7 @@ AuthorityInfoAccesses_format_lines(AuthorityInfoAccesses *self, PyObject *args, 
     }
 
     len = PyObject_Size((PyObject *)self);
-    if ((obj = PyString_FromFormat("Authority Information Access: [%d total]", len)) == NULL) {
+    if ((obj = PyString_FromFormat("Authority Information Access: [%zd total]", len)) == NULL) {
         goto fail;
     }
     FMT_OBJ_AND_APPEND(lines, NULL, obj, level, fail);
@@ -14958,7 +14958,7 @@ AuthorityInfoAccesses_format_lines(AuthorityInfoAccesses *self, PyObject *args, 
 
 
     for (i = 0; i < len; i++) {
-        if ((obj = PyString_FromFormat("Info [%d]:", i+1)) == NULL) {
+        if ((obj = PyString_FromFormat("Info [%zd]:", i+1)) == NULL) {
             goto fail;
         }
         FMT_OBJ_AND_APPEND(lines, NULL, obj, level+1, fail);
@@ -15394,7 +15394,7 @@ AuthKeyID_format_lines(AuthKeyID *self, PyObject *args, PyObject *kwds)
         goto fail;
     }
     len = PyObject_Size(obj);
-    if ((obj1 = PyString_FromFormat("General Names: [%d total]", len)) == NULL) {
+    if ((obj1 = PyString_FromFormat("General Names: [%zd total]", len)) == NULL) {
         goto fail;
     }
     FMT_OBJ_AND_APPEND(lines, NULL, obj1, level, fail);
@@ -16087,7 +16087,7 @@ CertificateRequest_format_lines(CertificateRequest *self, PyObject *args, PyObje
     }
 
     len = PyTuple_Size(extensions);
-    if ((obj = PyString_FromFormat("Signed Extensions: (%d)", len)) == NULL) {
+    if ((obj = PyString_FromFormat("Signed Extensions: (%zd)", len)) == NULL) {
         goto fail;
     }
     FMT_OBJ_AND_APPEND(lines, NULL, obj, level+1, fail);

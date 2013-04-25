@@ -312,5 +312,5 @@ FAQ
 To be added
 
 """
-__version__ = '0.14.0alpha'
+__version__ = '0.14.0'
 
