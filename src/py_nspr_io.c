@@ -3127,7 +3127,7 @@ the corresponding Socket in poll_descs.\n\
 ");
 
 static PyObject *
-Socket_poll(Socket *unused_class, PyObject *args)
+Socket_poll(Socket *self, PyObject *args)
 {
     PyObject *py_descs = NULL;
     PyObject *return_value = NULL;
@@ -3224,7 +3224,7 @@ communication.\n\
 ");
 
 static PyObject *
-Socket_import_tcp_socket(Socket *unused_class, PyObject *args)
+Socket_import_tcp_socket(Socket *self, PyObject *args)
 {
     int osfd;
     PRFileDesc *sock;

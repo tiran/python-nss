@@ -382,6 +382,40 @@ NewType_new_from_NSSType(NSSType *id)
 #define OCTETS_PER_LINE_DEFAULT 16
 #define HEX_SEPARATOR_DEFAULT ":"
 
+#ifdef DEBUG
+#include "py_traceback.h"
+
+static void
+print_cert(CERTCertificate *cert, const char *format, ...) __attribute__ ((format (printf, 2, 3)));
+
+static void
+print_cert(CERTCertificate *cert, const char *format, ...)
+{
+    va_list va;
+    char *subject;
+
+    if (cert == NULL) {
+        printf("Certificate was null\n");
+        return;
+    }
+
+    subject = CERT_NameToAscii(&cert->subject);
+
+    if (format) {
+        va_start(va, format);
+        vprintf(format, va);
+        va_end(va);
+        printf(" subject %s\n", subject);
+    } else {
+        printf("Certificate subject: %s\n", subject);
+    }
+
+    PORT_Free(subject);
+    nss_DumpCertificateCacheInfo();
+    print_traceback();
+}
+#endif
+
 /* FIXME: convert all equality tests to Py_None to PyNone_Check() */
 
 //FIXME, should be in py_nss.h
@@ -9594,6 +9628,10 @@ Certificate_dealloc(Certificate* self)
 {
     TraceMethodEnter(self);
 
+#ifdef DEBUG
+    print_cert(self->cert, "%s before CERT_DestroyCertificate" ,__FUNCTION__);
+#endif
+
     if (self->cert) {
         CERT_DestroyCertificate(self->cert);
     }
@@ -9675,6 +9713,10 @@ Certificate_init(Certificate *self, PyObject *args, PyObject *kwds)
     }
     Py_END_ALLOW_THREADS
 
+#ifdef DEBUG
+    print_cert(certs[0], "%s after CERT_ImportCerts certificate perm=%s" ,__FUNCTION__, perm ? "True":"False");
+#endif
+
     if ((self->cert = CERT_DupCertificate(certs[0])) == NULL) {
         set_nspr_error(NULL);
         result = -1;
@@ -9746,6 +9788,10 @@ Certificate_new_from_CERTCertificate(CERTCertificate *cert)
     Certificate *self = NULL;
 
     TraceObjNewEnter(NULL);
+
+#ifdef DEBUG
+    print_cert(cert, "%s certificate" ,__FUNCTION__);
+#endif
 
     if ((self = (Certificate *) CertificateType.tp_new(&CertificateType, NULL, NULL)) == NULL) {
         return NULL;
@@ -14864,10 +14910,7 @@ AuthorityInfoAccess_dealloc(AuthorityInfoAccess* self)
 }
 
 PyDoc_STRVAR(AuthorityInfoAccess_doc,
-"AuthorityInfoAccess(obj)\n\
-\n\
-:Parameters:\n\
-    obj : xxx\n\
+"AuthorityInfoAccess()\n\
 \n\
 An object representing AuthorityInfoAccess.\n\
 ");
@@ -14875,13 +14918,12 @@ An object representing AuthorityInfoAccess.\n\
 static int
 AuthorityInfoAccess_init(AuthorityInfoAccess *self, PyObject *args, PyObject *kwds)
 {
-    static char *kwlist[] = {"arg", NULL};
-    PyObject *arg;
+    static char *kwlist[] = {NULL};
 
     TraceMethodEnter(self);
 
-    if (!PyArg_ParseTupleAndKeywords(args, kwds, "O|i:AuthorityInfoAccess", kwlist,
-                                     &arg))
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, ":AuthorityInfoAccess", kwlist
+                                     ))
         return -1;
 
     return 0;
@@ -19032,7 +19074,7 @@ involve the protected information.  The extra user_dataN parameters to\n\
 the password callback function is application-defined and can be used\n\
 for any purpose. When NSS libraries call the password callback\n\
 function the value they pass for the user_dataN arguments is\n\
-determined by `ssl.set_pkcs11_pin_arg()`.\n\
+determined by `ssl.SSLSocket.set_pkcs11_pin_arg()`.\n\
 \n\
 The callback has the signature::\n\
     \n\
@@ -22810,6 +22852,7 @@ PyDoc_STRVAR(cert_set_ocsp_failure_mode_doc,
 \n\
 Set the desired behaviour on OCSP failures.\n\
 failure_mode may be one of:\n\
+\n\
     - ocspMode_FailureIsVerificationFailure\n\
     - ocspMode_FailureIsNotAVerificationFailure\n\
 \n\

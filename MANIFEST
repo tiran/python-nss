@@ -32,3 +32,4 @@ src/py_nss.c
 src/py_nss.h
 src/py_ssl.c
 src/py_ssl.h
+src/py_traceback.h

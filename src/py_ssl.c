@@ -1028,6 +1028,8 @@ SSLSocket_get_peer_certificate(SSLSocket *self, PyObject *args)
     CERTCertificate *cert = NULL;
     PyObject *py_cert = NULL;
 
+    TraceMethodEnter(self);
+
     cert = SSL_PeerCertificate(self->pr_socket);
     if (cert == NULL) {
         Py_RETURN_NONE;
@@ -1052,6 +1054,8 @@ SSLSocket_get_certificate(SSLSocket *self, PyObject *args)
 {
     CERTCertificate *cert = NULL;
     PyObject *py_cert = NULL;
+
+    TraceMethodEnter(self);
 
     cert = SSL_RevealCert(self->pr_socket);
     if (cert == NULL) {
@@ -1526,6 +1530,8 @@ static PyObject *
 SSLSocket_force_handshake(SSLSocket *self, PyObject *args)
 {
 
+    TraceMethodEnter(self);
+
     Py_BEGIN_ALLOW_THREADS
     if (SSL_ForceHandshake(self->pr_socket) != SECSuccess) {
         Py_BLOCK_THREADS
@@ -1604,6 +1610,8 @@ SSLSocket_rehandshake(SSLSocket *self, PyObject *args)
 {
     int flush_cache;
 
+    TraceMethodEnter(self);
+
     if (!PyArg_ParseTuple(args, "i:rehandshake", &flush_cache))
         return NULL;
 
@@ -1636,6 +1644,8 @@ SSLSocket_rehandshake_timeout(SSLSocket *self, PyObject *args)
     int flush_cache;
     unsigned int timeout = PR_INTERVAL_NO_TIMEOUT;
 
+    TraceMethodEnter(self);
+
     if (!PyArg_ParseTuple(args, "iI:rehandshake_timeout", &flush_cache, &timeout))
         return NULL;
 
@@ -1660,12 +1670,14 @@ communication.\n\
 ");
 
 static PyObject *
-SSLSocket_import_tcp_socket(Socket *unused_class, PyObject *args)
+SSLSocket_import_tcp_socket(Socket *self, PyObject *args)
 {
     int osfd;
     PRFileDesc *sock0, *sock;
     PRNetAddr addr;
     PyObject *return_value = NULL;
+
+    TraceMethodEnter(self);
 
     if (!PyArg_ParseTuple(args, "i:import_tcp_socket", &osfd))
 	return NULL;
