@@ -313,10 +313,14 @@ def main(argv):
     debug_compile_args = ['-O0', '-g']
     extra_compile_args = []
 
-    for arg in argv:
+    for arg in argv[:]:
         if arg in ('-d', '--debug'):
             print "compiling with debug"
-            extra_compile_args = debug_compile_args
+            extra_compile_args += debug_compile_args
+            argv.remove(arg)
+        if arg in ('-t', '--trace'):
+            print "compiling with trace"
+            extra_compile_args += ['-DDEBUG']
             argv.remove(arg)
 
     nss_include_dir  = find_include_dir(['nss3', 'nss'],   ['nss.h',  'pk11pub.h'])

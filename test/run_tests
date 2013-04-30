@@ -34,6 +34,8 @@ def run_tests():
     suite.addTests(loader.loadTestsFromModule(test_cipher))
     suite.addTests(loader.loadTestsFromModule(test_digest))
     suite.addTests(loader.loadTestsFromModule(test_pkcs12))
+    suite.addTests(loader.loadTestsFromModule(test_misc))
+    suite.addTests(loader.loadTestsFromModule(test_ocsp))
     suite.addTests(loader.loadTestsFromModule(test_client_server))
 
     result = runner.run(suite)

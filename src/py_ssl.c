@@ -1035,7 +1035,7 @@ SSLSocket_get_peer_certificate(SSLSocket *self, PyObject *args)
         Py_RETURN_NONE;
     }
 
-    if ((py_cert = Certificate_new_from_CERTCertificate(cert)) == NULL) {
+    if ((py_cert = Certificate_new_from_CERTCertificate(cert, false)) == NULL) {
         return NULL;
     }
 
@@ -1062,7 +1062,7 @@ SSLSocket_get_certificate(SSLSocket *self, PyObject *args)
         Py_RETURN_NONE;
     }
 
-    if ((py_cert = Certificate_new_from_CERTCertificate(cert)) == NULL) {
+    if ((py_cert = Certificate_new_from_CERTCertificate(cert, false)) == NULL) {
         return NULL;
     }
 

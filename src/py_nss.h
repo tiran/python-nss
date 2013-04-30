@@ -401,7 +401,7 @@ typedef struct {
     PyTypeObject *certificate_type;
     PyTypeObject *private_key_type;
     PyTypeObject *sec_item_type;
-    PyObject *(*Certificate_new_from_CERTCertificate)(CERTCertificate *cert);
+    PyObject *(*Certificate_new_from_CERTCertificate)(CERTCertificate *cert, bool add_reference);
     PyObject *(*PrivateKey_new_from_SECKEYPrivateKey)(SECKEYPrivateKey *private_key);
     PyObject *(*SecItem_new_from_SECItem)(const SECItem *item, SECItemKind type);
     PyObject *(*cert_distnames_new_from_CERTDistNames)(CERTDistNames *names);
