@@ -178,6 +178,9 @@
   * Add Certificate_summary_format_lines() utility to generate
     concise certificate identification info for output.
 
+  * Certificate_new_from_CERTCertificate now takes add_reference parameter
+    to properly reference count certs, should fix shutdown busy problems.
+
   * Add print_traceback(), print_cert() debugging support.
 
 2012-10-05  John Dennis  <jdennis@redhat.com> 0.13

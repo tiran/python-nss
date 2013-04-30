@@ -1749,7 +1749,7 @@ static PyObject *
 Certificate_get_issuer(Certificate *self, void *closure);
 
 static PyObject *
-Certificate_new_from_CERTCertificate(CERTCertificate *cert);
+Certificate_new_from_CERTCertificate(CERTCertificate *cert, bool add_reference);
 
 static PyObject *
 fingerprint_format_lines(SECItem *item, int level);
@@ -2178,7 +2178,7 @@ decode_oid_sequence_to_tuple(SECItem *item, RepresentationKind repr_kind)
 }
 
 static PyObject *
-CERTCertList_to_tuple(CERTCertList *cert_list)
+CERTCertList_to_tuple(CERTCertList *cert_list, bool add_reference)
 {
     Py_ssize_t n_certs = 0;
     Py_ssize_t i = 0;
@@ -2197,7 +2197,7 @@ CERTCertList_to_tuple(CERTCertList *cert_list)
     for (node = CERT_LIST_HEAD(cert_list), i = 0;
          !CERT_LIST_END(node, cert_list);
          node = CERT_LIST_NEXT(node), i++) {
-        if ((py_cert = Certificate_new_from_CERTCertificate(node->cert)) == NULL) {
+        if ((py_cert = Certificate_new_from_CERTCertificate(node->cert, add_reference)) == NULL) {
             Py_DECREF(tuple);
             return NULL;
         }
@@ -9348,7 +9348,7 @@ Certificate_get_cert_chain(Certificate *self, PyObject *args, PyObject *kwds)
         return set_nspr_error(NULL);
     }
 
-    tuple = CERTCertList_to_tuple(cert_list);
+    tuple = CERTCertList_to_tuple(cert_list, true);
     CERT_DestroyCertList(cert_list);
     return tuple;
 }
@@ -9783,7 +9783,7 @@ static PyTypeObject CertificateType = {
 };
 
 static PyObject *
-Certificate_new_from_CERTCertificate(CERTCertificate *cert)
+Certificate_new_from_CERTCertificate(CERTCertificate *cert, bool add_reference)
 {
     Certificate *self = NULL;
 
@@ -9797,8 +9797,12 @@ Certificate_new_from_CERTCertificate(CERTCertificate *cert)
         return NULL;
     }
 
-    if ((self->cert = CERT_DupCertificate(cert)) == NULL) {
-        return set_nspr_error(NULL);
+    if (add_reference) {
+        if ((self->cert = CERT_DupCertificate(cert)) == NULL) {
+            return set_nspr_error(NULL);
+        }
+    } else {
+        self->cert = cert;
     }
 
     TraceObjNewLeave(self);
@@ -13151,7 +13155,7 @@ PK11Slot_list_certs(PK11Slot *self, PyObject *args)
         return set_nspr_error(NULL);
     }
 
-    tuple = CERTCertList_to_tuple(cert_list);
+    tuple = CERTCertList_to_tuple(cert_list, true);
     CERT_DestroyCertList(cert_list);
     return tuple;
 }
@@ -17825,12 +17829,10 @@ PKCS12_nickname_collision_callback(SECItem *old_nickname, PRBool *returned_cance
     }
 
     cert = (CERTCertificate*)arg;
-    if ((py_cert = Certificate_new_from_CERTCertificate(cert)) == NULL) {
+    if ((py_cert = Certificate_new_from_CERTCertificate(cert, true)) == NULL) {
         Py_DECREF(py_old_nickname);
         return NULL;
     }
-    /* Add reference because Certificate_dealloc will remove reference */
-    CERT_DupCertificate(((Certificate *)py_cert)->cert);
 
     if ((new_args = PyTuple_New(2)) == NULL) {
         PySys_WriteStderr("PKCS12 nickname collision callback: out of memory\n");
@@ -18377,7 +18379,7 @@ CertVerifyLogNode_get_certificate(CertVerifyLogNode *self, void *closure)
 {
     TraceMethodEnter(self);
 
-    return Certificate_new_from_CERTCertificate(self->node.cert);
+    return Certificate_new_from_CERTCertificate(self->node.cert, true);
 }
 
 static PyObject *
@@ -18465,7 +18467,7 @@ CertVerifyLogNodeError_format_lines(CertVerifyLogNode *self, int level, PyObject
     case SEC_ERROR_UNKNOWN_ISSUER:
     case SEC_ERROR_UNTRUSTED_ISSUER:
     case SEC_ERROR_EXPIRED_ISSUER_CERTIFICATE:
-        if ((py_cert = Certificate_new_from_CERTCertificate(node->cert)) == NULL) {
+        if ((py_cert = Certificate_new_from_CERTCertificate(node->cert, true)) == NULL) {
             goto fail;
         }
         if ((obj = Certificate_get_issuer((Certificate *)py_cert, NULL)) == NULL) {
@@ -18510,13 +18512,14 @@ CertVerifyLogNode_format_lines(CertVerifyLogNode *self, PyObject *args, PyObject
 
     FMT_LABEL_AND_APPEND(lines, _("Certificate"), level, fail);
 
-    if ((py_cert = (Certificate *)Certificate_new_from_CERTCertificate(node->cert)) == NULL) {
+    if ((py_cert = (Certificate *)Certificate_new_from_CERTCertificate(node->cert, true)) == NULL) {
         goto fail;
     }
 
     if (Certificate_summary_format_lines(py_cert, level+1, lines) == NULL) {
         goto fail;
     }
+    Py_CLEAR(py_cert);
 
     if ((obj = PyInt_FromLong(node->depth)) == NULL){
         goto fail;
@@ -18738,7 +18741,7 @@ CertVerifyLog_format_lines(CertVerifyLog *self, PyObject *args, PyObject *kwds)
             FMT_LABEL_AND_APPEND(lines, PyString_AsString(obj), level, fail);
             Py_CLEAR(obj);
 
-            if ((py_cert = (Certificate *)Certificate_new_from_CERTCertificate(node->cert)) == NULL) {
+            if ((py_cert = (Certificate *)Certificate_new_from_CERTCertificate(node->cert, true)) == NULL) {
                 goto fail;
             }
 
@@ -19170,7 +19173,7 @@ pk11_list_certs(PyObject *self, PyObject *args)
 
     Py_DECREF(pin_args);
 
-    tuple = CERTCertList_to_tuple(cert_list);
+    tuple = CERTCertList_to_tuple(cert_list, true);
     CERT_DestroyCertList(cert_list);
     return tuple;
 }
@@ -19228,7 +19231,7 @@ pk11_find_certs_from_email_addr(PyObject *self, PyObject *args)
 
     Py_DECREF(pin_args);
 
-    tuple = CERTCertList_to_tuple(cert_list);
+    tuple = CERTCertList_to_tuple(cert_list, true);
     CERT_DestroyCertList(cert_list);
     return tuple;
 }
@@ -19286,7 +19289,7 @@ pk11_find_certs_from_nickname(PyObject *self, PyObject *args)
 
     Py_DECREF(pin_args);
 
-    tuple = CERTCertList_to_tuple(cert_list);
+    tuple = CERTCertList_to_tuple(cert_list, true);
     CERT_DestroyCertList(cert_list);
     return tuple;
 }
@@ -19346,7 +19349,7 @@ pk11_find_cert_from_nickname(PyObject *self, PyObject *args)
 
     Py_DECREF(pin_args);
 
-    if ((py_cert = Certificate_new_from_CERTCertificate(cert)) == NULL) {
+    if ((py_cert = Certificate_new_from_CERTCertificate(cert, false)) == NULL) {
         return NULL;
     }
 
