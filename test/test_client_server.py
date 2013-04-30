@@ -30,9 +30,9 @@ hostname = os.uname()[1]
 server_nickname = 'test_server'
 client_nickname = 'test_user'
 port = 1234
-timeout_secs = 3
+timeout_secs = 10
 family = io.PR_AF_INET
-sleep_time = 1
+sleep_time = 5
 
 
 # -----------------------------------------------------------------------------

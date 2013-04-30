@@ -12832,7 +12832,7 @@ optional user_data parameters to the password callback.\n\
 static PyObject *
 PK11Slot_authenticate(PK11Slot *self, PyObject *args)
 {
-    PyObject *py_load_certs;
+    PyObject *py_load_certs = NULL;
     Py_ssize_t n_base_args = 1;
     Py_ssize_t argc;
     PyObject *parse_args = NULL;
