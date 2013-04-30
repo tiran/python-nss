@@ -92,6 +92,7 @@
     - nss.disable_ocsp_default_responder
 
   * The following files were added:
+      src/py_traceback.h
       doc/examples/verify_cert.py
       test/test_misc.py
 
@@ -177,7 +178,7 @@
   * Add Certificate_summary_format_lines() utility to generate
     concise certificate identification info for output.
 
-
+  * Add print_traceback(), print_cert() debugging support.
 
 2012-10-05  John Dennis  <jdennis@redhat.com> 0.13
   * Fix NSS SECITEM_CompareItem bug via workaround.
