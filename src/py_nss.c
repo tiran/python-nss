@@ -14491,7 +14491,7 @@ CRLDistributionPts_format_lines(CRLDistributionPts *self, PyObject *args, PyObje
     Py_CLEAR(obj);
 
     for (i = 0; i < len; i++) {
-        if ((obj = PyString_FromFormat("Point [%d]:", i+1)) == NULL) {
+        if ((obj = PyString_FromFormat("Point [%zd]:", i+1)) == NULL) {
             goto fail;
         }
         FMT_OBJ_AND_APPEND(lines, NULL, obj, level+1, fail);
@@ -18114,6 +18114,7 @@ PKCS12Decoder_new(PyTypeObject *type, PyObject *args, PyObject *kwds)
         return NULL;
     }
 
+    self->ucs2_password_item = NULL;
     self->decoder_ctx = NULL;
     self->py_decode_items = NULL;
 
@@ -18142,6 +18143,9 @@ PKCS12Decoder_dealloc(PKCS12Decoder* self)
 {
     TraceMethodEnter(self);
 
+    if (self->ucs2_password_item) {
+        SECITEM_ZfreeItem(self->ucs2_password_item, PR_TRUE);
+    }
     if (self->decoder_ctx) {
 	SEC_PKCS12DecoderFinish(self->decoder_ctx);
     }
@@ -18176,10 +18180,7 @@ PKCS12Decoder_init(PKCS12Decoder *self, PyObject *args, PyObject *kwds)
     PyObject *py_slot = Py_None;
     char *utf8_password = NULL;
     size_t utf8_password_len = 0;
-    unsigned char *ucs2_password = NULL;
     unsigned int ucs2_password_alloc_len = 0;
-    unsigned int ucs2_password_len = 0;
-    SECItem ucs2_password_item;
 
     char *slot_password = NULL;
     PK11SlotInfo *slot = NULL;
@@ -18213,14 +18214,16 @@ PKCS12Decoder_init(PKCS12Decoder *self, PyObject *args, PyObject *kwds)
     utf8_password_len = strlen(utf8_password) + 1;
     ucs2_password_alloc_len = utf8_password_len * 2;
 
-    if ((ucs2_password = PyMem_Malloc(ucs2_password_alloc_len)) == NULL) {
-        PyErr_NoMemory();
+    if ((self->ucs2_password_item =
+         SECITEM_AllocItem(NULL, NULL, ucs2_password_alloc_len)) == NULL) {
+        set_nspr_error(NULL);
         result = -1;
         goto exit;
     }
 
     if (!PORT_UCS2_UTF8Conversion(PR_TRUE, (unsigned char *)utf8_password, utf8_password_len,
-                                  ucs2_password, ucs2_password_alloc_len, &ucs2_password_len)) {
+                                  self->ucs2_password_item->data, ucs2_password_alloc_len,
+                                  &self->ucs2_password_item->len)) {
         PyErr_SetString(PyExc_ValueError, "password conversion to UCS2 failed");
         result = -1;
         goto exit;
@@ -18232,9 +18235,7 @@ PKCS12Decoder_init(PKCS12Decoder *self, PyObject *args, PyObject *kwds)
         slot = ((PK11Slot *)py_slot)->slot;
     }
 
-    ucs2_password_item.data = ucs2_password;
-    ucs2_password_item.len  = ucs2_password_len;
-    if ((self->decoder_ctx = SEC_PKCS12DecoderStart(&ucs2_password_item,
+    if ((self->decoder_ctx = SEC_PKCS12DecoderStart(self->ucs2_password_item,
                                          slot,
                                          slot_password,
                                          NULL, NULL, NULL, NULL, NULL)) == NULL) {
@@ -18297,8 +18298,6 @@ PKCS12Decoder_init(PKCS12Decoder *self, PyObject *args, PyObject *kwds)
 
     if (utf8_password)
         PyMem_Free(utf8_password);
-    if (ucs2_password)
-        PyMem_Free(ucs2_password);
     if (py_file_contents)
         Py_DECREF(py_file_contents);
 
@@ -18755,7 +18754,7 @@ CertVerifyLog_format_lines(CertVerifyLog *self, PyObject *args, PyObject *kwds)
             FMT_LABEL_AND_APPEND(lines, NULL, level, fail);
         }
 
-        if ((obj = PyString_FromFormat(_("Validation Error #%u"), i+1)) == NULL) {
+        if ((obj = PyString_FromFormat(_("Validation Error #%zd"), i+1)) == NULL) {
             goto fail;
         }
         FMT_LABEL_AND_APPEND(lines, PyString_AsString(obj), level+1, fail);

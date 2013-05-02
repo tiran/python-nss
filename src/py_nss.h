@@ -371,6 +371,7 @@ typedef struct {
 
 typedef struct {
     PyObject_HEAD
+    SECItem *ucs2_password_item;
     SEC_PKCS12DecoderContext *decoder_ctx;
     PyObject *py_decode_items;    /* tuple */
 } PKCS12Decoder;

@@ -32,6 +32,9 @@
     failing to pass initialization data or the der_is_signed flag so
     this change should be backwards compatible.
 
+  * Fix bug #922247, PKCS12Decoder.database_import() method. Importing into
+    a NSS database would sometimes fail or segfault.
+
   * Error constants were upgraded to include all new NSS and NSPR errors.
 
   * The password callback did not allow for breaking out of a password
