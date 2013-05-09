@@ -1,6 +1,6 @@
-2013-04-24  John Dennis  <jdennis@redhat.com> 0.14
-  External Changes:
-  -----------------
+2013-04-24  John Dennis  <jdennis@redhat.com> 0.14.0
+  External Changes
+  ----------------
 
   The primary enhancements in this version is support of certifcate
   validation, OCSP support, and support for the certificate "Authority
@@ -35,7 +35,7 @@
   * Fix bug #922247, PKCS12Decoder.database_import() method. Importing into
     a NSS database would sometimes fail or segfault.
 
-  * Error constants were upgraded to include all new NSS and NSPR errors.
+  * Error codes and descriptions were updated from upstream NSPR & NSS.
 
   * The password callback did not allow for breaking out of a password
     prompting loop, now if None is returned from the password callback
@@ -47,6 +47,10 @@
     failsafe.
 
   * Support was added for shutdown callbacks.
+
+  * cert_dump.py extended to print NS_CERT_TYPE_EXTENSION
+
+  * cert_usage_flags, nss_init_flags now support optional repr_kind parameter
 
   * The following classes were added:
     - nss.CertVerifyLogNode
@@ -95,9 +99,9 @@
     - nss.disable_ocsp_default_responder
 
   * The following files were added:
-      src/py_traceback.h
-      doc/examples/verify_cert.py
-      test/test_misc.py
+    - src/py_traceback.h
+    - doc/examples/verify_cert.py
+    - test/test_misc.py
 
   * The following constants were added:
     - nss.KU_DIGITAL_SIGNATURE
@@ -134,14 +138,8 @@
     - nss.ocspMode_FailureIsVerificationFailure
     - nss.ocspMode_FailureIsNotAVerificationFailure
 
-  * cert_dump.py extended to print NS_CERT_TYPE_EXTENSION
-
-  * cert_usage_flags, nss_init_flags now support optional repr_kind parameter
-
-  * error codes and descriptions were updated from upstream NSPR & NSS.
-
-  Internal Changes:
-  -----------------
+  Internal Changes
+  ----------------
 
   * Reimplement exception handling
     - NSPRError is now derived from StandardException instead of
@@ -149,17 +147,15 @@
       EnvironmentError but was difficult to implement a new subclassed
       exception with it's own attributes, using EnvironmentError had
       been expedient.
-
     - NSPRError now derived from StandardException, provides:
-      * errno (numeric error code)
-      * strerror (error description associated with error code)
-      * error_message (optional detailed message)
-      * error_code (alias for errno)
-      * error_desc (alias for strerror)
-
+        + errno (numeric error code)
+        + strerror (error description associated with error code)
+        + error_message (optional detailed message)
+        + error_code (alias for errno)
+        + error_desc (alias for strerror)
     - CertVerifyError derived from NSPRError, extends with:
-      * usages (bitmask of returned usages)
-      * log (CertVerifyLog object)
+        + usages (bitmask of returned usages)
+        + log (CertVerifyLog object)
 
   * Expose error lookup to sibling modules
 
