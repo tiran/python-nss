@@ -19,6 +19,7 @@ test/test_digest.py
 test/test_misc.py
 test/test_ocsp.py
 test/test_pkcs12.py
+test/util.py
 src/NSPRerrs.h
 src/SECerrs.h
 src/SSLerrs.h
