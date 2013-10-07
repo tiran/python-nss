@@ -334,6 +334,35 @@ def create_client_cert(options):
 
     return options.client_nickname
 
+def add_trusted_certs(options):
+    name = 'ca_certs'
+    module = 'libnssckbi.so'
+    logging.info('adding system trusted certs: name="%s" module="%s"',
+                 name, module)
+
+    cmd_args = ['/usr/bin/modutil',
+                '-dbdir', options.db_name, # NSS database
+                '-add', name,              # module name
+                '-libfile', module,        # module
+                ]
+
+    logging.debug(' '.join(cmd_args))
+    p = subprocess.Popen(cmd_args,
+                         stdin=subprocess.PIPE,
+                         stdout=subprocess.PIPE,
+                         stderr=subprocess.PIPE)
+
+    input = None
+
+    stdout, stderr = p.communicate(input)
+    exit_status = p.returncode
+    if exit_status != 0:
+        raise CmdError(exit_status,
+                       'failed to add module "%s" "%s"' % (name, module),
+                       stderr)
+
+    return name
+
 #-------------------------------------------------------------------------------
 
 def main():
@@ -356,6 +385,9 @@ def main():
     parser.add_argument('--no-clean', action='store_false', dest='clean',
                         help='do not remove existing db_dir')
 
+    parser.add_argument('--no-trusted-certs', dest='add_trusted_certs', action='store_false',
+                        help='do not add trusted certs')
+
     parser.add_argument('--hostname',
                         help='hostname used in cert subjects')
 
@@ -371,7 +403,6 @@ def main():
 
     parser.add_argument('--ca-subject',
                         help='CA certificate subject')
-
 
     parser.add_argument('--ca-nickname',
                         help='CA certificate nickname')
@@ -410,6 +441,7 @@ def main():
                         quiet = False,
                         show_certs = False,
                         clean = True,
+                        add_trusted_certs = True,
                         hostname = os.uname()[1],
                         db_type = 'sql',
                         db_dir = 'pki',
@@ -482,6 +514,8 @@ def main():
         cert_nicknames.append(create_ca_cert(options))
         cert_nicknames.append(create_server_cert(options))
         cert_nicknames.append(create_client_cert(options))
+        if options.add_trusted_certs:
+            add_trusted_certs(options)
     except CmdError as e:
         logging.error(e.message)
         logging.error(e.stderr)
