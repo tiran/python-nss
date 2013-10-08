@@ -17,7 +17,7 @@ from distutils.util import subst_vars, change_root
 from distutils.command.build_py import build_py as _build_py
 from distutils.command.sdist import sdist as _sdist
 
-version = "0.14.0"
+version = "0.14.1"
 
 doc_manifest = [
     [['include README LICENSE* doc/ChangeLog',
