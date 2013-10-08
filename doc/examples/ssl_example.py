@@ -185,12 +185,13 @@ def Client():
 
     # Talk to the server
     try:
-        sock.send("Hello")
-        buf = sock.recv(1024)
+        sock.send('Hello' + '\n') # newline is protocol record separator
+        buf = sock.readline()
         if not buf:
             print "client lost connection"
             sock.close()
             return
+        buf = buf.rstrip()        # remove newline record separator
         print "client received: %s" % (buf)
     except Exception, e:
         print e.strerror
@@ -272,14 +273,15 @@ def Server():
         while True:
             try:
                 # Handle the client connection
-                buf = client_sock.recv(1024)
+                buf = client_sock.readline()
                 if not buf:
                     print "server lost lost connection to %s" % (client_addr)
                     break
 
+                buf = buf.rstrip()                 # remove newline record separator
                 print "server received: %s" % (buf)
 
-                client_sock.send("Goodbye")
+                client_sock.send('Goodbye' + '\n') # newline is protocol record separator
                 try:
                     client_sock.shutdown(io.PR_SHUTDOWN_RCV)
                     client_sock.close()
