@@ -4,10 +4,10 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+import argparse
+import getpass
 import os
 import sys
-import getopt
-import getpass
 
 from nss.error import NSPRError
 import nss.io as io
@@ -16,11 +16,6 @@ import nss.ssl as ssl
 
 # -----------------------------------------------------------------------------
 
-# command line parameters, default them to something reasonable
-#certdir = '/etc/httpd/alias'
-certdir = '/etc/pki/nssdb'
-hostname = 'www.verisign.com'
-port = 443
 timeout_secs = 3
 
 request = '''\
@@ -104,18 +99,18 @@ def client():
     valid_addr = False
     # Get the IP Address of our server
     try:
-        addr_info = io.AddrInfo(hostname)
+        addr_info = io.AddrInfo(options.hostname)
     except:
-        print "ERROR: could not resolve hostname \"%s\"" % hostname
+        print "ERROR: could not resolve hostname \"%s\"" % options.hostname
         return
 
     for net_addr in addr_info:
-        net_addr.port = port
+        net_addr.port = options.port
         sock = ssl.SSLSocket(net_addr.family)
         # Set client SSL socket options
         sock.set_ssl_option(ssl.SSL_SECURITY, True)
         sock.set_ssl_option(ssl.SSL_HANDSHAKE_AS_CLIENT, True)
-        sock.set_hostname(hostname)
+        sock.set_hostname(options.hostname)
 
         # Provide a callback which notifies us when the SSL handshake is
         # complete
@@ -135,7 +130,7 @@ def client():
             continue
 
     if not valid_addr:
-        print "ERROR: could not connect to \"%s\"" % hostname
+        print "ERROR: could not connect to \"%s\"" % options.hostname
         return
 
     try:
@@ -158,48 +153,30 @@ def client():
 
 # -----------------------------------------------------------------------------
 
-usage_str = '''
--d --certdir    certificate directory (default: %(certdir)s)
--h --hostname   host to connect to (default: %(hostname)s)
--p --port       host port (default: %(port)s)
-''' % {
-       'certdir'             : certdir,
-       'hostname'            : hostname,
-       'port'                : port,
-       }
+parser = argparse.ArgumentParser(description='certificate verification example')
 
-def usage():
-    print usage_str
+parser.add_argument('-d', '--db-name',
+                    help='NSS database name (e.g. "sql:pki")')
 
-try:
-    opts, args = getopt.getopt(sys.argv[1:], "Hd:h:p:",
-                               ["help", "certdir=", "hostname=",
-                                "port=",
-                                ])
-except getopt.GetoptError:
-    # print help information and exit:
-    usage()
-    sys.exit(2)
+parser.add_argument('-H', '--hostname',
+                    help='host to connect to')
 
+parser.add_argument('-p', '--port', type=int,
+                    help='host port')
 
-for o, a in opts:
-    if o in ("-d", "--certdir"):
-        certdir = a
-    if o in ("-h", "--hostname"):
-        hostname = a
-    if o in ("-p", "--port"):
-        port = int(a)
-    if o in ("-H", "--help"):
-        usage()
-        sys.exit()
+parser.set_defaults(db_name = 'sql:pki',
+                    hostname = 'www.verisign.com',
+                    port = 443,
+                    )
+
+options = parser.parse_args()
 
 # Perform basic configuration and setup
 try:
-    nss.nss_init(certdir)
+    nss.nss_init(options.db_name)
     ssl.set_domestic_policy()
 except Exception, e:
     print >>sys.stderr, e.strerror
     sys.exit(1)
 
 client()
-

@@ -13,7 +13,7 @@ import nss.nss as nss
 #-------------------------------------------------------------------------------
 
 verbose = False
-certdir = 'pki'
+db_name = 'sql:pki'
 db_passwd = 'db_passwd'
 pkcs12_file_password = 'pk12_passwd'
 
@@ -59,7 +59,7 @@ def load_tests(loader, tests, pattern):
 
 class TestPKCS12Decoder(unittest.TestCase):
     def setUp(self):
-        nss.nss_init_read_write(certdir)
+        nss.nss_init_read_write(db_name)
         nss.set_password_callback(password_callback)
         nss.pkcs12_set_nickname_collision_callback(nickname_collision_callback)
         nss.pkcs12_enable_all_ciphers()
@@ -69,8 +69,8 @@ class TestPKCS12Decoder(unittest.TestCase):
 
     def test_read(self):
         if verbose: print "test_read"
-        cmd='pk12util -o %s -n %s -d pki -K %s -W %s' % \
-            (read_pkcs12_file, read_nickname, db_passwd, pkcs12_file_password)
+        cmd='pk12util -o %s -n %s -d %s -K %s -W %s' % \
+            (read_pkcs12_file, read_nickname, db_name, db_passwd, pkcs12_file_password)
         run_cmd(cmd)
 
         slot = nss.get_internal_key_slot()
@@ -102,7 +102,7 @@ class TestPKCS12Decoder(unittest.TestCase):
 
     def test_import(self):
         if verbose: print "test_import"
-        cmd='certutil -d pki -D -n %s' % (read_nickname)
+        cmd='certutil -d %s -D -n %s' % (db_name, read_nickname)
         run_cmd(cmd)
 
         slot = nss.get_internal_key_slot()
@@ -114,7 +114,7 @@ class TestPKCS12Decoder(unittest.TestCase):
 
 class TestPKCS12Export(unittest.TestCase):
     def setUp(self):
-        nss.nss_init(certdir)
+        nss.nss_init(db_name)
         nss.set_password_callback(password_callback)
         nss.pkcs12_enable_all_ciphers()
 

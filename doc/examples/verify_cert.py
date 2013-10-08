@@ -1,7 +1,7 @@
 #!/usr/bin/python
 
+import argparse
 import sys
-import optparse
 
 import nss.nss as nss
 import nss.error as nss_error
@@ -75,75 +75,74 @@ def indented_obj(msg, obj, level=0):
     lines.extend(nss.make_line_fmt_tuples(level, msg))
     lines.extend(obj.format_lines(level+1))
     return nss.indented_format(lines)
-    
+
 
 #-------------------------------------------------------------------------------
 
 def main():
-    # Command line argument processing
-    parser = optparse.OptionParser()
+    global options
 
-    parser.set_defaults(dbdir = '/etc/pki/nssdb',
+    parser = argparse.ArgumentParser(description='certificate validation example')
+
+    # === NSS Database Group ===
+    group = parser.add_argument_group('NSS Database',
+                                      'Specify & control the NSS Database')
+    group.add_argument('-d', '--db-name',
+                       help='NSS database name (e.g. "sql:pki")')
+
+    group.add_argument('-P', '--db-passwd',
+                       help='NSS database password')
+
+    # === Certificate Group ===
+    group = parser.add_argument_group('Certificate',
+                                      'Specify how the certificate is loaded')
+
+    group.add_argument('-f', '--file', dest='cert_filename',
+                       help='read cert from file')
+
+    group.add_argument('-F', '--input-format', choices=['pem', 'der'],
+                       help='format of input cert')
+
+    group.add_argument('-n', '--nickname', dest='cert_nickname',
+                       help='load cert from NSS database by looking it up under this nickname')
+
+    # === Validation Group ===
+    group = parser.add_argument_group('Validation',
+                                      'Control the validation')
+
+    group.add_argument('-u', '--usage', dest='cert_usage', action='append', choices=cert_usage_map.keys(),
+                           help='certificate usage flags, may be specified multiple times')
+    group.add_argument('-c', '--check-sig', action='store_true', dest='check_sig',
+                           help='check signature')
+    group.add_argument('-C', '--no-check-sig', action='store_false', dest='check_sig',
+                           help='do not check signature')
+    group.add_argument('-l', '--log', action='store_true', dest='with_log',
+                           help='use verify log')
+    group.add_argument('-L', '--no-log', action='store_false', dest='with_log',
+                           help='do not use verify log')
+    group.add_argument('-a', '--check-ca', action='store_true', dest='check_ca',
+                           help='check if cert is CA')
+    group.add_argument('-A', '--no-check-ca', action='store_false', dest='check_ca',
+                           help='do not check if cert is CA')
+
+    # === Miscellaneous Group ===
+    group = parser.add_argument_group('Miscellaneous',
+                                      'Miscellaneous options')
+
+    group.add_argument('-p', '--print-cert', action='store_true', dest='print_cert',
+                       help='print the certificate in a friendly fashion')
+
+
+    parser.set_defaults(db_name = 'sql:pki',
                         db_passwd = 'db_passwd',
                         input_format = 'pem',
                         check_sig = True,
-                        print_cert = False,
                         with_log = True,
                         check_ca = True,
+                        print_cert = False,
                         )
 
-    param_group = optparse.OptionGroup(parser, 'NSS Database',
-                                       'Specify & control the NSS Database')
-
-    param_group.add_option('-d', '--dbdir', dest='dbdir',
-                           help='NSS database directory, default="%default"')
-    param_group.add_option('-P', '--db-passwd', dest='db_passwd',
-                           help='NSS database password, default="%default"')
-
-    parser.add_option_group(param_group)
-
-    param_group = optparse.OptionGroup(parser, 'Certificate',
-                                       'Specify how the certificate is loaded')
-
-    param_group.add_option('-f', '--file', dest='cert_filename',
-                           help='read cert from file')
-    param_group.add_option('--format', dest='input_format', choices=['pem', 'der'],
-                           help='import format for certificate (der|pem) default="%default"')
-    param_group.add_option('-n', '--nickname', dest='cert_nickname',
-                           help='load cert from NSS database by looking it up under this nickname')
-
-
-    parser.add_option_group(param_group)
-
-    param_group = optparse.OptionGroup(parser, 'Validation',
-                                       'Control the validation')
-
-    param_group.add_option('-u', '--usage', dest='cert_usage', action='append', choices=cert_usage_map.keys(),
-                           help='may be specified multiple times, default="CheckAllUsages", may be one of: %s' % ', '.join(sorted(cert_usage_map.keys())))
-    param_group.add_option('-c', '--check-sig', action='store_true', dest='check_sig',
-                           help='check signature default=%default')
-    param_group.add_option('-C', '--no-check-sig', action='store_false', dest='check_sig',
-                           help='check signature')
-    param_group.add_option('-l', '--log', action='store_true', dest='with_log',
-                           help='use verify log, default=%default')
-    param_group.add_option('-L', '--no-log', action='store_false', dest='with_log',
-                           help='use verify log, default=%default')
-    param_group.add_option('-a', '--check-ca', action='store_true', dest='check_ca',
-                           help='check if cert is CA, default=%default')
-    param_group.add_option('-A', '--no-check-ca', action='store_false', dest='check_ca',
-                           help='check if cert is CA, default=%default')
-
-    parser.add_option_group(param_group)
-
-    param_group = optparse.OptionGroup(parser, 'Miscellaneous',
-                                       'Miscellaneous options')
-
-    param_group.add_option('-p', '--print-cert', action='store_true', dest='print_cert',
-                           help='print the certificate in a friendly fashion, default=%default')
-
-    parser.add_option_group(param_group)
-
-    options, args = parser.parse_args()
+    options = parser.parse_args()
 
     # Process the command line arguments
 
@@ -175,9 +174,9 @@ def main():
         return 1
 
     # Initialize NSS.
-    print indented_output('NSS Database', options.dbdir)
+    print indented_output('NSS Database', options.db_name)
     print
-    nss.nss_init(options.dbdir)
+    nss.nss_init(options.db_name)
     certdb = nss.get_default_certdb()
     nss.set_password_callback(password_callback)
 
@@ -194,7 +193,7 @@ def main():
         except Exception, e:
             print e
             print >>sys.stderr, 'Unable to load cert nickname "%s" from database "%s"' % \
-                (options.cert_nickname, options.dbdir)
+                (options.cert_nickname, options.db_name)
             return 1
 
     # Dump the cert if the user wants to see it
@@ -282,5 +281,3 @@ def main():
 #-------------------------------------------------------------------------------
 if __name__ == "__main__":
     sys.exit(main())
-
-

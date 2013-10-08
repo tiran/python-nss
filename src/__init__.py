@@ -163,8 +163,8 @@ Things All NSS programs must do
 
 - Initialize NSS and indicate the certficate database (CertDB)::
 
-    certdir = './pki'
-    ssl.nssinit(certdir)
+    db_name = 'sql:pki'
+    ssl.nssinit(db_name)
 
 - If you are implementing an SSL server call config_secure_server()
   (see ssl_example.py)::
@@ -244,7 +244,7 @@ Issues
     future we can find a solution but the immediate goal of the NSS
     Python binding was to expose NSS through Python, not necessarily
     to solve the larger integration issue of Python run-time and NSPR
-    run-time. 
+    run-time.
 
     - NSPR would like to hide the underlying platform socket (in the
       NSPR code this is called "osfd"). There are NSPR API's which
@@ -313,4 +313,3 @@ To be added
 
 """
 __version__ = '0.14.0'
-
