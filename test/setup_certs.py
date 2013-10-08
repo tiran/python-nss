@@ -96,7 +96,7 @@ def format_cert(options, nickname):
 
 #-------------------------------------------------------------------------------
 
-def setup(options):
+def create_database(options):
     if os.path.exists(options.db_dir) and not os.path.isdir(options.db_dir):
         raise ValueError('db_dir "%s" exists but is not a directory' % options.db_dir)
 
@@ -365,10 +365,11 @@ def add_trusted_certs(options):
 
 #-------------------------------------------------------------------------------
 
-def main():
+def setup_certs(args):
 
     # --- cmd ---
-    parser = argparse.ArgumentParser(description='create certs for testing')
+    parser = argparse.ArgumentParser(description='create certs for testing',
+                                     formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
     parser.add_argument('--verbose', action='store_true',
                         help='provide info level messages')
@@ -462,7 +463,7 @@ def main():
                         )
 
 
-    options = parser.parse_args()
+    options = parser.parse_args(args)
 
     # Do substitutions on option values.
     # This is ugly because argparse does not expose an API which permits iterating over
@@ -510,7 +511,7 @@ def main():
     cert_nicknames = []
 
     try:
-        setup(options)
+        create_database(options)
         cert_nicknames.append(create_ca_cert(options))
         cert_nicknames.append(create_server_cert(options))
         cert_nicknames.append(create_client_cert(options))
@@ -541,5 +542,9 @@ def main():
     return 0
 
 #-------------------------------------------------------------------------------
+
+def main():
+    return setup_certs(None)
+
 if __name__ == '__main__':
     sys.exit(main())

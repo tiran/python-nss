@@ -19,7 +19,7 @@ def run_tests():
     import test_ocsp
     import test_client_server
 
-    setup_certs.main()
+    setup_certs.setup_certs([])
 
     loader = unittest.TestLoader()
     runner = unittest.TextTestRunner()
@@ -37,43 +37,14 @@ def run_tests():
 
 #-------------------------------------------------------------------------------
 
-class Usage(Exception):
-    def __init__(self, msg):
-        self.msg = msg
-
-def usage():
-    'Print command help.'
-
-    return '''\
-%(prog_name)s [-i]
-
--h --help          print help
--i --installed     runs the test using installed libraries
-                   instead of "in tree" libraries
-
-Runs unit tests.
-By default test is done "in tree".
-
-Examples:
-
-Run test using libraries built in this tree
-%(prog_name)s
-
-Run post install test
-%(prog_name)s -i
-''' % {'prog_name' : prog_name,
-      }
-
-#-------------------------------------------------------------------------------
-
 def main():
-    parser = argparse.ArgumentParser(description='')
+    parser = argparse.ArgumentParser(description='run the units (installed or in tree)')
     parser.add_argument('-i', '--installed', action='store_false', dest='in_tree',
                         help='run tests using installed library')
     parser.add_argument('-t', '--in-tree', action='store_true', dest='in_tree',
-                        help='run tests using installed library')
+                        help='run tests using devel tree')
 
-    parser.set_defaults(in_tree = True,
+    parser.set_defaults(in_tree = False,
                         )
 
     options = parser.parse_args()

@@ -153,7 +153,8 @@ def client():
 
 # -----------------------------------------------------------------------------
 
-parser = argparse.ArgumentParser(description='certificate verification example')
+parser = argparse.ArgumentParser(description='certificate verification example',
+                                 formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
 parser.add_argument('-d', '--db-name',
                     help='NSS database name (e.g. "sql:pki")')
