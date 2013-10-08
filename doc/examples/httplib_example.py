@@ -4,13 +4,13 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-import sys
+import argparse
 import errno
-import getopt
-import urlparse
-import httplib
 import getpass
+import httplib
 import logging
+import sys
+import urlparse
 
 from nss.error import NSPRError
 import nss.io as io
@@ -19,14 +19,6 @@ import nss.ssl as ssl
 
 #------------------------------------------------------------------------------
 
-httplib_debug_level = 0
-logging_debug_level = logging.INFO
-certdir = 'pki'
-password = ''
-nickname = ''
-url = 'https://sourceforge.net/projects/python'
-use_ssl = True
-use_connection_class = True
 timeout_secs = 3
 
 #------------------------------------------------------------------------------
@@ -94,28 +86,6 @@ def auth_certificate_callback(sock, check_sig, is_server, certdb):
     logging.debug('cert valid %s for "%s"', cert_is_valid,  cert.subject)
     return cert_is_valid
 
-def client_auth_data_callback(ca_names, chosen_nickname, password, certdb):
-    cert = None
-    if chosen_nickname:
-        try:
-            cert = nss.find_cert_from_nickname(chosen_nickname, password)
-            priv_key = nss.find_key_by_any_cert(cert, password)
-            return cert, priv_key
-        except NSPRError:
-            return False
-    else:
-        nicknames = nss.get_cert_nicknames(certdb, nss.SEC_CERT_NICKNAMES_USER)
-        for nickname in nicknames:
-            try:
-                cert = nss.find_cert_from_nickname(nickname, password)
-                if cert.check_valid_times():
-                    if cert.has_signer_in_ca_names(ca_names):
-                        priv_key = nss.find_key_by_any_cert(cert, password)
-                        return cert, priv_key
-            except NSPRError:
-                return False
-        return False
-
 def password_callback(slot, retry, password):
     if not retry and password: return password
     return getpass.getpass("Enter password for %s: " % slot.token_name);
@@ -136,7 +106,7 @@ class NSSConnection(httplib.HTTPConnection):
         if not dbdir:
             raise RuntimeError("dbdir is required")
 
-        logging.debug('%s init %s', self.__class__.__name__, host)
+        logging.debug('%s init host=%s dbdir=%s', self.__class__.__name__, host, dbdir)
         if not nss.nss_is_initialized(): nss.nss_init(dbdir)
         self.sock = None
         ssl.set_domestic_policy()
@@ -231,33 +201,46 @@ class NSPRHTTP(httplib.HTTP):
 #------------------------------------------------------------------------------
 
 
-opts, args = getopt.getopt(sys.argv[1:],
-                           'Dd:n:w:sScC',
-                           ['debuglevel','certdir=','nickname=','password=',
-                            'use-ssl', 'no-ssl', 'use-connection-class', 'no-connection-class'])
-for o, a in opts:
-    if o in('-D', '--httplib_debug_level'):
-        httplib_debug_level = httplib_debug_level + 1
-    elif o in ("-d", "--certdir"):
-        certdir = a
-    elif o in ("-n", "--nickname"):
-        nickname = a
-    elif o in ("-w", "--password"):
-        password = a
-    elif o in ("-s", "--use-ssl"):
-        use_ssl = True
-    elif o in ("-S", "--no-ssl"):
-        use_ssl = False
-    elif o in ("-c", "--use-connection-class"):
-        use_connection_class = True
-    elif o in ("-C", "--no-connection-class"):
-        use_connection_class = False
+parser = argparse.ArgumentParser(description='httplib example')
 
-if len(args) > 0:
-    url = args[0]
+parser.add_argument('-d', '--db-name',
+                    help='NSS database name (e.g. "sql:pki")')
+
+parser.add_argument('--db-passwd',
+                    help='NSS database password')
+
+parser.add_argument('-s', '--ssl', dest='use_ssl', action='store_true',
+                    help='use SSL connection')
+
+parser.add_argument('-S', '--no-ssl', dest='use_ssl', action='store_false',
+                    help='do not use SSL connection')
+
+parser.add_argument('-c', '--connection-class', dest='use_connection_class', action='store_true',
+                    help='use connection class')
+
+parser.add_argument('-C', '--no-connection-class', dest='use_connection_class', action='store_false',
+                    help='do not use connection class')
+
+parser.add_argument('-D', '--httplib-debug-level', action='count',
+                    help='httplib debug level')
+
+parser.add_argument('url', nargs=1,
+                    help='URL to open (e.g. "https://sourceforge.net/projects/python"')
+
+parser.set_defaults(db_name = 'sql:pki',
+                    db_passwd = 'db_passwd',
+                    httplib_debug_level = 0,
+                    use_ssl = True,
+                    use_connection_class = True,
+                    )
+
+options = parser.parse_args()
 
 
-if httplib_debug_level > 0:
+url = options.url[0]
+
+logging_debug_level = logging.INFO
+if options.httplib_debug_level > 0:
     logging_debug_level = logging.DEBUG
 else:
     logging_debug_level = logging.INFO
@@ -269,7 +252,7 @@ logging.basicConfig(level=logging_debug_level,
 # Perform basic configuration and setup
 
 url_components = urlparse.urlsplit(url)
-if use_ssl:
+if options.use_ssl:
     url_components.schema = 'https'
 else:
     url_components.schema = 'http'
@@ -280,14 +263,14 @@ if not url_components.scheme or not url_components.netloc:
     print "ERROR: bad url \"%s\"" % (url)
     sys.exit(1)
 
-if use_connection_class:
-    if use_ssl:
+if options.use_connection_class:
+    if options.use_ssl:
         logging.info("Start (using NSSConnection class) %s", url)
-        conn = NSSConnection(url_components.netloc, 443, dbdir="/etc/pki/nssdb")
+        conn = NSSConnection(url_components.netloc, 443, dbdir=options.db_name)
     else:
         logging.info("Start (using NSPRConnection class) %s", url)
         conn = NSPRConnection(url_components.netloc, 80)
-    conn.set_debuglevel(httplib_debug_level)
+    conn.set_debuglevel(options.httplib_debug_level)
     conn.connect()
     conn.request("GET", "/")
     response = conn.getresponse()
@@ -302,13 +285,13 @@ if use_connection_class:
     print data
     conn.close()
 else:
-    if use_ssl:
+    if options.use_ssl:
         logging.info("Start (using NSSHTTPS class) %s", url)
-        h = NSSHTTPS(url_components.netloc, 443, dbdir="/etc/pki/nssdb")
+        h = NSSHTTPS(url_components.netloc, 443, dbdir=options.db_name)
     else:
         logging.info("Start (using NSPRHTTP class) %s", url)
         h = NSPRHTTP(url_components.netloc, 80)
-    h.set_debuglevel(httplib_debug_level)
+    h.set_debuglevel(options.httplib_debug_level)
     h.connect()
     h.putrequest('GET', '/')
     h.endheaders()

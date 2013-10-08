@@ -25,13 +25,12 @@ info = False
 password = 'db_passwd'
 use_ssl = True
 client_cert_action = NO_CLIENT_CERT
-certdir = os.path.join(os.path.dirname(sys.argv[0]), 'pki')
+db_name = 'sql:pki'
 hostname = os.uname()[1]
 server_nickname = 'test_server'
 client_nickname = 'test_user'
 port = 1234
 timeout_secs = 10
-family = io.PR_AF_INET
 sleep_time = 5
 
 
@@ -142,7 +141,6 @@ def client(request):
         if info: print "client: using SSL"
         ssl.set_domestic_policy()
 
-    valid_addr = False
     # Get the IP Address of our server
     try:
         addr_info = io.AddrInfo(hostname)
@@ -151,8 +149,6 @@ def client(request):
         return
 
     for net_addr in addr_info:
-        if family != io.PR_AF_UNSPEC:
-            if net_addr.family != family: continue
         net_addr.port = port
 
         if use_ssl:
@@ -180,16 +176,10 @@ def client(request):
             if verbose: print "client trying connection to: %s" % (net_addr)
             sock.connect(net_addr, timeout=io.seconds_to_interval(timeout_secs))
             if verbose: print "client connected to: %s" % (net_addr)
-            valid_addr = True
             break
         except Exception, e:
             sock.close()
             print >>sys.stderr, "client: connection to: %s failed (%s)" % (net_addr, e)
-
-    if not valid_addr:
-        print >>sys.stderr, "Could not establish valid address for \"%s\" in family %s" % \
-        (hostname, io.addr_family_name(family))
-        return
 
     # Talk to the server
     try:
@@ -228,15 +218,11 @@ def client(request):
 # -----------------------------------------------------------------------------
 
 def server():
-    global family
-
     if verbose: print "starting server:"
 
     # Initialize
     # Setup an IP Address to listen on any of our interfaces
-    if family == io.PR_AF_UNSPEC:
-        family = io.PR_AF_INET
-    net_addr = io.NetworkAddress(io.PR_IpAddrAny, port, family)
+    net_addr = io.NetworkAddress(io.PR_IpAddrAny, port)
 
     if use_ssl:
         if info: print "server: using SSL"
@@ -320,7 +306,7 @@ def server():
 def run_server():
     pid = os.fork()
     if pid == 0:
-        nss.nss_init(certdir)
+        nss.nss_init(db_name)
         server()
         nss.nss_shutdown()
     time.sleep(sleep_time)
@@ -348,7 +334,7 @@ class TestSSL(unittest.TestCase):
 
     def test_ssl(self):
         request = "foo"
-        nss.nss_init(certdir)
+        nss.nss_init(db_name)
         reply = client(request)
         nss.nss_shutdown()
         self.assertEqual("{%s}" % request, reply)

@@ -18,10 +18,10 @@ What this example really aims to do is illustrate how to access the various
 components of a cert.
 '''
 
+import argparse
+import getpass
 import os
 import sys
-import getopt
-import getpass
 
 from nss.error import NSPRError
 import nss.io as io
@@ -93,57 +93,33 @@ def print_extension(level, extension):
 
 # -----------------------------------------------------------------------------
 
-usage_str = '''
--p --pem        read the certifcate in PEM ascii format (default)
--d --der        read the certifcate in DER binary format
--P --print-cert print the cert using the internal rendering code
-'''
+parser = argparse.ArgumentParser(description='cert formatting example')
+parser.add_argument('-f', '--cert-format', choices=['pem', 'der'],
+                    help='format of input cert')
+parser.add_argument('-p', '--print-cert', action='store_true',
+                    help='print the cert using the internal rendering code')
+parser.add_argument('cert_file', nargs=1,
+                    help='input cert file to process')
 
-def usage():
-    print usage_str
-
-try:
-    opts, args = getopt.getopt(sys.argv[1:], "hpdP",
-                               ["help", "pem", "der", "print-cert"])
-except getopt.GetoptError:
-    # print help information and exit:
-    usage()
-    sys.exit(2)
-
-
-filename = 'cert.der'
-is_pem_format = True
-print_cert = False
-
-for o, a in opts:
-    if o in ("-H", "--help"):
-        usage()
-        sys.exit()
-    elif o in ("-p", "--pem"):
-        is_pem_format = True
-    elif o in ("-d", "--der"):
-        is_pem_format = False
-    elif o in ("-P", "--print-cert"):
-        print_cert = True
-
-
-filename = sys.argv[1]
+parser.set_defaults(cert_format='pem',
+                    print_cert=False
+                    )
+options = parser.parse_args()
 
 # Perform basic configuration and setup
 nss.nss_init_nodb()
 
-if len(args):
-    filename = args[0]
+filename = options.cert_file[0]
 
 print "certificate filename=%s" % (filename)
 
 # Read the certificate as DER encoded data
-si = nss.read_der_from_file(filename, is_pem_format)
+si = nss.read_der_from_file(filename, options.cert_format == 'pem')
 # Parse the DER encoded data returning a Certificate object
 cert = nss.Certificate(si)
 
 # Useful for comparing the internal cert rendering to what this script generates.
-if print_cert:
+if options.print_cert:
     print cert
 
 # Get the extension list from the certificate

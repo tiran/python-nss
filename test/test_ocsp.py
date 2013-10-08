@@ -7,7 +7,7 @@ import unittest
 import nss.nss as nss
 from nss.error import NSPRError
 
-certdir = 'pki'
+db_name = 'sql:pki'
 
 #-------------------------------------------------------------------------------
 
@@ -16,7 +16,7 @@ certdir = 'pki'
 
 class TestAPI(unittest.TestCase):
     def setUp(self):
-        nss.nss_init_read_write(certdir)
+        nss.nss_init_read_write(db_name)
         self.certdb = nss.get_default_certdb()
 
     def tearDown(self):

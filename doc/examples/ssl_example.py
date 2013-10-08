@@ -7,10 +7,10 @@
 import warnings
 warnings.simplefilter( "always", DeprecationWarning)
 
+import argparse
+import getpass
 import os
 import sys
-import getopt
-import getpass
 
 from nss.error import NSPRError
 import nss.io as io
@@ -24,19 +24,7 @@ REQUIRE_CLIENT_CERT_ONCE   = 2
 REQUEST_CLIENT_CERT_ALWAYS = 3
 REQUIRE_CLIENT_CERT_ALWAYS = 4
 
-# command line parameters, default them to something reasonable
-client = False
-server = False
-password = 'db_passwd'
-use_ssl = True
-client_cert_action = NO_CLIENT_CERT
-certdir = 'pki'
-hostname = os.uname()[1]
-server_nickname = 'test_server'
-client_nickname = 'test_user'
-port = 1234
 timeout_secs = 3
-family = io.PR_AF_UNSPEC
 
 # -----------------------------------------------------------------------------
 # Utility Functions
@@ -63,7 +51,7 @@ def auth_certificate_callback(sock, check_sig, is_server, certdb):
     if pin_args is None:
         pin_args = ()
 
-    print "cert:\n%s" % cert
+    print "peer cert:\n%s" % cert
 
     # Define how the cert is being used based upon the is_server flag.  This may
     # seem backwards, but isn't. If we're a server we're trying to validate a
@@ -149,30 +137,30 @@ def Client():
     valid_addr = False
     # Get the IP Address of our server
     try:
-        addr_info = io.AddrInfo(hostname)
+        addr_info = io.AddrInfo(options.hostname)
     except Exception, e:
-        print "could not resolve host address \"%s\"" % hostname
+        print "could not resolve host address \"%s\"" % options.hostname
         return
 
     for net_addr in addr_info:
-        if family != io.PR_AF_UNSPEC:
+        if options.family != io.PR_AF_UNSPEC:
             if net_addr.family != family: continue
-        net_addr.port = port
+        net_addr.port = options.port
 
-        if use_ssl:
+        if options.use_ssl:
             sock = ssl.SSLSocket(net_addr.family)
 
             # Set client SSL socket options
             sock.set_ssl_option(ssl.SSL_SECURITY, True)
             sock.set_ssl_option(ssl.SSL_HANDSHAKE_AS_CLIENT, True)
-            sock.set_hostname(hostname)
+            sock.set_hostname(options.hostname)
 
             # Provide a callback which notifies us when the SSL handshake is complete
             sock.set_handshake_callback(handshake_callback)
 
             # Provide a callback to supply our client certificate info
-            sock.set_client_auth_data_callback(client_auth_data_callback, client_nickname,
-                                               password, nss.get_default_certdb())
+            sock.set_client_auth_data_callback(client_auth_data_callback, options.client_nickname,
+                                               options.password, nss.get_default_certdb())
 
             # Provide a callback to verify the servers certificate
             sock.set_auth_certificate_callback(auth_certificate_callback,
@@ -192,7 +180,7 @@ def Client():
 
     if not valid_addr:
         print "Could not establish valid address for \"%s\" in family %s" % \
-        (hostname, io.addr_family_name(family))
+        (options.hostname, io.addr_family_name(options.family))
         return
 
     # Talk to the server
@@ -221,7 +209,7 @@ def Client():
 
     try:
         sock.close()
-        if use_ssl:
+        if options.use_ssl:
             ssl.clear_session_cache()
     except Exception, e:
         print e
@@ -231,36 +219,34 @@ def Client():
 # -----------------------------------------------------------------------------
 
 def Server():
-    global family
-
-    # Perform basic SSL server configuration
-    ssl.set_default_cipher_pref(ssl.SSL_RSA_WITH_NULL_MD5, True)
-    ssl.config_server_session_id_cache()
-
-    # Get our certificate and private key
-    server_cert = nss.find_cert_from_nickname(server_nickname, password)
-    priv_key = nss.find_key_by_any_cert(server_cert, password)
-    server_cert_kea = server_cert.find_kea_type();
-
-    print "server cert:\n%s" % server_cert
-
     # Setup an IP Address to listen on any of our interfaces
-    if family == io.PR_AF_UNSPEC:
-        family = io.PR_AF_INET
-    net_addr = io.NetworkAddress(io.PR_IpAddrAny, port, family)
+    if options.family == io.PR_AF_UNSPEC:
+        options.family = io.PR_AF_INET
+    net_addr = io.NetworkAddress(io.PR_IpAddrAny, options.port, options.family)
 
-    if use_ssl:
+    if options.use_ssl:
+        # Perform basic SSL server configuration
+        ssl.set_default_cipher_pref(ssl.SSL_RSA_WITH_NULL_MD5, True)
+        ssl.config_server_session_id_cache()
+
+        # Get our certificate and private key
+        server_cert = nss.find_cert_from_nickname(options.server_nickname, options.password)
+        priv_key = nss.find_key_by_any_cert(server_cert, options.password)
+        server_cert_kea = server_cert.find_kea_type();
+
+        print "server cert:\n%s" % server_cert
+
         sock = ssl.SSLSocket(net_addr.family)
 
         # Set server SSL socket options
-        sock.set_pkcs11_pin_arg(password)
+        sock.set_pkcs11_pin_arg(options.password)
         sock.set_ssl_option(ssl.SSL_SECURITY, True)
         sock.set_ssl_option(ssl.SSL_HANDSHAKE_AS_SERVER, True)
 
         # If we're doing client authentication then set it up
-        if client_cert_action >= REQUEST_CLIENT_CERT_ONCE:
+        if options.client_cert_action >= REQUEST_CLIENT_CERT_ONCE:
             sock.set_ssl_option(ssl.SSL_REQUEST_CERTIFICATE, True)
-        if client_cert_action == REQUIRE_CLIENT_CERT_ONCE:
+        if options.client_cert_action == REQUIRE_CLIENT_CERT_ONCE:
             sock.set_ssl_option(ssl.SSL_REQUIRE_CERTIFICATE, True)
         sock.set_auth_certificate_callback(auth_certificate_callback, nss.get_default_certdb())
 
@@ -278,7 +264,7 @@ def Server():
     while True:
         # Accept a connection from a client
         client_sock, client_addr = sock.accept()
-        if use_ssl:
+        if options.use_ssl:
             client_sock.set_handshake_callback(handshake_callback)
 
         print "client connect from: %s" % (client_addr)
@@ -308,7 +294,7 @@ def Server():
     try:
         sock.shutdown()
         sock.close()
-        if use_ssl:
+        if options.use_ssl:
             ssl.shutdown_server_session_id_cache()
     except Exception, e:
         print e
@@ -316,141 +302,121 @@ def Server():
 
 # -----------------------------------------------------------------------------
 
-usage_str = '''
--C --client     run as the client (default: %(client)s)
--S --server     run as the server (default: %(server)s)
--d --certdir    certificate directory (default: %(certdir)s)
--h --hostname   host to connect to (default: %(hostname)s)
--f --family     may be inet|inet6|unspec (default: %(family)s)
-                if unspec client tries all addresses returned by AddrInfo
-                          server binds to IPv4 "any" wildcard address
-                if inet   client tries IPv4 addresses returned by AddrInfo
-                          server binds to IPv4 "any" wildcard address
-                if inet6  client tries IPv6 addresses returned by AddrInfo
-                          server binds to IPv6 "any" wildcard address
--4 --inet       set family to inet (see family)
--6 --inet6      set family to inet6 (see family)
--n --server_nickname server certificate nickname (default: %(server_nickname)s)
--N --client_nickname client certificate nickname (default: %(client_nickname)s)
--w --password   certificate database password (default: %(password)s)
--p --port       host port (default: %(port)s)
--e --encrypt    use SSL (default) (default: %(encrypt)s)
--E --noencrypt  don't use SSL (default: %(noencrypt)s)
--f --require_cert_once (default: %(require_cert_once)s)
--F --require_cert_always (default: %(require_cert_always)s)
--r --request_cert_once (default: %(request_cert_once)s)
--R --request_cert_always (default: %(request_cert_always)s)
--H --help
-''' % {
-       'client'              : client,
-       'server'              : server,
-       'certdir'             : certdir,
-       'hostname'            : hostname,
-       'family'              : io.addr_family_name(family),
-       'server_nickname'     : server_nickname,
-       'client_nickname'     : client_nickname,
-       'password'            : password,
-       'port'                : port,
-       'encrypt'             : use_ssl is True,
-       'noencrypt'           : use_ssl is False,
-       'require_cert_once'   : client_cert_action == REQUIRE_CLIENT_CERT_ONCE,
-       'require_cert_always' : client_cert_action == REQUIRE_CLIENT_CERT_ALWAYS,
-       'request_cert_once'   : client_cert_action == REQUEST_CLIENT_CERT_ONCE,
-       'request_cert_always' : client_cert_action == REQUEST_CLIENT_CERT_ALWAYS,
-       }
-
-def usage():
-    print usage_str
-
-try:
-    opts, args = getopt.getopt(sys.argv[1:], "Hd:h:f:46n:N:w:p:CSeE",
-                               ["help", "certdir=", "hostname=",
-                                "family", "inet", "inet6",
-                                "server_nickname=", "client_nickname=",
-                                "password=", "port=",
-                                "client", "server", "encrypt", "noencrypt",
-                                "require_cert_once", "require_cert_always",
-                                "request_cert_once", "request_cert_always",
-                                ])
-except getopt.GetoptError:
-    # print help information and exit:
-    usage()
-    sys.exit(2)
-
-
-for o, a in opts:
-    if o in ("-d", "--certdir"):
-        certdir = a
-    elif o in ("-h", "--hostname"):
-        hostname = a
-    elif o in ("-f", "--family"):
-        if a == "inet":
+class FamilyArgAction(argparse.Action):
+    def __call__(self, parser, namespace, values, option_string=None):
+        value = values[0]
+        if value == "inet":
             family = io.PR_AF_INET
-        elif a == "inet6":
+        elif value == "inet6":
             family = io.PR_AF_INET6
-        elif a == "unspec":
+        elif value == "unspec":
             family = io.PR_AF_UNSPEC
         else:
-            print "unknown address family (%s)" % (a)
-            usage()
-            sys.exit()
-    elif o in ("-4", "--inet"):
-        family = io.PR_AF_INET
-    elif o in ("-6", "--inet6"):
-        family = io.PR_AF_INET6
-    elif o in ("-n", "--server_nickname"):
-        server_nickname = a
-    elif o in ("-N", "--client_nickname"):
-        client_nickname = a
-    elif o in ("-w", "--password"):
-        password = a
-    elif o in ("-p", "--port"):
-        port = int(a)
-    elif o in ("-C", "--client"):
-        client = True
-    elif o in ("-S", "--server"):
-        server = True
-    elif o in ("-e", "--encrypt"):
-        use_ssl = True
-    elif o in ("-E", "--noencrypt"):
-        use_ssl = False
-    elif o in ("--require_cert_once"):
-        client_cert_action = REQUIRE_CLIENT_CERT_ONCE
-    elif o in ("--require_cert_always"):
-        client_cert_action = REQUIRE_CLIENT_CERT_ALWAYS
-    elif o in ("--request_cert_once"):
-        client_cert_action = REQUEST_CLIENT_CERT_ONCE
-    elif o in ("--request_cert_always"):
-        client_cert_action = REQUEST_CLIENT_CERT_ALWAYS
-    elif o in ("-H", "--help"):
-        usage()
-        sys.exit()
-    else:
-        usage()
-        sys.exit()
+            raise argparse.ArgumentError(self, "unknown address family (%s)" % (value))
+        setattr(namespace, self.dest, family)
 
-if client and server:
+parser = argparse.ArgumentParser(description='SSL example')
+
+parser.add_argument('-C', '--client', action='store_true',
+                    help='run as the client')
+
+parser.add_argument('-S', '--server', action='store_true',
+                    help='run as the server')
+
+parser.add_argument('-d', '--db-name',
+                    help='NSS database name (e.g. "sql:pki")')
+
+parser.add_argument('-H', '--hostname',
+                    help='host to connect to')
+
+parser.add_argument('-f', '--family',
+                    choices=['unspec', 'inet', 'inet6'],
+                    dest='family', action=FamilyArgAction, nargs=1,
+                    help='''
+                      If unspec client tries all addresses returned by AddrInfo,
+                      server binds to IPv4 "any" wildcard address.
+
+                      If inet client tries IPv4 addresses returned by AddrInfo,
+                      server binds to IPv4 "any" wildcard address.
+
+                      If inet6 client tries IPv6 addresses returned by AddrInfo,
+                      server binds to IPv6 "any" wildcard address''')
+
+parser.add_argument('-4', '--inet',
+                    dest='family', action='store_const', const=io.PR_AF_INET,
+                    help='set family to inet (see family)')
+
+parser.add_argument('-6', '--inet6',
+                    dest='family', action='store_const', const=io.PR_AF_INET6,
+                    help='set family to inet6 (see family)')
+
+parser.add_argument('-n', '--server-nickname',
+                    help='server certificate nickname')
+
+parser.add_argument('-N', '--client-nickname',
+                    help='client certificate nickname')
+
+parser.add_argument('-w', '--password',
+                    help='certificate database password')
+
+parser.add_argument('-p', '--port', type=int,
+                    help='host port')
+
+parser.add_argument('-e', '--encrypt', dest='use_ssl', action='store_true',
+                    help='use SSL connection')
+
+parser.add_argument('-E', '--no-encrypt', dest='use_ssl', action='store_false',
+                    help='do not use SSL connection')
+
+parser.add_argument('--require-cert-once', dest='client_cert_action',
+                    action='store_const', const=REQUIRE_CLIENT_CERT_ONCE)
+
+parser.add_argument('--require-cert-always', dest='client_cert_action',
+                    action='store_const', const=REQUIRE_CLIENT_CERT_ALWAYS)
+
+parser.add_argument('--request-cert-once', dest='client_cert_action',
+                    action='store_const', const=REQUEST_CLIENT_CERT_ONCE)
+
+parser.add_argument('--request-cert-always', dest='client_cert_action',
+                    action='store_const', const=REQUEST_CLIENT_CERT_ALWAYS)
+
+parser.set_defaults(client = False,
+                    server = False,
+                    db_name = 'sql:pki',
+                    hostname = os.uname()[1],
+                    family = io.PR_AF_UNSPEC,
+                    server_nickname = 'test_server',
+                    client_nickname = 'test_user',
+                    password = 'db_passwd',
+                    port = 1234,
+                    use_ssl = True,
+                    client_cert_action = NO_CLIENT_CERT,
+                   )
+
+options = parser.parse_args()
+
+if options.client and options.server:
     print "can't be both client and server"
     sys.exit(1)
-if not (client or server):
+if not (options.client or options.server):
     print "must be one of client or server"
     sys.exit(1)
 
 # Perform basic configuration and setup
-if certdir is None:
-    nss.nss_init_nodb()
+if options.use_ssl:
+    nss.nss_init(options.db_name)
 else:
-    nss.nss_init(certdir)
+    nss.nss_init_nodb()
 
 ssl.set_domestic_policy()
 nss.set_password_callback(password_callback)
 
 # Run as a client or as a server
-if client:
+if options.client:
     print "starting as client"
     Client()
 
-if server:
+if options.server:
     print "starting as server"
     Server()
 
@@ -458,4 +424,3 @@ try:
     nss.nss_shutdown()
 except Exception, e:
     print e
-
