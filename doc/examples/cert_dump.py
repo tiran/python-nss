@@ -93,7 +93,8 @@ def print_extension(level, extension):
 
 # -----------------------------------------------------------------------------
 
-parser = argparse.ArgumentParser(description='cert formatting example')
+parser = argparse.ArgumentParser(description='cert formatting example',
+                                 formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 parser.add_argument('-f', '--cert-format', choices=['pem', 'der'],
                     help='format of input cert')
 parser.add_argument('-p', '--print-cert', action='store_true',
