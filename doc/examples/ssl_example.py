@@ -144,7 +144,7 @@ def Client():
 
     for net_addr in addr_info:
         if options.family != io.PR_AF_UNSPEC:
-            if net_addr.family != family: continue
+            if net_addr.family != options.family: continue
         net_addr.port = options.port
 
         if options.use_ssl:
