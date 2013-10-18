@@ -13,14 +13,39 @@ import tempfile
 #-------------------------------------------------------------------------------
 
 class CmdError(Exception):
-    def __init__(self, exit_status, message, stderr=None):
-        self.exit_status = exit_status
-        self.message = message
+    def __init__(self, cmd_args, returncode, message=None, stdout=None, stderr=None):
+        self.cmd_args = cmd_args
+        self.returncode = returncode
+        if message is None:
+            self.message = 'Failed error=%s, ' % (returncode)
+            if stderr:
+                self.message += '"%s", ' % stderr
+            self.message += 'args=%s' % (cmd_args)
+        else:
+            self.message = message
+        self.stdout = stdout
         self.stderr = stderr
 
     def __str__(self):
         return self.message
 
+
+def run_cmd(cmd_args, input=None):
+    logging.debug(' '.join(cmd_args))
+    try:
+        p = subprocess.Popen(cmd_args,
+                             stdin=subprocess.PIPE,
+                             stdout=subprocess.PIPE,
+                             stderr=subprocess.PIPE)
+        stdout, stderr = p.communicate(input)
+        returncode = p.returncode
+        if returncode != 0:
+            raise CmdError(cmd_args, returncode,
+                           'failed %s' % (', '.join(cmd_args)),
+                           stdout, stderr)
+        return stdout, stderr
+    except OSError as e:
+        raise CmdError(cmd_args, e.errno, stderr=str(e))
 
 def exit_handler(options):
     logging.debug('in exit handler')
@@ -72,6 +97,21 @@ def create_passwd_file(options):
     os.close(fd)
 
 
+def db_has_cert(options, nickname):
+    cmd_args = ['/usr/bin/certutil',
+                '-d', options.db_name,
+                '-L',
+                '-n', nickname]
+
+    try:
+        run_cmd(cmd_args)
+    except CmdError as e:
+        if e.returncode == 255 and 'not found' in e.stderr:
+            return False
+        else:
+            raise
+    return True
+
 def format_cert(options, nickname):
     cmd_args = ['/usr/bin/certutil',
                 '-L',                          # OPERATION: list
@@ -80,18 +120,7 @@ def format_cert(options, nickname):
                 '-n', nickname,                # nickname of cert to list
                 ]
 
-
-    logging.debug(' '.join(cmd_args))
-    p = subprocess.Popen(cmd_args,
-                         stdin=subprocess.PIPE,
-                         stdout=subprocess.PIPE,
-                         stderr=subprocess.PIPE)
-    stdout, stderr = p.communicate()
-    exit_status = p.returncode
-    if exit_status != 0:
-        raise CmdError(exit_status,
-                       'failed to list cert nickname "%s"' % (nickname),
-                       stderr)
+    stdout, stderr = run_cmd(cmd_args)
     return stdout
 
 #-------------------------------------------------------------------------------
@@ -105,6 +134,7 @@ def create_database(options):
 
     if options.clean:
         logging.info('Creating clean database directory: "%s"', options.db_dir)
+
         if os.path.exists(options.db_dir):
             shutil.rmtree(options.db_dir)
         os.makedirs(options.db_dir)
@@ -115,17 +145,7 @@ def create_database(options):
                     '-f', options.passwd_filename, # database password in file
                     ]
 
-        logging.debug(' '.join(cmd_args))
-        p = subprocess.Popen(cmd_args,
-                             stdin=subprocess.PIPE,
-                             stdout=subprocess.PIPE,
-                             stderr=subprocess.PIPE)
-        stdout, stderr = p.communicate()
-        exit_status = p.returncode
-        if exit_status != 0:
-            raise CmdError(exit_status,
-                           'failed to create NSS database "%s"' % (options.db_name),
-                           stderr)
+        stdout, stderr = run_cmd(cmd_args)
     else:
         logging.info('Using existing database directory: "%s"', options.db_dir)
 
@@ -152,12 +172,6 @@ def create_ca_cert(options):
                 '-v', str(options.valid_months), # validity in months
                 '-z', options.noise_filename,    # noise file random seed
                 ]
-
-    logging.debug(' '.join(cmd_args))
-    p = subprocess.Popen(cmd_args,
-                         stdin=subprocess.PIPE,
-                         stdout=subprocess.PIPE,
-                         stderr=subprocess.PIPE)
 
     # Provide input for extension creation prompting
     input = ''
@@ -197,13 +211,7 @@ def create_ca_cert(options):
     # Is this a critical extension [y/N]?
     input += 'n\n'
 
-    stdout, stderr = p.communicate(input)
-    exit_status = p.returncode
-    if exit_status != 0:
-        raise CmdError(exit_status,
-                       'failed to create CA cert "%s"' % (options.ca_nickname),
-                       stderr)
-
+    stdout, stderr = run_cmd(cmd_args, input)
     write_serial(options, serial_number + 1)
 
     return options.ca_nickname
@@ -230,11 +238,6 @@ def create_server_cert(options):
                 '-z', options.noise_filename,    # noise file random seed
                 ]
 
-    logging.debug(' '.join(cmd_args))
-    p = subprocess.Popen(cmd_args,
-                         stdin=subprocess.PIPE,
-                         stdout=subprocess.PIPE,
-                         stderr=subprocess.PIPE)
     # Provide input for extension creation prompting
     input = ''
 
@@ -252,13 +255,7 @@ def create_server_cert(options):
     # Is this a critical extension [y/N]?
     input += 'n\n'
 
-    stdout, stderr = p.communicate(input)
-    exit_status = p.returncode
-    if exit_status != 0:
-        raise CmdError(exit_status,
-                       'failed to create server cert "%s"' % (options.server_nickname),
-                       stderr)
-
+    stdout, stderr = run_cmd(cmd_args, input)
     write_serial(options, serial_number + 1)
 
     return options.server_nickname
@@ -285,27 +282,6 @@ def create_client_cert(options):
                 '-z', options.noise_filename,    # noise file random seed
                 ]
 
-    cmd_args = ['/usr/bin/certutil',
-                '-d', options.db_name,
-                '-S',
-                '-c', options.ca_nickname,
-                '-n', options.client_nickname,
-                '-s', options.client_subject,
-                '-g', str(options.key_size),
-                '-t', ',,',
-                '-5',
-                '-m', str(serial_number),
-                '-v', str(options.valid_months),
-                '-z', options.noise_filename,
-                '-f', options.passwd_filename,
-                ]
-
-    logging.debug(' '.join(cmd_args))
-    p = subprocess.Popen(cmd_args,
-                         stdin=subprocess.PIPE,
-                         stdout=subprocess.PIPE,
-                         stderr=subprocess.PIPE)
-
     # Provide input for extension creation prompting
     input = ''
 
@@ -323,13 +299,7 @@ def create_client_cert(options):
     # Is this a critical extension [y/N]?
     input += 'n\n'
 
-    stdout, stderr = p.communicate(input)
-    exit_status = p.returncode
-    if exit_status != 0:
-        raise CmdError(exit_status,
-                       'failed to create client cert "%s"' % (options.client_nickname),
-                       stderr)
-
+    stdout, stderr = run_cmd(cmd_args, input)
     write_serial(options, serial_number + 1)
 
     return options.client_nickname
@@ -346,21 +316,7 @@ def add_trusted_certs(options):
                 '-libfile', module,        # module
                 ]
 
-    logging.debug(' '.join(cmd_args))
-    p = subprocess.Popen(cmd_args,
-                         stdin=subprocess.PIPE,
-                         stdout=subprocess.PIPE,
-                         stderr=subprocess.PIPE)
-
-    input = None
-
-    stdout, stderr = p.communicate(input)
-    exit_status = p.returncode
-    if exit_status != 0:
-        raise CmdError(exit_status,
-                       'failed to add module "%s" "%s"' % (name, module),
-                       stderr)
-
+    run_cmd(cmd_args)
     return name
 
 #-------------------------------------------------------------------------------
