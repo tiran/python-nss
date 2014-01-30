@@ -1,3 +1,52 @@
+2014-01-29  John Dennis  <jdennis@redhat.com> 0.15.0
+
+  External Changes
+  ----------------
+
+  The primary enhancements in this version is fixing access to extensions
+  in a CertificateRequest and giving access to CertificateRequest attributes.
+  There is a bug in NSS which hides the existence of extensions in a
+  CSR if the extensions are not contained in the first CSR
+  attribute. This was fixable in python-nss without requiring a patch
+  to NSS. Formerly python-nss did not provide access to the attributes
+  in a CSR only the extensions, with this release all components of a
+  CSR can be accessed. See test/test_cert_request.py for examples.
+
+  * Add ability to read PEM data from a string.
+
+  * Add more build instructions to README. Source README into package
+    long description.
+
+  * A SecItem now converts almost all DER encoded data to a string
+    when it's str method is invoked, formerly it was limited to only a
+    few objects.
+
+  * The following classes were added:
+
+    - CERTAttribute
+
+  * The following class methods were added:
+
+    - CertAttribute.format_lines
+    - CertAttribute.format
+    - nss.SecItem.get_integer
+
+  * The following class properties were added:
+
+    - CertificateRequest.attributes
+    - CertAttribute.type_oid
+    - CertAttribute.type_tag
+    - CertAttribute.type_str
+    - CertAttribute.values
+
+  * The following module functions were added:
+
+    - base64_to_binary
+
+  * The following files were added:
+
+    - test_cert_request
+
 2013-10-09  John Dennis  <jdennis@redhat.com> 0.14.1
 
   Modifications only to tests and examples.
@@ -31,7 +80,9 @@
     argparse module instead of deprecated getopt and optparse. Some
     command line args were tweaked.
 
-2013-04-24 John Dennis <jdennis@redhat.com> 0.14.0 External Changes
+2013-04-24 John Dennis <jdennis@redhat.com> 0.14.0
+
+  External Changes
   ----------------
 
   The primary enhancements in this version is support of certifcate

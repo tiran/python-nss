@@ -17,7 +17,7 @@ from distutils.util import subst_vars, change_root
 from distutils.command.build_py import build_py as _build_py
 from distutils.command.sdist import sdist as _sdist
 
-version = "0.14.1"
+version = "0.15.0"
 
 doc_manifest = [
     [['include README LICENSE* doc/ChangeLog',
@@ -306,9 +306,8 @@ class InstallDoc(Command):
 
 def main(argv):
 
-    long_description='''
-    Python bindings for Network Security Services (NSS) and Netscape Portable Runtime (NSPR).
-    '''
+    with open('README') as f:
+        long_description = f.read()
 
     debug_compile_args = ['-O0', '-g']
     extra_compile_args = []
