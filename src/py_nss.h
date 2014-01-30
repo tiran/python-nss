@@ -323,6 +323,19 @@ typedef struct {
 } BasicConstraints;
 
 /* ========================================================================== */
+/* ============================= CertAttribute Class ======================== */
+/* ========================================================================== */
+
+typedef struct {
+    PyObject_HEAD
+    PRArenaPool *arena;
+    CERTAttribute attr;
+    SECOidTag oid_tag;
+    Py_ssize_t n_values;
+    CERTCertExtension **extensions;   /* null terminated array of SECItems */
+} CertAttribute;
+
+/* ========================================================================== */
 /* ========================= CertificateRequest Class ======================= */
 /* ========================================================================== */
 
@@ -331,6 +344,7 @@ typedef struct {
     PRArenaPool *arena;
     CERTSignedData signed_data;
     CERTCertificateRequest *cert_req;
+    CERTCertExtension **extensions;   /* null terminated array of SECItems */
 } CertificateRequest;
 
 /* ========================================================================== */

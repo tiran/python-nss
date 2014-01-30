@@ -1769,6 +1769,31 @@ CertVerifyLog_length(CertVerifyLog *self);
 static PyObject *
 CertVerifyLog_item(CertVerifyLog *self, register Py_ssize_t i);
 
+static PyObject *
+CertAttribute_new_from_CERTAttribute(CERTAttribute *attr);
+
+PyObject *
+CertificateExtension_new_from_CERTCertExtension(CERTCertExtension *extension);
+
+static PyObject *
+CertificateExtension_get_name(CertificateExtension *self, void *closure);
+
+static PyObject *
+CertificateExtension_get_oid_tag(CertificateExtension *self, void *closure);
+
+static Py_ssize_t
+CERTCertExtension_count(CERTCertExtension **extensions);
+
+static PyObject *
+CERTCertExtension_tuple(CERTCertExtension **extensions, RepresentationKind repr_kind);
+
+static SECStatus
+CERTCertExtensions_from_CERTAttribute(PRArenaPool *arena, 
+                                      CERTAttribute *attr, CERTCertExtension ***exts);
+
+static SECStatus
+My_CERT_GetCertificateRequestExtensions(CERTCertificateRequest *req, CERTCertExtension ***exts);
+
 /* ==================================== */
 
 typedef struct BitStringTableStr {
@@ -1835,6 +1860,56 @@ PyString_UTF8(PyObject *obj, char *name)
     PyErr_Format(PyExc_TypeError, "%s must be a string, not %.200s",
                  name, Py_TYPE(obj)->tp_name);
     return NULL;
+}
+
+/*
+ * Parse text as base64 data. base64 may optionally be wrapped in PEM
+ * header/footer. Return python SecItem.
+ */
+static PyObject * 
+base64_to_SecItem(char *text)
+{
+    PyObject *py_sec_item;
+    SECItem der;
+    char *p, *tmp, *der_begin, *der_end;
+
+    der.data = NULL;
+    der.len = 0;
+    der.type = siBuffer;
+
+    p = text;
+    /* check for headers and trailers and remove them */
+    if ((tmp = strstr(p, "-----BEGIN")) != NULL) {
+        p = tmp;
+        tmp = PORT_Strchr(p, '\n');
+        if (!tmp) {
+            tmp = strchr(p, '\r'); /* maybe this is a MAC file */
+        }
+        if (!tmp) {
+            PyErr_SetString(PyExc_ValueError, "no line ending after PEM BEGIN");
+            return NULL;
+        }
+        p = der_begin = tmp + 1;
+        tmp = strstr(p, "-----END");
+        if (tmp != NULL) {
+            der_end = tmp;
+            *der_end = '\0';
+        } else {
+            PyErr_SetString(PyExc_ValueError, "no PEM END found");
+            return NULL;
+        }
+    } else {
+        der_begin = p;
+        der_end = p + strlen(p);
+    }
+
+    /* Convert to binary */
+    if (NSSBase64_DecodeBuffer(NULL, &der, der_begin, der_end - der_begin) == NULL) {
+        return set_nspr_error("Could not base64 decode");
+    }
+    py_sec_item = SecItem_new_from_SECItem(&der, SECITEM_unknown);
+    SECITEM_FreeItem(&der, PR_FALSE);
+    return py_sec_item;
 }
 
 /*
@@ -2176,6 +2251,72 @@ decode_oid_sequence_to_tuple(SECItem *item, RepresentationKind repr_kind)
 
     return tuple;
 }
+
+static Py_ssize_t
+CERTCertExtension_count(CERTCertExtension **extensions)
+{
+    Py_ssize_t count;
+
+    if (extensions == NULL) return 0;
+    for (count = 0; *extensions; extensions++, count++);
+    return count;
+}
+
+static PyObject *
+CERTCertExtension_tuple(CERTCertExtension **extensions, RepresentationKind repr_kind)
+{
+    Py_ssize_t n_extensions, i;
+    PyObject *tuple=NULL, *py_ext=NULL, *py_obj=NULL;
+    CERTCertExtension *ext;
+
+    n_extensions = CERTCertExtension_count(extensions);
+
+    if (n_extensions == 0) {
+        Py_INCREF(empty_tuple);
+        return empty_tuple;
+    }
+
+    if ((tuple = PyTuple_New(n_extensions)) == NULL) {
+        return NULL;
+    }
+
+    for (i = 0; i < n_extensions; i++) {
+        ext = extensions[i];
+        if ((py_ext = CertificateExtension_new_from_CERTCertExtension(ext)) == NULL) {
+            goto fail;
+        }
+
+        switch(repr_kind) {
+        case AsObject:
+            py_obj = py_ext;
+            Py_INCREF(py_obj);
+            break;
+        case AsString:
+            if ((py_obj = CertificateExtension_get_name((CertificateExtension *)py_ext, NULL)) == NULL) {
+                goto fail;
+            }
+            break;
+        case AsEnum:
+            if ((py_obj = CertificateExtension_get_oid_tag((CertificateExtension *)py_ext, NULL)) == NULL) {
+                goto fail;
+            }
+            break;
+        default:
+            PyErr_Format(PyExc_ValueError, "Unsupported representation kind (%d)", repr_kind);
+            goto fail;
+        }
+        PyTuple_SetItem(tuple, i, py_obj);
+        Py_CLEAR(py_ext);
+    }
+
+    return tuple;
+
+ fail:
+    Py_XDECREF(tuple);
+    Py_XDECREF(py_ext);
+    return NULL;
+}
+
 
 static PyObject *
 CERTCertList_to_tuple(CERTCertList *cert_list, bool add_reference)
@@ -4760,11 +4901,9 @@ static PyMemberDef SecItem_members[] = {
 /* ============================== Class Methods ============================= */
 
 PyDoc_STRVAR(SecItem_get_oid_sequence_doc,
-"get_oid_sequence(sec_item, repr_kind=AsString) -> (obj, ...)\n\
+"get_oid_sequence(repr_kind=AsString) -> (obj, ...)\n\
 \n\
 :Parameters:\n\
-    sec_item : SecItem object\n\
-        A SecItem containing a DER encoded sequence of OID's\n\
     repr_kind : RepresentationKind constant\n\
         Specifies what the contents of the returned tuple will be.\n\
         May be one of:\n\
@@ -4795,6 +4934,20 @@ SecItem_get_oid_sequence(SecItem *self, PyObject *args, PyObject *kwds)
         return NULL;
 
     return decode_oid_sequence_to_tuple(&self->item, repr_kind);
+}
+
+PyDoc_STRVAR(SecItem_get_integer_doc,
+"get_integer() -> int or long\n\
+\n\
+:Parameters:\n\
+\n\
+If the SecItem contains an ASN.1 integer in DER format return\n\
+a Python integer (or long)\n\
+");
+static PyObject *
+SecItem_get_integer(SecItem *self, PyObject *args)
+{
+    return integer_secitem_to_pylong(&self->item);
 }
 
 PyDoc_STRVAR(SecItem_to_hex_doc,
@@ -4873,7 +5026,8 @@ SecItem_der_to_hex(SecItem *self, PyObject *args, PyObject *kwds)
 }
 
 static PyMethodDef SecItem_methods[] = {
-    {"get_oid_sequence", (PyCFunction)SecItem_get_oid_sequence, METH_NOARGS,                SecItem_get_oid_sequence_doc},
+    {"get_oid_sequence", (PyCFunction)SecItem_get_oid_sequence, METH_VARARGS|METH_KEYWORDS, SecItem_get_oid_sequence_doc},
+    {"get_integer",      (PyCFunction)SecItem_get_integer,      METH_NOARGS,                SecItem_get_integer_doc},
     {"to_hex",           (PyCFunction)SecItem_to_hex,           METH_VARARGS|METH_KEYWORDS, SecItem_to_hex_doc},
     {"der_to_hex",       (PyCFunction)SecItem_der_to_hex,       METH_VARARGS|METH_KEYWORDS, SecItem_der_to_hex_doc},
     {NULL, NULL}  /* Sentinel */
@@ -4984,8 +5138,7 @@ SecItem_str(SecItem *self)
     case SECITEM_algorithm:
         return oid_secitem_to_pystr_desc(&self->item);
     default:
-        return_value =  obj_to_hex((PyObject *)self, 0, HEX_SEPARATOR_DEFAULT);
-
+        return der_any_secitem_to_pystr(&self->item);
         break;
     }
     return return_value;
@@ -6327,6 +6480,9 @@ KEYPQGParams_new_from_SECKEYPQGParams(const SECKEYPQGParams *params)
 /* ========================================================================== */
 
 /* ============================ Attribute Access ============================ */
+
+// FIXME - shouldn these return a pyLong instead of a SecItem?
+// via integer_secitem_to_pylong()
 
 static PyObject *
 RSAPublicKey_get_modulus(RSAPublicKey *self, void *closure)
@@ -7968,18 +8124,6 @@ static PyMemberDef CertificateExtension_members[] = {
 /* ============================== Class Methods ============================= */
 
 static PyObject *
-CertificateExtension_str(CertificateExtension *self)
-{
-    return oid_secitem_to_pystr_desc(&self->py_oid->item);
-}
-
-static PyObject *
-CertificateExtension_repr(CertificateExtension *self)
-{
-    return CertificateExtension_str(self);
-}
-
-static PyObject *
 CertificateExtension_format_lines(CertificateExtension *self, PyObject *args, PyObject *kwds)
 {
     static char *kwlist[] = {"level", NULL};
@@ -8135,11 +8279,31 @@ CertificateExtension_format_lines(CertificateExtension *self, PyObject *args, Py
 }
 
 static PyObject *
-CertificateExtension_format(RSAPublicKey *self, PyObject *args, PyObject *kwds)
+CertificateExtension_format(CertificateExtension *self, PyObject *args, PyObject *kwds)
 {
     TraceMethodEnter(self);
 
     return format_from_lines((format_lines_func)CertificateExtension_format_lines, (PyObject *)self, args, kwds);
+}
+
+static PyObject *
+CertificateExtension_repr(CertificateExtension *self)
+{
+    TraceMethodEnter(self);
+
+    return oid_secitem_to_pystr_desc(&self->py_oid->item);
+}
+
+static PyObject *
+CertificateExtension_str(CertificateExtension *self)
+{
+    PyObject *py_formatted_result = NULL;
+
+    TraceMethodEnter(self);
+
+    py_formatted_result =  CertificateExtension_format(self, empty_tuple, NULL);
+    return py_formatted_result;
+
 }
 
 static PyMethodDef CertificateExtension_methods[] = {
@@ -8451,36 +8615,7 @@ Certificate_get_subject_public_key_info(Certificate *self, void *closure)
 static PyObject *
 Certificate_get_extensions(Certificate *self, void *closure)
 {
-    CERTCertExtension **extensions = NULL;
-    int num_extensions, i;
-    PyObject *extensions_tuple;
-
-    TraceMethodEnter(self);
-
-    /* First count how many extensions the cert has */
-    for (extensions = self->cert->extensions, num_extensions = 0;
-         extensions && *extensions;
-         extensions++, num_extensions++);
-
-    /* Allocate a tuple */
-    if ((extensions_tuple = PyTuple_New(num_extensions)) == NULL) {
-        return NULL;
-    }
-
-    /* Copy the extensions into the tuple */
-    for (extensions = self->cert->extensions, i = 0; extensions && *extensions; extensions++, i++) {
-        CERTCertExtension *extension = *extensions;
-        PyObject *py_extension;
-
-        if ((py_extension = CertificateExtension_new_from_CERTCertExtension(extension)) == NULL) {
-            Py_DECREF(extensions_tuple);
-            return NULL;
-        }
-
-        PyTuple_SetItem(extensions_tuple, i, py_extension);
-    }
-
-    return extensions_tuple;
+    return CERTCertExtension_tuple(self->cert->extensions, AsObject);
 }
 
 static PyObject *
@@ -9497,7 +9632,7 @@ Certificate_format_lines(Certificate *self, PyObject *args, PyObject *kwds)
     }
 
     len = PyTuple_Size(extensions);
-    if ((obj = PyString_FromFormat("Signed Extensions: (%zd)", len)) == NULL) {
+    if ((obj = PyString_FromFormat("Signed Extensions: (%zd total)", len)) == NULL) {
         goto fail;
     }
     FMT_OBJ_AND_APPEND(lines, NULL, obj, level+1, fail);
@@ -14910,6 +15045,7 @@ AuthorityInfoAccess_dealloc(AuthorityInfoAccess* self)
 {
     TraceMethodEnter(self);
 
+    PORT_FreeArena(self->arena, PR_FALSE);
     self->ob_type->tp_free((PyObject*)self);
 }
 
@@ -15960,8 +16096,416 @@ BasicConstraints_new_from_SECItem(SECItem *item)
 }
 
 /* ========================================================================== */
+/* ========================== CertAttribute Class =========================== */
+/* ========================================================================== */
+
+/* ============================ Attribute Access ============================ */
+
+static PyObject *
+CertAttribute_get_type_oid(CertAttribute *self, void *closure)
+{
+    TraceMethodEnter(self);
+
+    return SecItem_new_from_SECItem(&self->attr.attrType, SECITEM_oid);
+}
+
+static PyObject *
+CertAttribute_get_type_tag(CertAttribute *self, void *closure)
+{
+    TraceMethodEnter(self);
+
+    return oid_secitem_to_pyint_tag(&self->attr.attrType);
+}
+
+static PyObject *
+CertAttribute_get_type_str(CertAttribute *self, void *closure)
+{
+    TraceMethodEnter(self);
+
+    return oid_secitem_to_pystr_desc(&self->attr.attrType);
+}
+
+static PyObject *
+CertAttribute_get_values(CertAttribute *self, void *closure)
+{
+    Py_ssize_t i;        
+    PyObject *tuple = NULL;
+    PyObject *obj = NULL;
+
+    TraceMethodEnter(self);
+
+    if ((tuple = PyTuple_New(self->n_values)) == NULL) {
+        goto fail;
+    }
+
+    for (i = 0; i < self->n_values; i++) {
+        /* NSS WART - extensions are not an array of SECItems like all other attributes */
+        if (self->oid_tag == SEC_OID_PKCS9_EXTENSION_REQUEST) {
+            if ((obj = CertificateExtension_new_from_CERTCertExtension(self->extensions[i])) == NULL) {
+                goto fail;
+            }
+        } else {
+            if ((obj = SecItem_new_from_SECItem(self->attr.attrValue[i], SECITEM_unknown)) == NULL) {
+                goto fail;
+            }
+        }
+        PyTuple_SetItem(tuple, i, obj);
+    }            
+
+    return tuple;
+ fail:
+    Py_XDECREF(tuple);
+    Py_XDECREF(obj);
+    return NULL;
+}
+
+static
+PyGetSetDef CertAttribute_getseters[] = {
+    {"type_oid", (getter)CertAttribute_get_type_oid, (setter)NULL, "type OID as SecItem", NULL},
+    {"type_tag", (getter)CertAttribute_get_type_tag, (setter)NULL, "type TAG as a enumerated constant (e.g. tag) ", NULL},
+    {"type_str", (getter)CertAttribute_get_type_str, (setter)NULL, "type as string description", NULL},
+    {"values",   (getter)CertAttribute_get_values, (setter)NULL, "tuple of CertificateExtension objects if "
+                                                                 "type_tag == SEC_OID_PKCS9_EXTENSION_REQUEST "
+                                                                 "else tuple of SecItem objects", NULL},
+    {NULL}  /* Sentinel */
+};
+
+static PyMemberDef CertAttribute_members[] = {
+    {NULL}  /* Sentinel */
+};
+
+/* ============================== Class Methods ============================= */
+
+static PyObject *
+CertAttribute_format_lines(CertAttribute *self, PyObject *args, PyObject *kwds)
+{
+    static char *kwlist[] = {"level", NULL};
+    int level = 0;
+    PyObject *lines = NULL;
+    PyObject *obj = NULL;
+    Py_ssize_t i;        
+
+    TraceMethodEnter(self);
+
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "|i:format_lines", kwlist, &level))
+        return NULL;
+
+    if ((lines = PyList_New(0)) == NULL) {
+        return NULL;
+    }
+
+    if ((obj = oid_secitem_to_pystr_desc(&self->attr.attrType)) == NULL) {
+        goto fail;
+    }
+    FMT_OBJ_AND_APPEND(lines, _("Type"), obj, level, fail);
+    Py_CLEAR(obj);
+
+    if ((obj = PyString_FromFormat("Values (%zd total)", self->n_values)) == NULL) {
+        goto fail;
+    }
+    FMT_OBJ_AND_APPEND(lines, NULL, obj, level, fail);
+    Py_CLEAR(obj);
+
+    for (i = 0; i < self->n_values; i++) {
+        if ((obj = PyString_FromFormat("Value [%zd]", i)) == NULL) {
+            goto fail;
+        }
+        FMT_OBJ_AND_APPEND(lines, NULL, obj, level+1, fail);
+        Py_CLEAR(obj);
+
+        /* NSS WART - extensions are not an array of SECItems like all other attributes */
+        if (self->oid_tag == SEC_OID_PKCS9_EXTENSION_REQUEST) {
+            if ((obj = CertificateExtension_new_from_CERTCertExtension(self->extensions[i])) == NULL) {
+                goto fail;
+            }
+            CALL_FORMAT_LINES_AND_APPEND(lines, obj, level+2, fail);
+        } else {
+            if ((obj = der_any_secitem_to_pystr(self->attr.attrValue[i])) == NULL) {
+                goto fail;
+            }
+            FMT_OBJ_AND_APPEND(lines, NULL, obj, level+2, fail);
+        }
+        Py_CLEAR(obj);
+    }            
+
+    return lines;
+ fail:
+    Py_XDECREF(obj);
+    Py_XDECREF(lines);
+    return NULL;
+}
+
+static PyObject *
+CertAttribute_format(CertAttribute *self, PyObject *args, PyObject *kwds)
+{
+    TraceMethodEnter(self);
+
+    return format_from_lines((format_lines_func)CertAttribute_format_lines, (PyObject *)self, args, kwds);
+}
+
+static PyObject *
+CertAttribute_str(CertAttribute *self)
+{
+    PyObject *py_formatted_result = NULL;
+
+    TraceMethodEnter(self);
+
+    py_formatted_result =  CertAttribute_format(self, empty_tuple, NULL);
+    return py_formatted_result;
+
+}
+
+static PyMethodDef CertAttribute_methods[] = {
+    {"format_lines", (PyCFunction)CertAttribute_format_lines,   METH_VARARGS|METH_KEYWORDS, generic_format_lines_doc},
+    {"format",       (PyCFunction)CertAttribute_format,         METH_VARARGS|METH_KEYWORDS, generic_format_doc},
+    {NULL, NULL}  /* Sentinel */
+};
+
+/* =========================== Sequence Protocol ============================ */
+static Py_ssize_t
+CertAttribute_length(CertAttribute *self)
+{
+    return self->n_values;
+}
+
+static PyObject *
+CertAttribute_item(CertAttribute *self, register Py_ssize_t i)
+{
+    if (i < 0 || i >= self->n_values) {
+        PyErr_SetString(PyExc_IndexError, "CertAttribute index out of range");
+        return NULL;
+    }
+
+    /* NSS WART - extensions are not an array of SECItems like all other attributes */
+    if (self->oid_tag == SEC_OID_PKCS9_EXTENSION_REQUEST) {
+        return CertificateExtension_new_from_CERTCertExtension(self->extensions[i]);
+    } else {
+        return SecItem_new_from_SECItem(self->attr.attrValue[i], SECITEM_unknown);
+    }
+}
+
+
+/* =========================== Class Construction =========================== */
+
+static PyObject *
+CertAttribute_new(PyTypeObject *type, PyObject *args, PyObject *kwds)
+{
+    CertAttribute *self;
+
+    TraceObjNewEnter(type);
+
+    if ((self = (CertAttribute *)type->tp_alloc(type, 0)) == NULL) {
+        return NULL;
+    }
+
+    if ((self->arena = PORT_NewArena(DER_DEFAULT_CHUNKSIZE)) == NULL) {
+        type->tp_free(self);
+        return set_nspr_error(NULL);
+    }
+
+    memset(&self->attr, 0, sizeof(self->attr));
+    self->oid_tag = SEC_OID_UNKNOWN;
+    self->n_values = 0;
+    self->extensions = NULL;
+
+    TraceObjNewLeave(self);
+    return (PyObject *)self;
+}
+static void
+CertAttribute_dealloc(CertAttribute* self)
+{
+    TraceMethodEnter(self);
+
+    PORT_FreeArena(self->arena, PR_FALSE);
+    self->ob_type->tp_free((PyObject*)self);
+}
+
+PyDoc_STRVAR(CertAttribute_doc,
+"CertAttribute(obj)\n\
+\n\
+:Parameters:\n\
+    obj : xxx\n\
+\n\
+An object representing CertAttribute.\n\
+");
+
+static int
+CertAttribute_init(CertAttribute *self, PyObject *args, PyObject *kwds)
+{
+    static char *kwlist[] = {"arg", NULL};
+    PyObject *arg;
+
+    TraceMethodEnter(self);
+
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "O|i:CertAttribute", kwlist,
+                                     &arg))
+        return -1;
+
+    return 0;
+}
+
+static PySequenceMethods CertAttribute_as_sequence = {
+    (lenfunc)CertAttribute_length,		/* sq_length */
+    0,						/* sq_concat */
+    0,						/* sq_repeat */
+    (ssizeargfunc)CertAttribute_item,		/* sq_item */
+    0,						/* sq_slice */
+    0,						/* sq_ass_item */
+    0,						/* sq_ass_slice */
+    0,						/* sq_contains */
+    0,						/* sq_inplace_concat */
+    0,						/* sq_inplace_repeat */
+};
+
+static PyTypeObject CertAttributeType = {
+    PyObject_HEAD_INIT(NULL)
+    0,						/* ob_size */
+    "nss.nss.CertAttribute",				/* tp_name */
+    sizeof(CertAttribute),				/* tp_basicsize */
+    0,						/* tp_itemsize */
+    (destructor)CertAttribute_dealloc,		/* tp_dealloc */
+    0,						/* tp_print */
+    0,						/* tp_getattr */
+    0,						/* tp_setattr */
+    0,						/* tp_compare */
+    0,						/* tp_repr */
+    0,						/* tp_as_number */
+    &CertAttribute_as_sequence,			/* tp_as_sequence */
+    0,						/* tp_as_mapping */
+    0,						/* tp_hash */
+    0,						/* tp_call */
+    (reprfunc)CertAttribute_str,			/* tp_str */
+    0,						/* tp_getattro */
+    0,						/* tp_setattro */
+    0,						/* tp_as_buffer */
+    Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE,	/* tp_flags */
+    CertAttribute_doc,				/* tp_doc */
+    (traverseproc)0,				/* tp_traverse */
+    (inquiry)0,					/* tp_clear */
+    0,						/* tp_richcompare */
+    0,						/* tp_weaklistoffset */
+    0,						/* tp_iter */
+    0,						/* tp_iternext */
+    CertAttribute_methods,				/* tp_methods */
+    CertAttribute_members,				/* tp_members */
+    CertAttribute_getseters,				/* tp_getset */
+    0,						/* tp_base */
+    0,						/* tp_dict */
+    0,						/* tp_descr_get */
+    0,						/* tp_descr_set */
+    0,						/* tp_dictoffset */
+    (initproc)CertAttribute_init,			/* tp_init */
+    0,						/* tp_alloc */
+    CertAttribute_new,				/* tp_new */
+};
+
+static PyObject *
+CertAttribute_new_from_CERTAttribute(CERTAttribute *attr)
+{
+    Py_ssize_t i;
+    CertAttribute *self = NULL;
+
+    TraceObjNewEnter(NULL);
+
+    if ((self = (CertAttribute *) CertAttributeType.tp_new(&CertAttributeType, NULL, NULL)) == NULL) {
+        return NULL;
+    }
+
+    if (SECITEM_CopyItem(self->arena, &self->attr.attrType, &attr->attrType) != SECSuccess) {
+        return NULL;
+    }
+
+    self->oid_tag = SECOID_FindOIDTag(&self->attr.attrType);
+
+    /* NSS WART - extensions are not an array of SECItems like all other attributes */
+    if (self->oid_tag == SEC_OID_PKCS9_EXTENSION_REQUEST) {
+        if (CERTCertExtensions_from_CERTAttribute(self->arena, attr, &self->extensions) != SECSuccess) {
+            return NULL;
+        }
+        self->n_values = CERTCertExtension_count(self->extensions);
+        self->attr.attrValue = NULL;
+    } else {
+        Py_ssize_t count;
+        SECItem **values;
+
+        count = 0;
+        if (attr->attrValue) {
+            for (values = attr->attrValue; values[count]; count++);
+        }
+        self->n_values = count;
+
+        if ((self->attr.attrValue = PORT_ArenaZNewArray(self->arena, SECItem *, self->n_values+1)) == NULL) {
+            return NULL;
+        }
+
+        for (i = 0; i < self->n_values; i++) {
+            if ((self->attr.attrValue[i] = SECITEM_ArenaDupItem(self->arena, attr->attrValue[i])) == NULL) {
+                return NULL;
+            }
+        }
+    }
+
+    TraceObjNewLeave(self);
+    return (PyObject *) self;
+}
+
+/* ========================================================================== */
 /* ======================= CertificateRequest Class ========================= */
 /* ========================================================================== */
+
+static SECStatus
+CERTCertExtensions_from_CERTAttribute(PRArenaPool *arena, 
+                                      CERTAttribute *attr, CERTCertExtension ***exts)
+{
+    if (attr == NULL) {
+        /* None of the attributes was an extension, return success with empty extension list */
+        *exts = NULL;
+        return SECSuccess;
+    }
+
+    if (attr->attrValue == NULL) {
+	PORT_SetError(SEC_ERROR_INVALID_ARGS);
+        return SECFailure;
+    }
+
+    return(SEC_ASN1DecodeItem(arena, exts, 
+            SEC_ASN1_GET(CERT_SequenceOfCertExtensionTemplate),
+            *attr->attrValue));
+}
+
+/* NSS WART, CERT_GetCertificateRequestExtensions is broken, assumes extensions
+ * will be first cert request attribute, but that's an invalid assumption
+ *
+ * We also break the logic into two parts, CERTCertExtensions_from_CERTAttribute()
+ * which is needed elsewhere.
+ */
+
+static SECStatus
+My_CERT_GetCertificateRequestExtensions(CERTCertificateRequest *req, CERTCertExtension ***exts)
+{
+    CERTAttribute **attrs, *attr;
+
+    if (req == NULL || exts == NULL) {
+	PORT_SetError(SEC_ERROR_INVALID_ARGS);
+        return SECFailure;
+    }
+    
+    if (req->attributes == NULL) {
+        /* No attributes, return success with empty extension list */
+        *exts = NULL;
+        return SECSuccess;
+    }
+
+    /* Search for an extension attribute in set of attributes */
+    attrs = req->attributes;
+    for (attr = *attrs; attr; attr = *(++attrs)) {
+        if (SECOID_FindOIDTag(&attr->attrType) == SEC_OID_PKCS9_EXTENSION_REQUEST) {
+            break;
+        }
+    }
+
+    return CERTCertExtensions_from_CERTAttribute(req->arena, attr, exts);
+}
 
 static int
 CertificateRequest_init_from_SECItem(CertificateRequest *self, SECItem *der_cert_req)
@@ -15991,6 +16535,11 @@ CertificateRequest_init_from_SECItem(CertificateRequest *self, SECItem *der_cert
                                                &self->cert_req->subjectPublicKeyInfo,
                                                NULL) != SECSuccess) {
         set_nspr_error(NULL);
+        return -1;
+    }
+
+    if (My_CERT_GetCertificateRequestExtensions(self->cert_req, &self->extensions) != SECSuccess) {
+        set_nspr_error("CERT_GetCertificateRequestExtensions failed");
         return -1;
     }
 
@@ -16024,52 +16573,56 @@ CertificateRequest_get_subject_public_key_info(CertificateRequest *self, void *c
 }
 
 
+
 static PyObject *
 CertificateRequest_get_extensions(CertificateRequest *self, void *closure)
 {
-    CERTCertExtension **extensions_list = NULL, **extensions = NULL;
-    int num_extensions, i;
-    PyObject *extensions_tuple;
+    TraceMethodEnter(self);
+
+    return CERTCertExtension_tuple(self->extensions, AsObject);
+}
+
+static PyObject *
+CertificateRequest_get_attributes(CertificateRequest *self, void *closure)
+{
+    CERTAttribute **attributes_list = NULL, **attributes = NULL;
+    Py_ssize_t num_attributes, i;
+    PyObject *attributes_tuple;
 
     TraceMethodEnter(self);
 
-    if (self->cert_req->attributes != NULL                   &&
-        self->cert_req->attributes[0] != NULL                &&
-        self->cert_req->attributes[0]->attrType.data != NULL &&
-        self->cert_req->attributes[0]->attrType.len > 0      &&
-        SECOID_FindOIDTag(&self->cert_req->attributes[0]->attrType) == SEC_OID_PKCS9_EXTENSION_REQUEST) {
-        if (CERT_GetCertificateRequestExtensions(self->cert_req, &extensions_list)  != SECSuccess) {
-            return set_nspr_error("CERT_GetCertificateRequestExtensions failed");
-        }
-    } else {
+    num_attributes = 0;
+
+    attributes_list = self->cert_req->attributes;
+    if (attributes_list == NULL) {
         Py_INCREF(empty_tuple);
         return empty_tuple;
     }
 
-    /* First count how many extensions the cert request has */
-    for (extensions = extensions_list, num_extensions = 0;
-         extensions && *extensions;
-         extensions++, num_extensions++);
+    /* First count how many attributes the cert request has */
+    for (attributes = attributes_list, num_attributes = 0;
+         attributes && *attributes;
+         attributes++, num_attributes++);
 
     /* Allocate a tuple */
-    if ((extensions_tuple = PyTuple_New(num_extensions)) == NULL) {
+    if ((attributes_tuple = PyTuple_New(num_attributes)) == NULL) {
         return NULL;
     }
 
-    /* Copy the extensions into the tuple */
-    for (extensions = extensions_list, i = 0; extensions && *extensions; extensions++, i++) {
-        CERTCertExtension *extension = *extensions;
-        PyObject *py_extension;
+    /* Copy the attributes into the tuple */
+    for (attributes = attributes_list, i = 0; attributes && *attributes; attributes++, i++) {
+        CERTAttribute *attribute = *attributes;
+        PyObject *py_cert_attribute;
 
-        if ((py_extension = CertificateExtension_new_from_CERTCertExtension(extension)) == NULL) {
-            Py_DECREF(extensions_tuple);
+        if ((py_cert_attribute = CertAttribute_new_from_CERTAttribute(attribute)) == NULL) {
+            Py_DECREF(attributes_tuple);
             return NULL;
         }
 
-        PyTuple_SetItem(extensions_tuple, i, py_extension);
+        PyTuple_SetItem(attributes_tuple, i, py_cert_attribute);
     }
 
-    return extensions_tuple;
+    return attributes_tuple;
 }
 
 static
@@ -16082,6 +16635,8 @@ PyGetSetDef CertificateRequest_getseters[] = {
      "certificate public info as SubjectPublicKeyInfo object",  NULL},
     {"extensions", (getter)CertificateRequest_get_extensions, NULL,
      "certificate extensions as a tuple of CertificateExtension objects",  NULL},
+    {"attributes", (getter)CertificateRequest_get_attributes, NULL,
+     "certificate request attributes as a tuple of CertAttribute objects",  NULL},
 
     {NULL}  /* Sentinel */
 };
@@ -16102,8 +16657,7 @@ CertificateRequest_format_lines(CertificateRequest *self, PyObject *args, PyObje
     PyObject *obj = NULL;
     PyObject *obj1 = NULL;
     PyObject *obj2 = NULL;
-    PyObject *obj3 = NULL;
-    PyObject *extensions = NULL;
+    PyObject *attributes = NULL;
 
     TraceMethodEnter(self);
 
@@ -16119,20 +16673,13 @@ CertificateRequest_format_lines(CertificateRequest *self, PyObject *args, PyObje
     if ((obj = CertificateRequest_get_version(self, NULL)) == NULL) {
         goto fail;
     }
-    if ((obj1 = PyInt_FromLong(1)) == NULL) {
+    if ((obj2 = obj_sprintf("%d (%#x)", obj, obj)) == NULL) {
         goto fail;
     }
-    if ((obj2 = PyNumber_Add(obj, obj1)) == NULL) {
-        goto fail;
-    }
-    if ((obj3 = obj_sprintf("%d (%#x)", obj2, obj)) == NULL) {
-        goto fail;
-    }
-    FMT_OBJ_AND_APPEND(lines, _("Version"), obj3, level+2, fail);
+    FMT_OBJ_AND_APPEND(lines, _("Version"), obj2, level+2, fail);
     Py_CLEAR(obj);
     Py_CLEAR(obj1);
     Py_CLEAR(obj2);
-    Py_CLEAR(obj3);
 
     if ((obj = CertificateRequest_get_subject(self, NULL)) == NULL) {
         goto fail;
@@ -16149,23 +16696,29 @@ CertificateRequest_format_lines(CertificateRequest *self, PyObject *args, PyObje
     CALL_FORMAT_LINES_AND_APPEND(lines, obj, level+3, fail);
     Py_CLEAR(obj);
 
-    if ((extensions = CertificateRequest_get_extensions(self, NULL)) == NULL) {
+    if ((attributes = CertificateRequest_get_attributes(self, NULL)) == NULL) {
         goto fail;
     }
 
-    len = PyTuple_Size(extensions);
-    if ((obj = PyString_FromFormat("Signed Extensions: (%zd)", len)) == NULL) {
+    len = PyTuple_Size(attributes);
+    if ((obj = PyString_FromFormat("Attributes: (%zd total)", len)) == NULL) {
         goto fail;
     }
     FMT_OBJ_AND_APPEND(lines, NULL, obj, level+1, fail);
     Py_CLEAR(obj);
 
     for (i = 0; i < len; i++) {
-        obj = PyTuple_GetItem(extensions, i);
-        CALL_FORMAT_LINES_AND_APPEND(lines, obj, level+2, fail);
+        if ((obj = PyString_FromFormat("Attribute [%zd]", i)) == NULL) {
+            goto fail;
+        }
+        FMT_OBJ_AND_APPEND(lines, NULL, obj, level+2, fail);
+        Py_CLEAR(obj);
+
+        obj = PyTuple_GetItem(attributes, i);
+        CALL_FORMAT_LINES_AND_APPEND(lines, obj, level+3, fail);
         FMT_LABEL_AND_APPEND(lines, NULL, 0, fail);
     }
-    Py_CLEAR(extensions);
+    Py_CLEAR(attributes);
 
     return lines;
 
@@ -16173,9 +16726,8 @@ CertificateRequest_format_lines(CertificateRequest *self, PyObject *args, PyObje
     Py_XDECREF(obj);
     Py_XDECREF(obj1);
     Py_XDECREF(obj2);
-    Py_XDECREF(obj3);
     Py_XDECREF(lines);
-    Py_XDECREF(extensions);
+    Py_XDECREF(attributes);
     return NULL;
 }
 
@@ -16224,6 +16776,7 @@ CertificateRequest_new(PyTypeObject *type, PyObject *args, PyObject *kwds)
 
     self->cert_req = NULL;
     memset(&self->signed_data, 0, sizeof(self->signed_data));
+    self->extensions = NULL;
 
     TraceObjNewLeave(self);
     return (PyObject *)self;
@@ -16275,28 +16828,12 @@ CertificateRequest_init(CertificateRequest *self, PyObject *args, PyObject *kwds
                                      &py_data))
         return -1;
 
-    if (py_data) {
-        if (PySecItem_Check(py_data)) {
-            der_item = &((SecItem *)py_data)->item;
-        } else if (PyObject_CheckReadBuffer(py_data)) {
-            unsigned char *data = NULL;
-            Py_ssize_t data_len;
-
-            if (PyObject_AsReadBuffer(py_data, (void *)&data, &data_len))
-                return -1;
-
-            tmp_item.data = data;
-            tmp_item.len = data_len;
-            der_item = &tmp_item;
-        } else {
-            PyErr_SetString(PyExc_TypeError, "data must be SecItem or buffer compatible");
-            return -1;
-        }
-
+    SECITEM_PARAM(py_data, der_item, tmp_item, true, "data");
+    if (der_item) {
         return CertificateRequest_init_from_SECItem(self, der_item);
+    } else {
+        return 0;
     }
-
-    return 0;
 }
 
 static PyObject *
@@ -18446,7 +18983,11 @@ CertVerifyLogNodeError_format_lines(CertVerifyLogNode *self, int level, PyObject
 
     switch (node->error) {
     case SEC_ERROR_INADEQUATE_KEY_USAGE: {
+        // NSS WART - pointers and ints are not the same thing
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wpointer-to-int-cast"
         unsigned int flags = (unsigned int)node->arg;
+#pragma GCC diagnostic pop
 
         if ((obj = key_usage_flags(flags, repr_kind)) == NULL) {
             goto fail;
@@ -18455,7 +18996,11 @@ CertVerifyLogNodeError_format_lines(CertVerifyLogNode *self, int level, PyObject
         Py_CLEAR(obj);
     } break;
     case SEC_ERROR_INADEQUATE_CERT_TYPE: {
+        // NSS WART - pointers and ints are not the same thing
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wpointer-to-int-cast"
         unsigned int flags = (unsigned int)node->arg;
+#pragma GCC diagnostic pop
 
         if ((obj = cert_type_flags(flags, repr_kind)) == NULL) {
             goto fail;
@@ -21453,7 +21998,7 @@ cert_decode_der_crl(PyObject *self, PyObject *args, PyObject *kwds)
     return SignedCRL_new_from_CERTSignedCRL(signed_crl);
 }
 
-PyDoc_STRVAR(cert_read_der_from_file_doc,
+PyDoc_STRVAR(nss_read_der_from_file_doc,
 "read_der_from_file(file, ascii=False) -> SecItem\n\
 \n\
 :Parameters:\n\
@@ -21477,90 +22022,75 @@ The returned SecItem contains the DER contents of the file.\n\
 ");
 
 static PyObject *
-cert_read_der_from_file(PyObject *self, PyObject *args, PyObject *kwds)
+nss_read_der_from_file(PyObject *self, PyObject *args, PyObject *kwds)
 {
     static char *kwlist[] = {"file", "ascii", NULL};
     PyObject *file_arg;
     int ascii = 0;
     PyObject *py_sec_item;
-    PyObject *py_file, *py_file_contents;
-    SECItem der;
+    PyObject *py_file_contents;
 
     TraceMethodEnter(self);
-
-    der.data = NULL;
-    der.len = 0;
-    der.type = siBuffer;
 
     if (!PyArg_ParseTupleAndKeywords(args, kwds, "O|i:read_der_from_file", kwlist,
                                      &file_arg, &ascii))
         return NULL;
 
-    if (PyString_Check(file_arg) || PyUnicode_Check(file_arg)) {
-        if ((py_file = PyFile_FromString(PyString_AsString(file_arg), "r")) == NULL) {
-            return NULL;
-        }
-    } else if (PyFile_Check(file_arg)) {
-        py_file = file_arg;
-	Py_INCREF(py_file);
-    } else {
-        PyErr_SetString(PyExc_TypeError, "Bad file, must be pathname or file object");
-        return NULL;
+    if ((py_file_contents = read_data_from_file(file_arg)) == NULL) {
+        goto fail;
     }
-
-    if ((py_file_contents = PyObject_CallMethod(py_file, "read", "")) == NULL) {
-        Py_DECREF(py_file);
-        return NULL;
-    }
-    Py_DECREF(py_file);
 
     if (ascii) {
-        char *p, *tmp, *der_begin, *der_end;
+        if ((py_sec_item = base64_to_SecItem(PyString_AsString(py_file_contents))) == NULL) {
+            goto fail;
+        }
+    } else {
+        SECItem der;
 
-        p = PyString_AsString(py_file_contents);
-	/* check for headers and trailers and remove them */
-	if ((tmp = strstr(p, "-----BEGIN")) != NULL) {
-	    p = tmp;
-	    tmp = PORT_Strchr(p, '\n');
-	    if (!tmp) {
-		tmp = strchr(p, '\r'); /* maybe this is a MAC file */
-            }
-	    if (!tmp) {
-                PyErr_SetString(PyExc_ValueError, "no line ending after PEM BEGIN");
-                Py_DECREF(py_file_contents);
-                return NULL;
-            }
-            p = der_begin = tmp + 1;
-            tmp = strstr(p, "-----END");
-	    if (tmp != NULL) {
-                der_end = tmp;
-		*der_end = '\0';
-	    } else {
-                PyErr_SetString(PyExc_ValueError, "no PEM END found");
-                Py_DECREF(py_file_contents);
-                return NULL;
-	    }
-	} else {
-	    der_begin = p;
-            der_end = p + PyString_GET_SIZE(py_file_contents);
-	}
+        der.data = (unsigned char *)PyString_AsString(py_file_contents);
+        der.len = PyString_GET_SIZE(py_file_contents);
+        der.type = siBuffer;
 
-	/* Convert to binary */
-        if (NSSBase64_DecodeBuffer(NULL, &der, der_begin, der_end - der_begin) == NULL) {
-            Py_DECREF(py_file_contents);
-            return set_nspr_error("Could not base64 decode contents of file");
-	}
-        py_sec_item = SecItem_new_from_SECItem(&der, SECITEM_unknown);
-        Py_DECREF(py_file_contents);
-        SECITEM_FreeItem(&der, PR_FALSE);
-        return py_sec_item;
+        if ((py_sec_item = SecItem_new_from_SECItem(&der, SECITEM_unknown)) == NULL) {
+            goto fail;
+        }
     }
 
-    der.data = (unsigned char *)PyString_AS_STRING(py_file_contents);
-    der.len = PyString_GET_SIZE(py_file_contents);
-    py_sec_item = SecItem_new_from_SECItem(&der, SECITEM_unknown);
     Py_DECREF(py_file_contents);
     return (PyObject *)py_sec_item;
+
+ fail:
+    Py_XDECREF(py_file_contents);
+    return NULL;
+}
+
+PyDoc_STRVAR(nss_base64_to_binary_doc,
+"base64_to_binary(text) -> SecItem\n\
+\n\
+:Parameters:\n\
+    text : string containing base64 data.\n\
+\n\
+Convert the base64 encoded data to binary data.\n\
+\n\
+The text is assumed to contain base64 text. The base64 text may\n\
+optionally be wrapped in a PEM header and footer.\n\
+\n\
+Returns a SecItem containg the binary data.\n\
+");
+
+static PyObject *
+nss_base64_to_binary(PyObject *self, PyObject *args, PyObject *kwds)
+{
+    static char *kwlist[] = {"text", NULL};
+    char *text = NULL;
+
+    TraceMethodEnter(self);
+
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "s:base64_to_binary", kwlist,
+                                     &text))
+        return NULL;
+
+    return base64_to_SecItem(text);
 }
 
 PyDoc_STRVAR(cert_x509_key_usage_doc,
@@ -23130,7 +23660,8 @@ module_methods[] = {
     {"token_exists",                     (PyCFunction)pk11_pk11_token_exists,              METH_NOARGS,                pk11_pk11_token_exists_doc},
     {"is_fips",                          (PyCFunction)pk11_pk11_is_fips,                   METH_NOARGS,                pk11_pk11_is_fips_doc},
     {"decode_der_crl",                   (PyCFunction)cert_decode_der_crl,                 METH_VARARGS|METH_KEYWORDS, cert_decode_der_crl_doc},
-    {"read_der_from_file",               (PyCFunction)cert_read_der_from_file,             METH_VARARGS|METH_KEYWORDS, cert_read_der_from_file_doc},
+    {"read_der_from_file",               (PyCFunction)nss_read_der_from_file,              METH_VARARGS|METH_KEYWORDS, nss_read_der_from_file_doc},
+    {"base64_to_binary",                 (PyCFunction)nss_base64_to_binary,                METH_VARARGS|METH_KEYWORDS, nss_base64_to_binary_doc},
     {"x509_key_usage",                   (PyCFunction)cert_x509_key_usage,                 METH_VARARGS|METH_KEYWORDS, cert_x509_key_usage_doc},
     {"x509_cert_type",                   (PyCFunction)cert_x509_cert_type,                 METH_VARARGS|METH_KEYWORDS, cert_x509_cert_type_doc},
     {"x509_ext_key_usage",               (PyCFunction)cert_x509_ext_key_usage,             METH_VARARGS|METH_KEYWORDS, cert_x509_ext_key_usage_doc},
@@ -23230,6 +23761,7 @@ initnss(void)
     TYPE_READY(GeneralNameType);
     TYPE_READY(AuthKeyIDType);
     TYPE_READY(BasicConstraintsType);
+    TYPE_READY(CertAttributeType);
     TYPE_READY(CertificateRequestType);
     TYPE_READY(InitParametersType);
     TYPE_READY(InitContextType);

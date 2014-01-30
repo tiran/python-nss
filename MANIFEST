@@ -13,6 +13,7 @@ doc/examples/verify_cert.py
 test/run_tests
 test/setup_certs.py
 test/test_cert_components.py
+test/test_cert_request.py
 test/test_cipher.py
 test/test_client_server.py
 test/test_digest.py
