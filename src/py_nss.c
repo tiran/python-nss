@@ -4939,8 +4939,6 @@ SecItem_get_oid_sequence(SecItem *self, PyObject *args, PyObject *kwds)
 PyDoc_STRVAR(SecItem_get_integer_doc,
 "get_integer() -> int or long\n\
 \n\
-:Parameters:\n\
-\n\
 If the SecItem contains an ASN.1 integer in DER format return\n\
 a Python integer (or long)\n\
 ");
@@ -16321,10 +16319,7 @@ CertAttribute_dealloc(CertAttribute* self)
 }
 
 PyDoc_STRVAR(CertAttribute_doc,
-"CertAttribute(obj)\n\
-\n\
-:Parameters:\n\
-    obj : xxx\n\
+"CertAttribute()\n\
 \n\
 An object representing CertAttribute.\n\
 ");
@@ -22068,7 +22063,8 @@ PyDoc_STRVAR(nss_base64_to_binary_doc,
 "base64_to_binary(text) -> SecItem\n\
 \n\
 :Parameters:\n\
-    text : string containing base64 data.\n\
+    text : string\n\
+        string containing base64 data.\n\
 \n\
 Convert the base64 encoded data to binary data.\n\
 \n\
@@ -22788,7 +22784,7 @@ pkcs12_enable_cipher(PyObject *self, PyObject *args)
         PyObject *py_err_msg = PyString_FromFormat("Failed to %s %s (%lx) pkcs12 cipher",
                                                    enabled ? _("enable") : _("disable"),
                                                    PyString_AsString(py_cipher_name), cipher);
-        set_nspr_error(PyString_AsString(py_err_msg));
+        set_nspr_error("%s", PyString_AsString(py_err_msg));
         Py_DECREF(py_cipher_name);
         Py_DECREF(py_err_msg);
         return NULL;
@@ -22829,7 +22825,7 @@ pkcs12_enable_all_ciphers(PyObject *self, PyObject *args)
             PyObject *py_cipher_name = pkcs12_cipher_to_pystr(cipher);
             PyObject *py_err_msg = PyString_FromFormat("Failed to enable %s (%lx) pkcs12 cipher",
                                                        PyString_AsString(py_cipher_name), cipher);
-            set_nspr_error(PyString_AsString(py_err_msg));
+            set_nspr_error("%s", PyString_AsString(py_err_msg));
             Py_DECREF(py_cipher_name);
             Py_DECREF(py_err_msg);
             return NULL;
