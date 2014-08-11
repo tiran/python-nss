@@ -9315,7 +9315,7 @@ Certificate_check_ocsp_status(Certificate *self, PyObject *args)
     } else {
         parse_args = PyTuple_GetSlice(args, 0, n_base_args);
     }
-    if (!PyArg_ParseTuple(args, "O&O&:check_ocsp_status",
+    if (!PyArg_ParseTuple(args, "O!O&:check_ocsp_status",
                           &CertDBType, &py_certdb,
                           PRTimeConvert, &pr_time)) {
         Py_DECREF(parse_args);
