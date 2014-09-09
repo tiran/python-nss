@@ -1,3 +1,37 @@
+2014-09-02  John Dennis  <jdennis@redhat.com> 0.16.0
+	
+  * The following class properties were added:
+
+    - Certificate.ssl_trust_flags
+    - Certificate.email_trust_flags
+    - Certificate.signing_trust_flags
+
+  * The following class methods were added:
+
+    - Certificate.trust_flags
+    - Certificate.set_trust_attributes
+
+  * The following constants were added:
+    - nss.CERTDB_TERMINAL_RECORD
+    - nss.CERTDB_VALID_PEER
+    - nss.CERTDB_TRUSTED
+    - nss.CERTDB_SEND_WARN
+    - nss.CERTDB_VALID_CA
+    - nss.CERTDB_TRUSTED_CA
+    - nss.CERTDB_NS_TRUSTED_CA
+    - nss.CERTDB_USER
+    - nss.CERTDB_TRUSTED_CLIENT_CA
+    - nss.CERTDB_GOVT_APPROVED_CA
+
+  * The following files were added:
+
+    - doc/examples/cert_trust.py
+
+   * The following methods were missing thread locks, this has been fixed.
+     - nss.nss_initialize
+     - nss.nss_init_context
+     - nss.nss_shutdown_context
+
 2014-01-29  John Dennis  <jdennis@redhat.com> 0.15.0
 
   External Changes
