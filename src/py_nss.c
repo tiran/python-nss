@@ -1623,7 +1623,7 @@ static PyObject *
 cert_oid_tag_name(PyObject *self, PyObject *args);
 
 static PyObject *
-cert_trust_flags_str(unsigned int flags, RepresentationKind repr_kind);
+cert_trust_flags(unsigned int flags, RepresentationKind repr_kind);
 
 static PyObject *
 SecItem_new_from_SECItem(const SECItem *item, SECItemKind kind);
@@ -3191,6 +3191,24 @@ SecItemOrNoneConvert(PyObject *obj, PyObject **param)
 }
 
 static int
+CertDBOrNoneConvert(PyObject *obj, PyObject **param)
+{
+    if (PyCertDB_Check(obj)) {
+        *param = obj;
+        return 1;
+    }
+
+    if (PyNone_Check(obj)) {
+        *param = NULL;
+        return 1;
+    }
+
+    PyErr_Format(PyExc_TypeError, "must be %.50s or None, not %.50s",
+                 SecItemType.tp_name, Py_TYPE(obj)->tp_name);
+    return 0;
+}
+
+static int
 TupleOrNoneConvert(PyObject *obj, PyObject **param)
 {
     if (PyTuple_Check(obj)) {
@@ -4690,7 +4708,7 @@ CERTRDN_to_pystr(CERTRDN *rdn)
 }
 
 static PyObject *
-cert_trust_flags_str(unsigned int flags, RepresentationKind repr_kind)
+cert_trust_flags(unsigned int flags, RepresentationKind repr_kind)
 {
     BIT_FLAGS_TO_LIST_PROLOGUE();
 
@@ -8574,7 +8592,7 @@ Certificate_get_ssl_trust_str(Certificate *self, void *closure)
     TraceMethodEnter(self);
 
     if (self->cert->trust)
-        return cert_trust_flags_str(self->cert->trust->sslFlags, AsEnumDescription);
+        return cert_trust_flags(self->cert->trust->sslFlags, AsEnumDescription);
     else
         Py_RETURN_NONE;
 }
@@ -8585,7 +8603,7 @@ Certificate_get_email_trust_str(Certificate *self, void *closure)
     TraceMethodEnter(self);
 
     if (self->cert->trust)
-        return cert_trust_flags_str(self->cert->trust->emailFlags, AsEnumDescription);
+        return cert_trust_flags(self->cert->trust->emailFlags, AsEnumDescription);
     else
         Py_RETURN_NONE;
 }
@@ -8596,7 +8614,40 @@ Certificate_get_signing_trust_str(Certificate *self, void *closure)
     TraceMethodEnter(self);
 
     if (self->cert->trust)
-        return cert_trust_flags_str(self->cert->trust->objectSigningFlags, AsEnumDescription);
+        return cert_trust_flags(self->cert->trust->objectSigningFlags, AsEnumDescription);
+    else
+        Py_RETURN_NONE;
+}
+
+static PyObject *
+Certificate_get_ssl_trust_flags(Certificate *self, void *closure)
+{
+    TraceMethodEnter(self);
+
+    if (self->cert->trust)
+        return PyInt_FromLong(self->cert->trust->sslFlags);
+    else
+        Py_RETURN_NONE;
+}
+
+static PyObject *
+Certificate_get_email_trust_flags(Certificate *self, void *closure)
+{
+    TraceMethodEnter(self);
+
+    if (self->cert->trust)
+        return PyInt_FromLong(self->cert->trust->emailFlags);
+    else
+        Py_RETURN_NONE;
+}
+
+static PyObject *
+Certificate_get_signing_trust_flags(Certificate *self, void *closure)
+{
+    TraceMethodEnter(self);
+
+    if (self->cert->trust)
+        return PyInt_FromLong(self->cert->trust->objectSigningFlags);
     else
         Py_RETURN_NONE;
 }
@@ -8671,6 +8722,15 @@ PyGetSetDef Certificate_getseters[] = {
     {"signing_trust_str",       (getter)Certificate_get_signing_trust_str,       NULL,
      "certificate object signing trust flags as array of strings, or None if trust is not defined",  NULL},
 
+    {"ssl_trust_flags",           (getter)Certificate_get_ssl_trust_flags,           NULL,
+     "certificate SSL trust flags as integer bitmask, or None if not defined",  NULL},
+
+    {"email_trust_flags",         (getter)Certificate_get_email_trust_flags,         NULL,
+     "certificate email trust flags as integer bitmask, or None if not defined",  NULL},
+
+    {"signing_trust_flags",       (getter)Certificate_get_signing_trust_flags,       NULL,
+     "certificate object signing trust flags as integer bitmask, or None if not defined",  NULL},
+
     {"subject_public_key_info", (getter)Certificate_get_subject_public_key_info, NULL,
      "certificate public info as SubjectPublicKeyInfo object",  NULL},
 
@@ -8688,6 +8748,150 @@ static PyMemberDef Certificate_members[] = {
 };
 
 /* ============================== Class Methods ============================= */
+
+PyDoc_STRVAR(Certificate_trust_flags_doc,
+"trust_flags(flags, repr_kind=AsEnumDescription) -> ['flag_name', ...]\n\
+\n\
+:Parameters:\n\
+    flags : int\n\
+        certificate trust integer bitmask\n\
+    repr_kind : RepresentationKind constant\n\
+        Specifies what the contents of the returned list will be.\n\
+        May be one of:\n\
+\n\
+        AsEnum\n\
+            The enumerated constant as an integer value.\n\
+        AsEnumName\n\
+            The name of the enumerated constant as a string.\n\
+        AsEnumDescription\n\
+            A friendly human readable description of the enumerated constant as a string.\n\
+\n\
+Given an integer with trust flags encoded as a bitmask\n\
+return a sorted list of their values as specified in the repr_kind\n\
+\n\
+This is a class method.\n\
+");
+
+static PyObject *
+Certificate_trust_flags(PyObject *cls, PyObject *args, PyObject *kwds)
+{
+    static char *kwlist[] = {"flags", "repr_kind", NULL};
+    int flags = 0;
+    RepresentationKind repr_kind = AsEnumDescription;
+
+    TraceMethodEnter(self);
+
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "i|i:trust_flags", kwlist,
+                                     &flags, &repr_kind))
+        return NULL;
+
+    return cert_trust_flags(flags, repr_kind);
+}
+
+PyDoc_STRVAR(Certificate_set_trust_attributes_doc,
+"set_trust_attributes(trust, certdb, slot, [user_data1, ...])\n\
+\n\
+:Parameters:\n\
+    string : trust\n\
+        NSS trust string\n\
+    certdb : CertDB object or None\n\
+        CertDB certificate database object, if None then the default\n\
+        certdb will be supplied by calling `nss.get_default_certdb()`.\n\
+    slot : `PK11Slot` object\n\
+        The PK11 slot to use. If None defaults to internal\n\
+        slot, see `nss.get_internal_key_slot()`\n\
+    user_dataN : object\n\
+        zero or more caller supplied parameters which will\n\
+        be passed to the password callback function\n\
+\n\
+");
+
+static PyObject *
+Certificate_set_trust_attributes(Certificate *self, PyObject *args)
+{
+    Py_ssize_t n_base_args = 3;
+    Py_ssize_t argc;
+    PyObject *parse_args = NULL;
+    PyObject *pin_args = NULL;
+    char *trust_string = NULL;
+    CertDB *py_certdb = NULL;
+    CERTCertDBHandle *certdb_handle = NULL;
+    PyObject *py_slot = Py_None;
+    PK11SlotInfo *slot = NULL;
+    CERTCertTrust *trust = NULL;
+    SECStatus result = SECFailure;
+
+    TraceMethodEnter(self);
+
+    argc = PyTuple_Size(args);
+    if (argc == n_base_args) {
+        Py_INCREF(args);
+        parse_args = args;
+    } else {
+        parse_args = PyTuple_GetSlice(args, 0, n_base_args);
+    }
+    if (!PyArg_ParseTuple(parse_args, "sO&O&:set_trust_attributes",
+                          &trust_string,
+                          CertDBOrNoneConvert, &py_certdb,
+                          PK11SlotOrNoneConvert, &py_slot)) {
+        Py_DECREF(parse_args);
+        return NULL;
+    }
+    Py_DECREF(parse_args);
+
+    if (py_certdb) {
+        certdb_handle = py_certdb->handle;
+    } else {
+        certdb_handle = CERT_GetDefaultCertDB();
+    }
+
+    if (PyNone_Check(py_slot)) {
+	slot = PK11_GetInternalKeySlot();
+    } else {
+        slot = ((PK11Slot *)py_slot)->slot;
+    }
+
+    pin_args = PyTuple_GetSlice(args, n_base_args, argc);
+
+    if ((trust = (CERTCertTrust *)PORT_ZAlloc(sizeof(CERTCertTrust))) == NULL) {
+        PyErr_NoMemory();
+        goto exit;
+    }
+
+    if ((result = CERT_DecodeTrustString(trust, trust_string)) != SECSuccess) {
+        set_nspr_error("cannot decode trust string '%s'", trust_string);
+        goto exit;
+    }
+        
+    /*
+     * CERT_ChangeCertTrust API does not have a way to pass in a
+     * context, so NSS can't prompt for the password if it needs to.
+     * check to see if the failure was token not logged in and log in
+     * if need be.
+     */
+    Py_BEGIN_ALLOW_THREADS
+    if ((result = CERT_ChangeCertTrust(certdb_handle, self->cert, trust)) != SECSuccess) {
+	if (PORT_GetError() == SEC_ERROR_TOKEN_NOT_LOGGED_IN) {
+	    if ((result = PK11_Authenticate(slot, PR_TRUE, pin_args)) != SECSuccess) {
+                set_nspr_error("Unable to authenticate");
+            } else {
+                if ((result = CERT_ChangeCertTrust(certdb_handle, self->cert, trust)) != SECSuccess) {
+                    set_nspr_error(NULL);
+                }
+            }
+        }
+    }
+    Py_END_ALLOW_THREADS
+
+ exit:
+    Py_DECREF(pin_args);
+    PORT_Free(trust);
+    if (result == SECSuccess) {
+        Py_RETURN_NONE;
+    } else {
+        return NULL;
+    }
+}
 
 PyDoc_STRVAR(Certificate_find_kea_type_doc,
 "find_kea_type() -> kea_type\n\
@@ -9721,6 +9925,8 @@ Certificate_str(Certificate *self)
 }
 
 static PyMethodDef Certificate_methods[] = {
+    {"trust_flags",            (PyCFunction)Certificate_trust_flags,            METH_VARARGS | METH_CLASS,  Certificate_trust_flags_doc},
+    {"set_trust_attributes",   (PyCFunction)Certificate_set_trust_attributes,   METH_VARARGS,               Certificate_set_trust_attributes_doc},
     {"find_kea_type",          (PyCFunction)Certificate_find_kea_type,          METH_NOARGS,                Certificate_find_kea_type_doc},
     {"make_ca_nickname",       (PyCFunction)Certificate_make_ca_nickname,       METH_NOARGS,                Certificate_make_ca_nickname_doc},
     {"has_signer_in_ca_names", (PyCFunction)Certificate_has_signer_in_ca_names, METH_VARARGS,               Certificate_has_signer_in_ca_names_doc},
@@ -20577,9 +20783,11 @@ nss_nss_initialize(PyObject *self, PyObject *args, PyObject *kwds)
                                      &flags))
         return NULL;
 
+    Py_BEGIN_ALLOW_THREADS
     if ((status = NSS_Initialize(cert_dir, cert_prefix, key_prefix, secmod_name, flags)) != SECSuccess) {
         set_nspr_error(NULL);
     }
+    Py_END_ALLOW_THREADS
 
     if (cert_dir)    PyMem_Free(cert_dir);
     if (cert_prefix) PyMem_Free(cert_prefix);
@@ -20724,10 +20932,12 @@ nss_nss_init_context(PyObject *self, PyObject *args, PyObject *kwds)
         set_nspr_error(NULL);
     }
 
+    Py_BEGIN_ALLOW_THREADS
     if ((py_init_context = InitContext_new_from_NSSInitContext(init_context)) == NULL) {
         NSS_ShutdownContext(init_context);
         init_context = NULL;
     }
+    Py_END_ALLOW_THREADS
 
     if (cert_dir)    PyMem_Free(cert_dir);
     if (cert_prefix) PyMem_Free(cert_prefix);
@@ -20764,9 +20974,11 @@ nss_nss_shutdown_context(PyObject *self, PyObject *args)
                           &InitContextType, &py_context))
         return NULL;
 
+    Py_BEGIN_ALLOW_THREADS
     if (NSS_ShutdownContext(py_context->context) != SECSuccess) {
         return set_nspr_error(NULL);
     }
+    Py_END_ALLOW_THREADS
 
     Py_RETURN_NONE;
 }
@@ -23883,6 +24095,21 @@ initnss(void)
     AddIntConstant(KU_DIGITAL_SIGNATURE_OR_NON_REPUDIATION);
     AddIntConstant(KU_KEY_AGREEMENT_OR_ENCIPHERMENT);
     AddIntConstant(KU_NS_GOVT_APPROVED);
+
+#if (NSS_VMAJOR > 3) || (NSS_VMAJOR == 3 && NSS_VMINOR >= 13)
+    AddIntConstant(CERTDB_TERMINAL_RECORD);
+#else
+    AddIntConstant(CERTDB_VALID_PEER);
+#endif
+    AddIntConstant(CERTDB_TRUSTED);
+    AddIntConstant(CERTDB_SEND_WARN);
+    AddIntConstant(CERTDB_VALID_CA);
+    AddIntConstant(CERTDB_TRUSTED_CA);
+    AddIntConstant(CERTDB_NS_TRUSTED_CA);
+    AddIntConstant(CERTDB_USER);
+    AddIntConstant(CERTDB_TRUSTED_CLIENT_CA);
+    AddIntConstant(CERTDB_GOVT_APPROVED_CA);
+
 
     /***************************************************************************
      * CRL Reason
