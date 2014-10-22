@@ -1788,7 +1788,7 @@ static PyObject *
 CERTCertExtension_tuple(CERTCertExtension **extensions, RepresentationKind repr_kind);
 
 static SECStatus
-CERTCertExtensions_from_CERTAttribute(PRArenaPool *arena, 
+CERTCertExtensions_from_CERTAttribute(PRArenaPool *arena,
                                       CERTAttribute *attr, CERTCertExtension ***exts);
 
 static SECStatus
@@ -1866,7 +1866,7 @@ PyString_UTF8(PyObject *obj, char *name)
  * Parse text as base64 data. base64 may optionally be wrapped in PEM
  * header/footer. Return python SecItem.
  */
-static PyObject * 
+static PyObject *
 base64_to_SecItem(char *text)
 {
     PyObject *py_sec_item;
@@ -2985,6 +2985,16 @@ _AddIntConstantWithLookup(PyObject *module, const char *name, long value, const 
         return -1;
     }
 
+    if (PyDict_GetItem(module_dict, py_name)) {
+        PyErr_Format(PyExc_SystemError, "module '%s' already contains %s",
+                     PyModule_GetName(module), name);
+
+        Py_DECREF(py_name);
+        Py_DECREF(py_lower_name);
+        Py_DECREF(py_value);
+        return -1;
+    }
+
     if (PyDict_SetItem(module_dict, py_name, py_value) != 0) {
         Py_DECREF(py_name);
         Py_DECREF(py_lower_name);
@@ -3031,6 +3041,52 @@ _AddIntConstantWithLookup(PyObject *module, const char *name, long value, const 
 
     Py_DECREF(py_name);
     Py_XDECREF(py_name_sans_prefix);
+    Py_DECREF(py_lower_name);
+    Py_DECREF(py_value);
+    return 0;
+}
+
+static int
+_AddIntConstantAlias(const char *name, long value, PyObject *name_to_value)
+{
+    PyObject *py_name = NULL;
+    PyObject *py_lower_name = NULL;
+    PyObject *py_value = NULL;
+
+    if ((py_name = PyString_FromString(name)) == NULL) {
+        return -1;
+    }
+
+    if ((py_lower_name = PyObject_CallMethod(py_name, "lower", NULL)) == NULL) {
+        Py_DECREF(py_name);
+        return -1;
+    }
+
+    if ((py_value = PyInt_FromLong(value)) == NULL) {
+        Py_DECREF(py_name);
+        Py_DECREF(py_lower_name);
+        return -1;
+    }
+
+    if (PyDict_GetItem(name_to_value, py_name)) {
+        PyErr_Format(PyExc_SystemError, "lookup dict already contains %s",
+                     name);
+
+        Py_DECREF(py_name);
+        Py_DECREF(py_lower_name);
+        Py_DECREF(py_value);
+        return -1;
+    }
+
+    if (PyDict_SetItem(name_to_value, py_lower_name, py_value) != 0) {
+        Py_DECREF(py_name);
+        Py_DECREF(py_lower_name);
+        Py_DECREF(py_value);
+        return -1;
+    }
+
+
+    Py_DECREF(py_name);
     Py_DECREF(py_lower_name);
     Py_DECREF(py_value);
     return 0;
@@ -8862,7 +8918,7 @@ Certificate_set_trust_attributes(Certificate *self, PyObject *args)
         set_nspr_error("cannot decode trust string '%s'", trust_string);
         goto exit;
     }
-        
+
     /*
      * CERT_ChangeCertTrust API does not have a way to pass in a
      * context, so NSS can't prompt for the password if it needs to.
@@ -16332,7 +16388,7 @@ CertAttribute_get_type_str(CertAttribute *self, void *closure)
 static PyObject *
 CertAttribute_get_values(CertAttribute *self, void *closure)
 {
-    Py_ssize_t i;        
+    Py_ssize_t i;
     PyObject *tuple = NULL;
     PyObject *obj = NULL;
 
@@ -16354,7 +16410,7 @@ CertAttribute_get_values(CertAttribute *self, void *closure)
             }
         }
         PyTuple_SetItem(tuple, i, obj);
-    }            
+    }
 
     return tuple;
  fail:
@@ -16387,7 +16443,7 @@ CertAttribute_format_lines(CertAttribute *self, PyObject *args, PyObject *kwds)
     int level = 0;
     PyObject *lines = NULL;
     PyObject *obj = NULL;
-    Py_ssize_t i;        
+    Py_ssize_t i;
 
     TraceMethodEnter(self);
 
@@ -16430,7 +16486,7 @@ CertAttribute_format_lines(CertAttribute *self, PyObject *args, PyObject *kwds)
             FMT_OBJ_AND_APPEND(lines, NULL, obj, level+2, fail);
         }
         Py_CLEAR(obj);
-    }            
+    }
 
     return lines;
  fail:
@@ -16655,7 +16711,7 @@ CertAttribute_new_from_CERTAttribute(CERTAttribute *attr)
 /* ========================================================================== */
 
 static SECStatus
-CERTCertExtensions_from_CERTAttribute(PRArenaPool *arena, 
+CERTCertExtensions_from_CERTAttribute(PRArenaPool *arena,
                                       CERTAttribute *attr, CERTCertExtension ***exts)
 {
     if (attr == NULL) {
@@ -16669,7 +16725,7 @@ CERTCertExtensions_from_CERTAttribute(PRArenaPool *arena,
         return SECFailure;
     }
 
-    return(SEC_ASN1DecodeItem(arena, exts, 
+    return(SEC_ASN1DecodeItem(arena, exts,
             SEC_ASN1_GET(CERT_SequenceOfCertExtensionTemplate),
             *attr->attrValue));
 }
@@ -16690,7 +16746,7 @@ My_CERT_GetCertificateRequestExtensions(CERTCertificateRequest *req, CERTCertExt
 	PORT_SetError(SEC_ERROR_INVALID_ARGS);
         return SECFailure;
     }
-    
+
     if (req->attributes == NULL) {
         /* No attributes, return success with empty extension list */
         *exts = NULL;
@@ -23914,7 +23970,9 @@ static PyNSPR_NSS_C_API_Type nspr_nss_c_api =
     PrivateKey_new_from_SECKEYPrivateKey,
     SecItem_new_from_SECItem,
     cert_distnames_new_from_CERTDistNames,
-    cert_distnames_as_CERTDistNames
+    cert_distnames_as_CERTDistNames,
+    _AddIntConstantWithLookup,
+    _AddIntConstantAlias,
 };
 
 /* ============================== Module Construction ============================= */

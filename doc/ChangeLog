@@ -1,15 +1,31 @@
-2014-09-02  John Dennis  <jdennis@redhat.com> 0.16.0
-	
+2014-10-21  John Dennis  <jdennis@redhat.com> 0.16.0
+  The primary enhancements in this version is adding support for the
+  setting trust attributes on a Certificate and the SSL version range API.
+
+  * The following module functions were added:
+    - get_default_ssl_version_range
+    - get_supported_ssl_version_range
+    - set_default_ssl_version_range
+    - ssl_library_version_from_name
+    - ssl_library_version_name
+
+  * The following class methods were added:
+
+    - Certificate.trust_flags
+    - Certificate.set_trust_attributes
+    - SSLSocket.set_ssl_version_range
+    - SSLSocket.get_ssl_version_range
+
   * The following class properties were added:
 
     - Certificate.ssl_trust_flags
     - Certificate.email_trust_flags
     - Certificate.signing_trust_flags
 
-  * The following class methods were added:
+  * The following files were added:
 
-    - Certificate.trust_flags
-    - Certificate.set_trust_attributes
+    - doc/examples/cert_trust.py
+    - doc/examples/ssl_version_range.py
 
   * The following constants were added:
     - nss.CERTDB_TERMINAL_RECORD
@@ -22,10 +38,97 @@
     - nss.CERTDB_USER
     - nss.CERTDB_TRUSTED_CLIENT_CA
     - nss.CERTDB_GOVT_APPROVED_CA
-
-  * The following files were added:
-
-    - doc/examples/cert_trust.py
+    - ssl.SRTP_AES128_CM_HMAC_SHA1_32
+    - ssl.SRTP_AES128_CM_HMAC_SHA1_80
+    - ssl.SRTP_NULL_HMAC_SHA1_32
+    - ssl.SRTP_NULL_HMAC_SHA1_80
+    - ssl.SSL_CK_DES_192_EDE3_CBC_WITH_MD5
+    - ssl.SSL_CK_DES_64_CBC_WITH_MD5
+    - ssl.SSL_CK_IDEA_128_CBC_WITH_MD5
+    - ssl.SSL_CK_RC2_128_CBC_EXPORT40_WITH_MD5
+    - ssl.SSL_CK_RC2_128_CBC_WITH_MD5
+    - ssl.SSL_CK_RC4_128_EXPORT40_WITH_MD5
+    - ssl.SSL_CK_RC4_128_WITH_MD5
+    - ssl.SSL_FORTEZZA_DMS_WITH_FORTEZZA_CBC_SHA
+    - ssl.SSL_FORTEZZA_DMS_WITH_NULL_SHA
+    - ssl.SSL_FORTEZZA_DMS_WITH_RC4_128_SHA
+    - ssl.SSL_RSA_OLDFIPS_WITH_3DES_EDE_CBC_SHA
+    - ssl.SSL_RSA_OLDFIPS_WITH_DES_CBC_SHA
+    - ssl.TLS_DHE_DSS_EXPORT_WITH_DES40_CBC_SHA
+    - ssl.TLS_DHE_DSS_WITH_3DES_EDE_CBC_SHA
+    - ssl.TLS_DHE_DSS_WITH_AES_128_GCM_SHA256
+    - ssl.TLS_DHE_DSS_WITH_CAMELLIA_128_CBC_SHA
+    - ssl.TLS_DHE_DSS_WITH_CAMELLIA_256_CBC_SHA
+    - ssl.TLS_DHE_DSS_WITH_DES_CBC_SHA
+    - ssl.TLS_DHE_RSA_EXPORT_WITH_DES40_CBC_SHA
+    - ssl.TLS_DHE_RSA_WITH_3DES_EDE_CBC_SHA
+    - ssl.TLS_DHE_RSA_WITH_AES_128_CBC_SHA256
+    - ssl.TLS_DHE_RSA_WITH_AES_128_GCM_SHA256
+    - ssl.TLS_DHE_RSA_WITH_AES_256_CBC_SHA256
+    - ssl.TLS_DHE_RSA_WITH_CAMELLIA_128_CBC_SHA
+    - ssl.TLS_DHE_RSA_WITH_CAMELLIA_256_CBC_SHA
+    - ssl.TLS_DHE_RSA_WITH_DES_CBC_SHA
+    - ssl.TLS_DH_ANON_WITH_CAMELLIA_128_CBC_SHA
+    - ssl.TLS_DH_ANON_WITH_CAMELLIA_256_CBC_SHA
+    - ssl.TLS_DH_DSS_EXPORT_WITH_DES40_CBC_SHA
+    - ssl.TLS_DH_DSS_WITH_3DES_EDE_CBC_SHA
+    - ssl.TLS_DH_DSS_WITH_CAMELLIA_128_CBC_SHA
+    - ssl.TLS_DH_DSS_WITH_CAMELLIA_256_CBC_SHA
+    - ssl.TLS_DH_DSS_WITH_DES_CBC_SHA
+    - ssl.TLS_DH_RSA_EXPORT_WITH_DES40_CBC_SHA
+    - ssl.TLS_DH_RSA_WITH_3DES_EDE_CBC_SHA
+    - ssl.TLS_DH_RSA_WITH_CAMELLIA_128_CBC_SHA
+    - ssl.TLS_DH_RSA_WITH_CAMELLIA_256_CBC_SHA
+    - ssl.TLS_DH_RSA_WITH_DES_CBC_SHA
+    - ssl.TLS_DH_anon_EXPORT_WITH_DES40_CBC_SHA
+    - ssl.TLS_DH_anon_EXPORT_WITH_RC4_40_MD5
+    - ssl.TLS_DH_anon_WITH_3DES_EDE_CBC_SHA
+    - ssl.TLS_DH_anon_WITH_AES_128_CBC_SHA
+    - ssl.TLS_DH_anon_WITH_AES_256_CBC_SHA
+    - ssl.TLS_DH_anon_WITH_CAMELLIA_128_CBC_SHA
+    - ssl.TLS_DH_anon_WITH_CAMELLIA_256_CBC_SHA
+    - ssl.TLS_DH_anon_WITH_DES_CBC_SHA
+    - ssl.TLS_DH_anon_WITH_RC4_128_MD5
+    - ssl.TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256
+    - ssl.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256
+    - ssl.TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256
+    - ssl.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256
+    - ssl.TLS_ECDH_ECDSA_WITH_AES_128_GCM_SHA256
+    - ssl.TLS_ECDH_RSA_WITH_AES_128_GCM_SHA256
+    - ssl.TLS_EMPTY_RENEGOTIATION_INFO_SCSV
+    - ssl.TLS_FALLBACK_SCSV
+    - ssl.TLS_NULL_WITH_NULL_NULL
+    - ssl.TLS_RSA_EXPORT_WITH_DES40_CBC_SHA
+    - ssl.TLS_RSA_EXPORT_WITH_RC2_CBC_40_MD5
+    - ssl.TLS_RSA_EXPORT_WITH_RC4_40_MD5
+    - ssl.TLS_RSA_WITH_3DES_EDE_CBC_SHA
+    - ssl.TLS_RSA_WITH_AES_128_CBC_SHA256
+    - ssl.TLS_RSA_WITH_AES_128_GCM_SHA256
+    - ssl.TLS_RSA_WITH_AES_256_CBC_SHA256
+    - ssl.TLS_RSA_WITH_CAMELLIA_128_CBC_SHA
+    - ssl.TLS_RSA_WITH_CAMELLIA_256_CBC_SHA
+    - ssl.TLS_RSA_WITH_DES_CBC_SHA
+    - ssl.TLS_RSA_WITH_IDEA_CBC_SHA
+    - ssl.TLS_RSA_WITH_NULL_MD5
+    - ssl.TLS_RSA_WITH_NULL_SHA
+    - ssl.TLS_RSA_WITH_NULL_SHA256
+    - ssl.TLS_RSA_WITH_RC4_128_MD5
+    - ssl.TLS_RSA_WITH_RC4_128_SHA
+    - ssl.TLS_RSA_WITH_SEED_CBC_SHA
+    - ssl.SSL_VARIANT_DATAGRAM
+    - ssl.SSL_VARIANT_STREAM
+    - ssl.SSL_LIBRARY_VERSION_2
+    - ssl.SSL_LIBRARY_VERSION_3_0
+    - ssl.SSL_LIBRARY_VERSION_TLS_1_0
+    - ssl.SSL_LIBRARY_VERSION_TLS_1_1
+    - ssl.SSL_LIBRARY_VERSION_TLS_1_2
+    - ssl.SSL_LIBRARY_VERSION_TLS_1_3
+    - ssl.ssl2
+    - ssl.ssl3
+    - ssl.tls1.0
+    - ssl.tls1.1
+    - ssl.tls1.2
+    - ssl.tls1.3
 
    * The following methods were missing thread locks, this has been fixed.
      - nss.nss_initialize
