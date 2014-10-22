@@ -4,6 +4,20 @@
 
 //#define DEBUG
 
+typedef enum RepresentationKindEnum {
+    AsObject,
+    AsString,
+    AsTypeString,
+    AsTypeEnum,
+    AsLabeledString,
+    AsEnum,
+    AsEnumName,
+    AsEnumDescription,
+    AsIndex,
+    AsDottedDecimal,
+} RepresentationKind;
+
+
 #ifndef MIN
 #define MIN(a,b) ((a) < (b) ? (a) : (b))
 #endif
@@ -78,7 +92,41 @@ typedef PyObject *(*ssizessizeargfunc)(PyObject *, Py_ssize_t, Py_ssize_t);
     PyModule_AddObject(m, rindex(type.tp_name, '.')+1, (PyObject *)&type); \
 }
 
-#define AddIntConstant(c) if (PyModule_AddIntConstant(m, #c, c) < 0) return;
+#define AddIntConstant(c)                                               \
+{                                                                       \
+    PyObject *dict;                                                     \
+                                                                        \
+                                                                        \
+    if ((dict = PyModule_GetDict(m)) == NULL) {                         \
+        PyErr_Format(PyExc_SystemError, "module '%s' has no __dict__",  \
+                     PyModule_GetName(m));                              \
+        return;                                                         \
+    }                                                                   \
+    if (PyDict_GetItemString(dict, #c)) {                               \
+        PyErr_Format(PyExc_SystemError, "module '%s' already contains %s", \
+                         PyModule_GetName(m), #c);                      \
+        return;                                                         \
+    }                                                                   \
+    if (PyModule_AddIntConstant(m, #c, c) < 0) return;                  \
+}
+
+#define AddIntConstantName(name, c)                                     \
+{                                                                       \
+    PyObject *dict;                                                     \
+                                                                        \
+                                                                        \
+    if ((dict = PyModule_GetDict(m)) == NULL) {                         \
+        PyErr_Format(PyExc_SystemError, "module '%s' has no __dict__",  \
+                     PyModule_GetName(m));                              \
+        return;                                                         \
+    }                                                                   \
+    if (PyDict_GetItemString(dict, #c)) {                               \
+        PyErr_Format(PyExc_SystemError, "module '%s' already contains %s", \
+                         PyModule_GetName(m), #c);                      \
+        return;                                                         \
+    }                                                                   \
+    if (PyModule_AddIntConstant(m, #name, c) < 0) return;               \
+}
 
 #ifdef DEBUG
 

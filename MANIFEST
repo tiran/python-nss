@@ -9,6 +9,7 @@ doc/examples/cert_dump.py
 doc/examples/cert_trust.py
 doc/examples/httplib_example.py
 doc/examples/ssl_example.py
+doc/examples/ssl_version_range.py
 doc/examples/verify_server.py
 doc/examples/verify_cert.py
 test/run_tests

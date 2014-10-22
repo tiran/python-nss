@@ -20,20 +20,6 @@
 
 /* ========================================================================== */
 
-typedef enum RepresentationKindEnum {
-    AsObject,
-    AsString,
-    AsTypeString,
-    AsTypeEnum,
-    AsLabeledString,
-    AsEnum,
-    AsEnumName,
-    AsEnumDescription,
-    AsIndex,
-    AsDottedDecimal,
-} RepresentationKind;
-
-
 /* ========================================================================== */
 /* =============================== SecItem Class ============================ */
 /* ========================================================================== */
@@ -421,6 +407,15 @@ typedef struct {
     PyObject *(*SecItem_new_from_SECItem)(const SECItem *item, SECItemKind type);
     PyObject *(*cert_distnames_new_from_CERTDistNames)(CERTDistNames *names);
     CERTDistNames *(*cert_distnames_as_CERTDistNames)(PyObject *py_distnames);
+    int (*_AddIntConstantWithLookup)(PyObject *module,
+                                     const char *name, long value,
+                                     const char *prefix,
+                                     PyObject *name_to_value,
+                                     PyObject *value_to_name);
+    int (*_AddIntConstantAlias)(const char *name, long value,
+                                PyObject *name_to_value);
+
+
 } PyNSPR_NSS_C_API_Type;
 
 #ifdef NSS_NSS_MODULE
@@ -455,6 +450,8 @@ static PyNSPR_NSS_C_API_Type nspr_nss_c_api;
 #define SecItem_new_from_SECItem (*nspr_nss_c_api.SecItem_new_from_SECItem)
 #define cert_distnames_new_from_CERTDistNames (*nspr_nss_c_api.cert_distnames_new_from_CERTDistNames)
 #define cert_distnames_as_CERTDistNames (*nspr_nss_c_api.cert_distnames_as_CERTDistNames)
+#define _AddIntConstantWithLookup (*nspr_nss_c_api._AddIntConstantWithLookup)
+#define _AddIntConstantAlias (*nspr_nss_c_api._AddIntConstantAlias)
 
 static int
 import_nspr_nss_c_api(void)
