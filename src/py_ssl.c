@@ -3107,9 +3107,6 @@ SSLChannelInformation_dealloc(SSLChannelInformation* self)
 PyDoc_STRVAR(SSLChannelInformation_doc,
 "SSLChannelInformation(obj)\n\
 \n\
-:Parameters:\n\
-    obj : xxx\n\
-\n\
 An object representing SSLChannelInformation.\n\
 ");
 
@@ -3902,7 +3899,7 @@ PyDoc_STRVAR(SSL_get_ssl_version_from_major_minor_doc,
 :Parameters:\n\
     major : int\n\
         The major version number.\n\
-    mainor : int\n\
+    minor : int\n\
         The minor version number.\n\
     repr_kind : RepresentationKind constant\n\
         Specifies what format the return value will be in.\n\
@@ -4177,7 +4174,7 @@ PyDoc_STRVAR(SSL_get_cipher_suite_info_doc,
     suite : int\n\
         a cipher suite enumerated constant\n\
 \n\
-Returns a `SSLCipherSuiteInfo object`.\n\
+Returns a `ssl.SSLCipherSuiteInfo`.\n\
 ");
 
 static PyObject *

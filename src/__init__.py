@@ -66,18 +66,6 @@ should not be used, they will be removed in a subsequent release.
     not respected, port will be value when `HostEntry` object was
     created.
 
-`ssl.nssinit()`
-    nssinit has been moved to the nss module, use `nss.nss_init()`
-    instead of ssl.nssinit
-
-`ssl.nss_init()`
-    nss_init has been moved to the nss module, use `nss.nss_init()`
-    instead of ssl.nssinit
-
-`ssl.nss_shutdown()`
-    nss_shutdown() has been moved to the nss module, use
-    `nss.nss_shutdown()` instead of ssl.nss_shutdown()
-
 `io.Socket()` and `ssl.SSLSocket()` without explicit family parameter
     Socket initialization will require the family parameter in the future.
     The default family parameter of PR_AF_INET is deprecated because

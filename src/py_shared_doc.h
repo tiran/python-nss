@@ -30,13 +30,13 @@ representing the indentation level for that line. Any remaining items\n\
 in the tuple are strings to be output on that line.\n\
 \n\
 The output of this function can be formatted into a single string by\n\
-calling `indented_format()`, e.g.:\n\
+calling `nss.nss.indented_format()`, e.g.:\n\
 \n\
     print indented_format(obj.format_lines())\n\
 \n\
 The reason this function returns a tuple as opposed to an single\n\
 indented string is to support other text formatting systems such as\n\
-GUI's with indentation controls.  See `indented_format()` for a\n\
+GUI's with indentation controls.  See `nss.nss.indented_format()` for a\n\
 complete explanation.\n\
 ");
 
