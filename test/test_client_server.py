@@ -43,7 +43,14 @@ def password_callback(slot, retry, password):
     return getpass.getpass("Enter password: ");
 
 def handshake_callback(sock):
-    if verbose: print "handshake complete, peer = %s" % (sock.get_peer_name())
+    if verbose:
+        print "-- handshake complete --"
+        print "peer: %s" % (sock.get_peer_name())
+        print "negotiated host: %s" % (sock.get_negotiated_host())
+        print
+        print sock.connection_info_str()
+        print "-- handshake complete --"
+        print
 
 def auth_certificate_callback(sock, check_sig, is_server, certdb):
     if verbose: print "auth_certificate_callback: check_sig=%s is_server=%s" % (check_sig, is_server)

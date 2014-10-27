@@ -359,8 +359,6 @@ ER3(SSL_ERROR_RX_UNEXPECTED_NEW_SESSION_TICKET, (SSL_ERROR_BASE + 109),
 ER3(SSL_ERROR_RX_MALFORMED_NEW_SESSION_TICKET, (SSL_ERROR_BASE + 110),
 "SSL received a malformed New Session Ticket handshake message.")
 
-#if (NSS_VMAJOR > 3) || (NSS_VMAJOR == 3 && NSS_VMINOR >= 13)
-
 ER3(SSL_ERROR_DECOMPRESSION_FAILURE,           (SSL_ERROR_BASE + 111),
 "SSL received a compressed record that could not be decompressed.")
 
@@ -375,10 +373,6 @@ ER3(SSL_ERROR_RX_UNEXPECTED_UNCOMPRESSED_RECORD, (SSL_ERROR_BASE + 114),
 
 ER3(SSL_ERROR_WEAK_SERVER_EPHEMERAL_DH_KEY,    (SSL_ERROR_BASE + 115),
 "SSL received a weak ephemeral Diffie-Hellman key in Server Key Exchange handshake message.")
-
-#endif
-
-#if (NSS_VMAJOR > 3) || (NSS_VMAJOR == 3 && NSS_VMINOR >= 14)
 
 ER3(SSL_ERROR_NEXT_PROTOCOL_DATA_INVALID,      (SSL_ERROR_BASE + 116),
 "SSL received invalid NPN extension data.")
@@ -407,11 +401,24 @@ ER3(SSL_ERROR_RX_UNEXPECTED_HELLO_VERIFY_REQUEST, (SSL_ERROR_BASE + 123),
 ER3(SSL_ERROR_FEATURE_NOT_SUPPORTED_FOR_VERSION, (SSL_ERROR_BASE + 124),
 "SSL feature not supported for the protocol version.")
 
-#endif
-
-#if (NSS_VMAJOR > 3) || (NSS_VMAJOR == 3 && NSS_VMINOR >= 15)
-
 ER3(SSL_ERROR_RX_UNEXPECTED_CERT_STATUS,       (SSL_ERROR_BASE + 125),
 "SSL received an unexpected Certificate Status handshake message.")
 
-#endif
+ER3(SSL_ERROR_UNSUPPORTED_HASH_ALGORITHM, (SSL_ERROR_BASE + 126),
+"Unsupported hash algorithm used by TLS peer.")
+
+ER3(SSL_ERROR_DIGEST_FAILURE, (SSL_ERROR_BASE + 127),
+"Digest function failed.")
+
+ER3(SSL_ERROR_INCORRECT_SIGNATURE_ALGORITHM, (SSL_ERROR_BASE + 128),
+"Incorrect signature algorithm specified in a digitally-signed element.")
+
+ER3(SSL_ERROR_NEXT_PROTOCOL_NO_CALLBACK, (SSL_ERROR_BASE + 129),
+"The next protocol negotiation extension was enabled, but the callback was cleared prior to being needed.")
+
+ER3(SSL_ERROR_NEXT_PROTOCOL_NO_PROTOCOL, (SSL_ERROR_BASE + 130),
+"The server supports no protocols that the client advertises in the ALPN extension.")
+
+ER3(SSL_ERROR_INAPPROPRIATE_FALLBACK_ALERT, (SSL_ERROR_BASE + 131),
+"The server rejected the handshake because the client downgraded to a lower "
+"TLS version than the server supports.")

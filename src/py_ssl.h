@@ -6,6 +6,10 @@
 #include "nss.h"
 #include "ssl.h"
 
+/* ========================================================================== */
+/* ============================== SSLSocket Class =========================== */
+/* ========================================================================== */
+
 typedef struct {
     SOCKET_HEAD;
     PyObject *py_auth_certificate_callback;
@@ -18,6 +22,26 @@ typedef struct {
 } SSLSocket;
 
 #define PySSLSocket_Check(op) PyObject_TypeCheck(op, &SSLSocketType)
+
+/* ========================================================================== */
+/* ====================== SSLCipherSuiteInformation Class =================== */
+/* ========================================================================== */
+
+typedef struct {
+    PyObject_HEAD
+    SSLCipherSuiteInfo info;
+} SSLCipherSuiteInformation;
+
+/* ========================================================================== */
+/* ======================== SSLChannelInformation Class ===================== */
+/* ========================================================================== */
+
+typedef struct {
+    PyObject_HEAD
+    SSLChannelInfo info;
+} SSLChannelInformation;
+
+/* =========================== C API =========================== */
 
 typedef struct {
     PyTypeObject *sslsocket_type;
@@ -67,4 +91,3 @@ import_nss_ssl_c_api(void)
 }
 
 #endif /* NSS_SSL_MODULE */
-

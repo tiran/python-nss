@@ -15,17 +15,27 @@
 #define NSS_SSL_MODULE
 #include "py_ssl.h"
 #include "py_nss.h"
+#include "py_shared_doc.h"
 #include "py_nspr_error.h"
 
 #include "sslproto.h"           /* for cipher constants */
 
+static PyObject *empty_tuple = NULL;
+
 static PyObject *py_ssl_implemented_ciphers = NULL;
+
+static PyObject *cipher_suite_name_to_value = NULL;
+static PyObject *cipher_suite_value_to_name = NULL;
 
 static PyObject *ssl_library_version_name_to_value = NULL;
 static PyObject *ssl_library_version_value_to_name = NULL;
 
 static PyObject *ssl_library_version_alias_to_value = NULL;
 static PyObject *ssl_library_version_value_to_alias = NULL;
+
+static PyObject *
+ssl_version_to_repr_kind(unsigned int major, unsigned int minor,
+                         RepresentationKind repr_kind);
 
 static PyObject *
 ssl_library_version_to_repr_kind(unsigned long version_enum,
@@ -43,6 +53,64 @@ ssl_library_version_from_name(PyObject *py_name, unsigned long *version_enum);
 static SECStatus
 ssl_library_version_from_pyobject(PyObject *py_value, const char *bound, unsigned long *version_enum);
 
+static PyObject *
+SSLChannelInformation_new_from_SSLChannelInfo(SSLChannelInfo *info);
+
+
+static PyObject *
+cipher_suite_to_name(unsigned long cipher_suite)
+{
+    PyObject *py_value;
+    PyObject *py_name;
+
+    if ((py_value = PyInt_FromLong(cipher_suite)) == NULL) {
+        PyErr_SetString(PyExc_MemoryError, "unable to create object");
+        return NULL;
+    }
+
+    if ((py_name = PyDict_GetItem(cipher_suite_value_to_name, py_value)) == NULL) {
+        Py_DECREF(py_value);
+	PyErr_Format(PyExc_KeyError, "cipher suite name not found: %lu", cipher_suite);
+        return NULL;
+    }
+
+    Py_DECREF(py_value);
+    Py_INCREF(py_name);
+
+    return py_name;
+}
+
+
+static SECStatus
+cipher_suite_from_name(PyObject *py_name, unsigned long *suite)
+{
+    PyObject *py_lower_name;
+    PyObject *py_value;
+
+
+    if (!PyString_Check(py_name)) {
+        PyErr_Format(PyExc_TypeError, "cipher suite name must be a string, not %.200s",
+                     Py_TYPE(py_name)->tp_name);
+
+        return SECFailure;
+    }
+
+    if ((py_lower_name = PyObject_CallMethod(py_name, "lower", NULL)) == NULL) {
+        return SECFailure;
+    }
+
+    if ((py_value = PyDict_GetItem(cipher_suite_name_to_value, py_lower_name)) == NULL) {
+        PyErr_Format(PyExc_KeyError, "cipher suite name not found: %s", PyString_AsString(py_name));
+        Py_DECREF(py_lower_name);
+        return SECFailure;
+    }
+
+    Py_DECREF(py_lower_name);
+
+    *suite = PyInt_AsLong(py_value);
+
+    return SECSuccess;
+}
 
 static PyObject *
 SSLSocket_new_from_PRFileDesc(PRFileDesc *pr_socket, int family)
@@ -103,6 +171,59 @@ tuple_to_SSLVersionRange(PyObject *tuple, SSLVersionRange *range)
 
 }
 #endif
+
+static PyObject *
+ssl_version_to_repr_kind(unsigned int major, unsigned int minor,
+                         RepresentationKind repr_kind)
+{
+    unsigned long version_enum;
+
+    switch(major) {
+    case 3:
+        switch(minor) {
+        case 0:
+            version_enum = SSL_LIBRARY_VERSION_3_0;
+            break;
+        case 1:
+            version_enum = SSL_LIBRARY_VERSION_TLS_1_0;
+            break;
+        case 2:
+            version_enum = SSL_LIBRARY_VERSION_TLS_1_1;
+            break;
+        case 3:
+            version_enum = SSL_LIBRARY_VERSION_TLS_1_2;
+            break;
+        case 4:
+            version_enum = SSL_LIBRARY_VERSION_TLS_1_3;
+            break;
+        default:
+            PyErr_Format(PyExc_ValueError, 
+                         "Verson %d.%d has unkown minor version",
+                         major, minor);
+            return NULL;
+        }
+        break;
+    default:
+        PyErr_Format(PyExc_ValueError, 
+                     "Verson %d.%d has unkown major version",
+                     major, minor);
+        return NULL;
+    }
+
+    switch(repr_kind) {
+    case AsEnum:
+        return PyInt_FromLong(version_enum);
+    case AsEnumName: {
+        return ssl_library_version_to_py_enum_name(version_enum);
+    } break;
+    case AsString: {
+        return ssl_library_version_to_py_string(version_enum);
+    } break;
+    default:
+        PyErr_Format(PyExc_ValueError, "Unsupported representation kind (%d)", repr_kind);
+        return NULL;
+    }
+}
 
 static PyObject *
 ssl_library_version_to_repr_kind(unsigned long version_enum,
@@ -1886,6 +2007,172 @@ SSLSocket_get_ssl_version_range(SSLSocket *self, PyObject *args, PyObject *kwds)
     return SSLVersionRange_to_tuple(&range, repr_kind);
 }
 
+PyDoc_STRVAR(SSLSocket_get_ssl_channel_info_doc,
+"get_ssl_channel_info() -> SSLChannelInfo\n\
+Returns a `ssl.SSLChannelInfo` describing the parameters of the connection.\n\
+");
+
+static PyObject *
+SSLSocket_get_ssl_channel_info(SSLSocket *self, PyObject *args)
+{
+    SSLChannelInfo info;
+
+    TraceMethodEnter(self);
+
+    if (SSL_GetChannelInfo(self->pr_socket, &info, sizeof(info)) != SECSuccess) {
+        return set_nspr_error(NULL);
+    }
+
+    return SSLChannelInformation_new_from_SSLChannelInfo(&info);
+}
+
+
+PyDoc_STRVAR(SSLSocket_get_negotiated_host_doc,
+"get_negotiated_host() -> string\n\
+Returns SNI negotiated host name.\n\
+");
+
+static PyObject *
+SSLSocket_get_negotiated_host(SSLSocket *self, PyObject *args)
+{
+    SECItem *host = NULL;
+    Py_ssize_t size;
+    PyObject *py_host = NULL;
+
+    TraceMethodEnter(self);
+
+    if ((host = SSL_GetNegotiatedHostInfo(self->pr_socket)) == NULL) {
+        Py_RETURN_NONE;
+    }
+
+    size = host->len;
+    if ((py_host = PyString_FromStringAndSize((const char *)host->data,
+                                              size)) == NULL) {
+        SECITEM_FreeItem(host, PR_TRUE);
+        return NULL;
+    }
+    
+    SECITEM_FreeItem(host, PR_TRUE);
+    return py_host;
+}
+
+
+static PyObject *
+SSLSocket_connection_info_format_lines(SSLSocket *self, PyObject *args, PyObject *kwds)
+{
+    static char *kwlist[] = {"level", NULL};
+    int level = 0;
+    PyObject *lines = NULL;
+    SSLChannelInfo channel;
+    SSLCipherSuiteInfo suite;
+    unsigned int major, minor;
+    PyObject *obj1 = NULL;
+    PyObject *obj2 = NULL;
+
+    TraceMethodEnter(self);
+
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "|i:format_lines", kwlist, &level))
+        return NULL;
+
+    if ((lines = PyList_New(0)) == NULL) {
+        return NULL;
+    }
+
+    if (SSL_GetChannelInfo(self->pr_socket, &channel, sizeof(channel))
+        != SECSuccess) {
+        return set_nspr_error(NULL);
+    }
+
+    if (SSL_GetCipherSuiteInfo(channel.cipherSuite, &suite, sizeof(suite))
+        != SECSuccess) {
+        return set_nspr_error(NULL);
+    }
+
+    major = channel.protocolVersion >> 8;
+    minor = channel.protocolVersion & 0xff;
+    if ((obj2 = ssl_version_to_repr_kind(major, minor, AsString)) == NULL) {
+        goto fail;
+    }
+    if ((obj1 = PyString_FromFormat("%d.%d (%s)",
+                                    channel.protocolVersion >> 8,
+                                    channel.protocolVersion & 0xff,
+                                    PyString_AsString(obj2))) == NULL) {
+        goto fail;
+    }
+    FMT_OBJ_AND_APPEND(lines, _("SSL Protocol Version"), obj1, level, fail);
+    Py_CLEAR(obj1);
+    Py_CLEAR(obj2);
+
+    if ((obj1 = PyString_FromFormat("%d-bit %s",
+                                    suite.effectiveKeyBits,
+                                    suite.symCipherName)) == NULL) {
+        goto fail;
+    }
+    FMT_OBJ_AND_APPEND(lines, _("Cipher"), obj1, level, fail);
+    Py_CLEAR(obj1);
+
+    if ((obj1 = PyString_FromFormat("%d-bit %s",
+                                    suite.macBits,
+                                    suite.macAlgorithmName)) == NULL) {
+        goto fail;
+    }
+    FMT_OBJ_AND_APPEND(lines, _("MAC"), obj1, level, fail);
+    Py_CLEAR(obj1);
+
+    if ((obj1 = PyString_FromFormat("%d-bit %s",
+                                    channel.authKeyBits,
+                                    suite.authAlgorithmName)) == NULL) {
+        goto fail;
+    }
+    FMT_OBJ_AND_APPEND(lines, _("Auth"), obj1, level, fail);
+    Py_CLEAR(obj1);
+
+    if ((obj1 = PyString_FromFormat("%d-bit %s",
+                                    channel.keaKeyBits, 
+                                    suite.keaTypeName)) == NULL) {
+        goto fail;
+    }
+    FMT_OBJ_AND_APPEND(lines, _("Key Exchange"), obj1, level, fail);
+    Py_CLEAR(obj1);
+
+    obj1 = PyString_FromString(channel.compressionMethodName);
+    FMT_OBJ_AND_APPEND(lines, _("Compression"), obj1, level, fail);
+    Py_CLEAR(obj1);
+
+    return lines;
+
+ fail:
+    Py_XDECREF(obj1);
+    Py_XDECREF(obj2);
+    Py_XDECREF(lines);
+    return NULL;
+}
+
+
+static PyObject *
+SSLSocket_connection_info_format(SSLSocket *self, PyObject *args, PyObject *kwds)
+{
+    TraceMethodEnter(self);
+
+    return format_from_lines((format_lines_func)SSLSocket_connection_info_format_lines, (PyObject *)self, args, kwds);
+}
+
+PyDoc_STRVAR(SSLSocket_connection_info_str_doc,
+"connection_info_str() -> str\n\
+Returns a string describing the properties of the SSL connection.\n\
+");
+
+static PyObject *
+SSLSocket_connection_info_str(SSLSocket *self)
+{
+    PyObject *py_formatted_result = NULL;
+
+    TraceMethodEnter(self);
+
+    py_formatted_result =  SSLSocket_connection_info_format(self, empty_tuple, NULL);
+    return py_formatted_result;
+
+}
 
 static PyMethodDef SSLSocket_methods[] = {
     {"set_ssl_option",                (PyCFunction)SSLSocket_set_ssl_option,                METH_VARARGS,               SSLSocket_set_ssl_option_doc},
@@ -1917,6 +2204,12 @@ static PyMethodDef SSLSocket_methods[] = {
     {"import_tcp_socket",             (PyCFunction)SSLSocket_import_tcp_socket,             METH_VARARGS|METH_STATIC,   SSLSocket_import_tcp_socket_doc},
     {"set_ssl_version_range",         (PyCFunction)SSLSocket_set_ssl_version_range,         METH_VARARGS,               SSLSocket_set_ssl_version_range_doc},
     {"get_ssl_version_range",         (PyCFunction)SSLSocket_get_ssl_version_range,         METH_VARARGS|METH_KEYWORDS, SSLSocket_get_ssl_version_range_doc},
+    {"get_ssl_channel_info",          (PyCFunction)SSLSocket_get_ssl_channel_info,          METH_NOARGS,                SSLSocket_get_ssl_channel_info_doc},
+    {"get_negotiated_host",           (PyCFunction)SSLSocket_get_negotiated_host,           METH_NOARGS,                SSLSocket_get_negotiated_host_doc},
+
+    {"connection_info_format_lines",  (PyCFunction)SSLSocket_connection_info_format_lines,  METH_VARARGS|METH_KEYWORDS, generic_format_lines_doc},
+    {"connection_info_format",        (PyCFunction)SSLSocket_connection_info_format,        METH_VARARGS|METH_KEYWORDS, generic_format_doc},
+    {"connection_info_str",           (PyCFunction)SSLSocket_connection_info_str,           METH_NOARGS,                SSLSocket_connection_info_str_doc},
     {NULL, NULL}  /* Sentinel */
 };
 
@@ -2069,113 +2362,837 @@ static PyTypeObject SSLSocketType = {
 };
 
 /* ========================================================================== */
+/* ==================== SSLCipherSuiteInformation Class ===================== */
+/* ========================================================================== */
+
+/* ============================ Attribute Access ============================ */
+
+static PyObject *
+SSLCipherSuiteInformation_get_cipher_suite(SSLCipherSuiteInformation *self, void *closure)
+{
+    TraceMethodEnter(self);
+
+    return PyInt_FromLong(self->info.cipherSuite);
+}
+
+static PyObject *
+SSLCipherSuiteInformation_get_cipher_suite_name(SSLCipherSuiteInformation *self, void *closure)
+{
+    TraceMethodEnter(self);
+
+    return PyString_FromString(self->info.cipherSuiteName);
+}
+
+static PyObject *
+SSLCipherSuiteInformation_get_auth_algorithm(SSLCipherSuiteInformation *self, void *closure)
+{
+    TraceMethodEnter(self);
+
+    return PyInt_FromLong(self->info.authAlgorithm);
+}
+
+static PyObject *
+SSLCipherSuiteInformation_get_auth_algorithm_name(SSLCipherSuiteInformation *self, void *closure)
+{
+    TraceMethodEnter(self);
+
+    return PyString_FromString(self->info.authAlgorithmName);
+}
+
+static PyObject *
+SSLCipherSuiteInformation_get_kea_type(SSLCipherSuiteInformation *self, void *closure)
+{
+    TraceMethodEnter(self);
+
+    return PyInt_FromLong(self->info.keaType);
+}
+
+static PyObject *
+SSLCipherSuiteInformation_get_kea_type_name(SSLCipherSuiteInformation *self, void *closure)
+{
+    TraceMethodEnter(self);
+
+    return PyString_FromString(self->info.keaTypeName);
+}
+
+static PyObject *
+SSLCipherSuiteInformation_get_symmetric_cipher(SSLCipherSuiteInformation *self, void *closure)
+{
+    TraceMethodEnter(self);
+
+    return PyInt_FromLong(self->info.symCipher);
+}
+
+static PyObject *
+SSLCipherSuiteInformation_get_symmetric_cipher_name(SSLCipherSuiteInformation *self, void *closure)
+{
+    TraceMethodEnter(self);
+
+    return PyString_FromString(self->info.symCipherName);
+}
+
+static PyObject *
+SSLCipherSuiteInformation_get_symmetric_key_bits(SSLCipherSuiteInformation *self, void *closure)
+{
+    TraceMethodEnter(self);
+
+    return PyInt_FromLong(self->info.symKeyBits);
+}
+
+static PyObject *
+SSLCipherSuiteInformation_get_symmetric_key_space(SSLCipherSuiteInformation *self, void *closure)
+{
+    TraceMethodEnter(self);
+
+    return PyInt_FromLong(self->info.symKeySpace);
+}
+
+static PyObject *
+SSLCipherSuiteInformation_get_effective_key_bits(SSLCipherSuiteInformation *self, void *closure)
+{
+    TraceMethodEnter(self);
+
+    return PyInt_FromLong(self->info.effectiveKeyBits);
+}
+
+static PyObject *
+SSLCipherSuiteInformation_get_mac_algorithm(SSLCipherSuiteInformation *self, void *closure)
+{
+    TraceMethodEnter(self);
+
+    return PyInt_FromLong(self->info.macAlgorithm);
+}
+
+static PyObject *
+SSLCipherSuiteInformation_get_mac_algorithm_name(SSLCipherSuiteInformation *self, void *closure)
+{
+    TraceMethodEnter(self);
+
+    return PyString_FromString(self->info.macAlgorithmName);
+}
+
+static PyObject *
+SSLCipherSuiteInformation_get_mac_bits(SSLCipherSuiteInformation *self, void *closure)
+{
+    TraceMethodEnter(self);
+
+    return PyInt_FromLong(self->info.macBits);
+}
+
+static PyObject *
+SSLCipherSuiteInformation_get_is_fips(SSLCipherSuiteInformation *self, void *closure)
+{
+    TraceMethodEnter(self);
+
+    if (self->info.isFIPS) {
+        Py_RETURN_TRUE;
+    } else {
+        Py_RETURN_FALSE;
+    }
+}
+
+static PyObject *
+SSLCipherSuiteInformation_get_is_exportable(SSLCipherSuiteInformation *self, void *closure)
+{
+    TraceMethodEnter(self);
+
+    if (self->info.isExportable) {
+        Py_RETURN_TRUE;
+    } else {
+        Py_RETURN_FALSE;
+    }
+}
+
+static PyObject *
+SSLCipherSuiteInformation_get_is_nonstandard(SSLCipherSuiteInformation *self, void *closure)
+{
+    TraceMethodEnter(self);
+
+    if (self->info.nonStandard) {
+        Py_RETURN_TRUE;
+    } else {
+        Py_RETURN_FALSE;
+    }
+}
+
+static
+PyGetSetDef SSLCipherSuiteInformation_getseters[] = {
+    {"cipher_suite",          (getter)SSLCipherSuiteInformation_get_cipher_suite,           NULL, "Returns the cipher suite enum", NULL},
+    {"cipher_suite_name",     (getter)SSLCipherSuiteInformation_get_cipher_suite_name,      NULL, "Returns the cipher suite name", NULL},
+    {"auth_algorithm",        (getter)SSLCipherSuiteInformation_get_auth_algorithm,         NULL, "Returns the auth algorithm enum", NULL},
+    {"auth_algorithm_name",   (getter)SSLCipherSuiteInformation_get_auth_algorithm_name,    NULL, "Returns the auth algorithm name", NULL},
+    {"kea_type",              (getter)SSLCipherSuiteInformation_get_kea_type,               NULL, "Returns the kea type enum", NULL},
+    {"kea_type_name",         (getter)SSLCipherSuiteInformation_get_kea_type_name,          NULL, "Returns the kea type name", NULL},
+    {"symmetric_cipher",      (getter)SSLCipherSuiteInformation_get_symmetric_cipher,       NULL, "Returns the symmetric cipher enum", NULL},
+    {"symmetric_cipher_name", (getter)SSLCipherSuiteInformation_get_symmetric_cipher_name,  NULL, "Returns the symmetric cipher name", NULL},
+    {"symmetric_key_bits",    (getter)SSLCipherSuiteInformation_get_symmetric_key_bits,     NULL, "Returns the symmetric key bits", NULL},
+    {"symmetric_key_space",   (getter)SSLCipherSuiteInformation_get_symmetric_key_space,    NULL, "Returns the symmetric key space", NULL},
+    {"effective_key_bits",    (getter)SSLCipherSuiteInformation_get_effective_key_bits,     NULL, "Returns the effective key bits", NULL},
+    {"mac_algorithm",         (getter)SSLCipherSuiteInformation_get_mac_algorithm,          NULL, "Returns the mac algorithm enum", NULL},
+    {"mac_algorithm_name",    (getter)SSLCipherSuiteInformation_get_mac_algorithm_name,     NULL, "Returns the mac algorithm name", NULL},
+    {"mac_bits",              (getter)SSLCipherSuiteInformation_get_mac_bits,               NULL, "Returns the mac bits", NULL},
+    {"is_fips",               (getter)SSLCipherSuiteInformation_get_is_fips,                NULL, "Returns True if FIPS, False otherwise", NULL},
+    {"is_exportable",         (getter)SSLCipherSuiteInformation_get_is_exportable,          NULL, "Returns True if exportable, False otherwise", NULL},
+    {"is_nonstandard",        (getter)SSLCipherSuiteInformation_get_is_nonstandard,         NULL, "Returns True if nonstandard, False otherwise", NULL},
+    {NULL}  /* Sentinel */
+};
+
+static PyMemberDef SSLCipherSuiteInformation_members[] = {
+    {NULL}  /* Sentinel */
+};
+
+/* ============================== Class Methods ============================= */
+
+static PyObject *
+SSLCipherSuiteInformation_format_lines(SSLCipherSuiteInformation *self, PyObject *args, PyObject *kwds)
+{
+    static char *kwlist[] = {"level", NULL};
+    int level = 0;
+    PyObject *lines = NULL;
+    PyObject *obj1 = NULL;
+
+    TraceMethodEnter(self);
+
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "|i:format_lines", kwlist, &level))
+        return NULL;
+
+    if ((lines = PyList_New(0)) == NULL) {
+        return NULL;
+    }
+
+    
+    if ((obj1 = PyString_FromFormat("%s (0x%x)",
+                                    self->info.cipherSuiteName,
+                                    self->info.cipherSuite)) == NULL) {
+        goto fail;
+    }
+    FMT_OBJ_AND_APPEND(lines, _("Cipher Suite"), obj1, level, fail);
+    Py_CLEAR(obj1);
+
+    if ((obj1 = PyString_FromFormat("%s (0x%x)",
+                                    self->info.authAlgorithmName,
+                                    self->info.authAlgorithm)) == NULL) {
+        goto fail;
+    }
+    FMT_OBJ_AND_APPEND(lines, _("Auth Algorithm"), obj1, level+1, fail);
+    Py_CLEAR(obj1);
+
+    if ((obj1 = PyString_FromFormat("%s (0x%x)",
+                                    self->info.keaTypeName,
+                                    self->info.keaType)) == NULL) {
+        goto fail;
+    }
+    FMT_OBJ_AND_APPEND(lines, _("Key Exchange Type"), obj1, level+1, fail);
+    Py_CLEAR(obj1);
+
+    if ((obj1 = PyString_FromFormat("%s (0x%x)",
+                                    self->info.symCipherName,
+                                    self->info.symCipher)) == NULL) {
+        goto fail;
+    }
+    FMT_OBJ_AND_APPEND(lines, _("Symmetric Cipher"), obj1, level+1, fail);
+    Py_CLEAR(obj1);
+
+    obj1 = PyInt_FromLong(self->info.symKeyBits);
+    FMT_OBJ_AND_APPEND(lines, _("Symmetric Key Bits"), obj1, level+1, fail);
+    Py_CLEAR(obj1);
+
+    obj1 = PyInt_FromLong(self->info.effectiveKeyBits);
+    FMT_OBJ_AND_APPEND(lines, _("Effective Symmetric Key Bits"), obj1, level+1, fail);
+    Py_CLEAR(obj1);
+
+    obj1 = PyInt_FromLong(self->info.symKeySpace);
+    FMT_OBJ_AND_APPEND(lines, _("Symmetric Key Space"), obj1, level+1, fail);
+    Py_CLEAR(obj1);
+
+    if ((obj1 = PyString_FromFormat("%s (0x%x)", 
+                                    self->info.macAlgorithmName,
+                                    self->info.macAlgorithm)) == NULL) {
+        goto fail;
+    }
+    FMT_OBJ_AND_APPEND(lines, _("MAC Algorithm"), obj1, level+1, fail);
+    Py_CLEAR(obj1);
+
+    obj1 = PyInt_FromLong(self->info.macBits);
+    FMT_OBJ_AND_APPEND(lines, _("MAC Bits"), obj1, level+1, fail);
+    Py_CLEAR(obj1);
+
+    obj1 = PyString_FromString(self->info.isFIPS ? "True" : "False");
+    FMT_OBJ_AND_APPEND(lines, _("FIPS"), obj1, level+1, fail);
+    Py_CLEAR(obj1);
+
+    obj1 = PyString_FromString(self->info.isExportable ? "True" : "False");
+    FMT_OBJ_AND_APPEND(lines, _("Exportable"), obj1, level+1, fail);
+    Py_CLEAR(obj1);
+
+    obj1 = PyString_FromString(self->info.nonStandard ? "True" : "False");
+    FMT_OBJ_AND_APPEND(lines, _("Nonstandard"), obj1, level+1, fail);
+    Py_CLEAR(obj1);
+
+    return lines;
+ fail:
+    Py_XDECREF(obj1);
+    Py_XDECREF(lines);
+    return NULL;
+}
+
+static PyObject *
+SSLCipherSuiteInformation_format(SSLCipherSuiteInformation *self, PyObject *args, PyObject *kwds)
+{
+    TraceMethodEnter(self);
+
+    return format_from_lines((format_lines_func)SSLCipherSuiteInformation_format_lines, (PyObject *)self, args, kwds);
+}
+
+static PyObject *
+SSLCipherSuiteInformation_str(SSLCipherSuiteInformation *self)
+{
+    PyObject *py_formatted_result = NULL;
+
+    TraceMethodEnter(self);
+
+    py_formatted_result =  SSLCipherSuiteInformation_format(self, empty_tuple, NULL);
+    return py_formatted_result;
+
+}
+
+static PyMethodDef SSLCipherSuiteInformation_methods[] = {
+    {"format_lines", (PyCFunction)SSLCipherSuiteInformation_format_lines,   METH_VARARGS|METH_KEYWORDS, generic_format_lines_doc},
+    {"format",       (PyCFunction)SSLCipherSuiteInformation_format,         METH_VARARGS|METH_KEYWORDS, generic_format_doc},
+    {NULL, NULL}  /* Sentinel */
+};
+
+
+
+/* =========================== Class Construction =========================== */
+
+static PyObject *
+SSLCipherSuiteInformation_new(PyTypeObject *type, PyObject *args, PyObject *kwds)
+{
+    SSLCipherSuiteInformation *self;
+
+    TraceObjNewEnter(type);
+
+    if ((self = (SSLCipherSuiteInformation *)type->tp_alloc(type, 0)) == NULL) {
+        return NULL;
+    }
+
+    TraceObjNewLeave(self);
+    return (PyObject *)self;
+}
+
+static void
+SSLCipherSuiteInformation_dealloc(SSLCipherSuiteInformation* self)
+{
+    TraceMethodEnter(self);
+
+    self->ob_type->tp_free((PyObject*)self);
+}
+
+PyDoc_STRVAR(SSLCipherSuiteInformation_doc,
+"SSLCipherSuiteInformation(obj)\n\
+\n\
+An object representing SSLCipherSuiteInformation.\n\
+");
+
+static int
+SSLCipherSuiteInformation_init(SSLCipherSuiteInformation *self, PyObject *args, PyObject *kwds)
+{
+    static char *kwlist[] = {"arg", NULL};
+    PyObject *arg;
+
+    TraceMethodEnter(self);
+
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "O|i:SSLCipherSuiteInformation", kwlist,
+                                     &arg))
+        return -1;
+
+    return 0;
+}
+
+static PyTypeObject SSLCipherSuiteInformationType = {
+    PyObject_HEAD_INIT(NULL)
+    0,						/* ob_size */
+    "nss.ssl.SSLCipherSuiteInfo",		/* tp_name */
+    sizeof(SSLCipherSuiteInformation),		/* tp_basicsize */
+    0,						/* tp_itemsize */
+    (destructor)SSLCipherSuiteInformation_dealloc,	/* tp_dealloc */
+    0,						/* tp_print */
+    0,						/* tp_getattr */
+    0,						/* tp_setattr */
+    0,						/* tp_compare */
+    0,						/* tp_repr */
+    0,						/* tp_as_number */
+    0,						/* tp_as_sequence */
+    0,						/* tp_as_mapping */
+    0,						/* tp_hash */
+    0,						/* tp_call */
+    (reprfunc)SSLCipherSuiteInformation_str,	/* tp_str */
+    0,						/* tp_getattro */
+    0,						/* tp_setattro */
+    0,						/* tp_as_buffer */
+    Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE,	/* tp_flags */
+    SSLCipherSuiteInformation_doc,		/* tp_doc */
+    (traverseproc)0,				/* tp_traverse */
+    (inquiry)0,					/* tp_clear */
+    0,						/* tp_richcompare */
+    0,						/* tp_weaklistoffset */
+    0,						/* tp_iter */
+    0,						/* tp_iternext */
+    SSLCipherSuiteInformation_methods,		/* tp_methods */
+    SSLCipherSuiteInformation_members,		/* tp_members */
+    SSLCipherSuiteInformation_getseters,	/* tp_getset */
+    0,						/* tp_base */
+    0,						/* tp_dict */
+    0,						/* tp_descr_get */
+    0,						/* tp_descr_set */
+    0,						/* tp_dictoffset */
+    (initproc)SSLCipherSuiteInformation_init,	/* tp_init */
+    0,						/* tp_alloc */
+    SSLCipherSuiteInformation_new,		/* tp_new */
+};
+
+static PyObject *
+SSLCipherSuiteInformation_new_from_SSLCipherSuiteInfo(SSLCipherSuiteInfo *info)
+{
+    SSLCipherSuiteInformation *self = NULL;
+
+    TraceObjNewEnter(NULL);
+
+    if ((self = (SSLCipherSuiteInformation *) SSLCipherSuiteInformationType.tp_new(&SSLCipherSuiteInformationType, NULL, NULL)) == NULL) {
+        return NULL;
+    }
+
+    self->info = *info
+
+    TraceObjNewLeave(self);
+    return (PyObject *) self;
+}
+
+/* ========================================================================== */
+/* ==================== SSLChannelInformation Class ===================== */
+/* ========================================================================== */
+
+/* ============================ Attribute Access ============================ */
+
+static PyObject *
+SSLChannelInformation_get_protocol_version(SSLChannelInformation *self, void *closure)
+{
+    TraceMethodEnter(self);
+
+    return PyInt_FromLong(self->info.protocolVersion);
+}
+
+static PyObject *
+SSLChannelInformation_get_protocol_version_str(SSLChannelInformation *self, void *closure)
+{
+    unsigned int major, minor;
+
+    TraceMethodEnter(self);
+
+    major = self->info.protocolVersion >> 8;
+    minor = self->info.protocolVersion & 0xff;
+    return ssl_version_to_repr_kind(major, minor, AsString);
+}
+
+static PyObject *
+SSLChannelInformation_get_protocol_version_enum(SSLChannelInformation *self, void *closure)
+{
+    unsigned int major, minor;
+
+    TraceMethodEnter(self);
+
+    major = self->info.protocolVersion >> 8;
+    minor = self->info.protocolVersion & 0xff;
+    return ssl_version_to_repr_kind(major, minor, AsEnum);
+}
+
+static PyObject *
+SSLChannelInformation_get_major_protocol_version(SSLChannelInformation *self, void *closure)
+{
+    TraceMethodEnter(self);
+
+    return PyInt_FromLong(self->info.protocolVersion >> 8);
+}
+
+static PyObject *
+SSLChannelInformation_get_minor_protocol_version(SSLChannelInformation *self, void *closure)
+{
+    TraceMethodEnter(self);
+
+    return PyInt_FromLong(self->info.protocolVersion & 0xff);
+}
+
+static PyObject *
+SSLChannelInformation_get_cipher_suite(SSLChannelInformation *self, void *closure)
+{
+    TraceMethodEnter(self);
+
+    return PyInt_FromLong(self->info.cipherSuite);
+}
+
+static PyObject *
+SSLChannelInformation_get_auth_key_bits(SSLChannelInformation *self, void *closure)
+{
+    TraceMethodEnter(self);
+
+    return PyInt_FromLong(self->info.authKeyBits);
+}
+
+static PyObject *
+SSLChannelInformation_get_kea_key_bits(SSLChannelInformation *self, void *closure)
+{
+    TraceMethodEnter(self);
+
+    return PyInt_FromLong(self->info.keaKeyBits);
+}
+
+static PyObject *
+SSLChannelInformation_get_creation_time(SSLChannelInformation *self, void *closure)
+{
+    TraceMethodEnter(self);
+
+    return timestamp_to_DateTime(self->info.creationTime, false);
+}
+
+static PyObject *
+SSLChannelInformation_get_creation_time_utc(SSLChannelInformation *self, void *closure)
+{
+    TraceMethodEnter(self);
+
+    return timestamp_to_DateTime(self->info.creationTime, true);
+}
+
+static PyObject *
+SSLChannelInformation_get_last_access_time(SSLChannelInformation *self, void *closure)
+{
+    TraceMethodEnter(self);
+
+    return timestamp_to_DateTime(self->info.lastAccessTime, false);
+}
+
+static PyObject *
+SSLChannelInformation_get_last_access_time_utc(SSLChannelInformation *self, void *closure)
+{
+    TraceMethodEnter(self);
+
+    return timestamp_to_DateTime(self->info.lastAccessTime, true);
+}
+
+static PyObject *
+SSLChannelInformation_get_expiration_time(SSLChannelInformation *self, void *closure)
+{
+    TraceMethodEnter(self);
+
+    return timestamp_to_DateTime(self->info.creationTime, false);
+}
+
+static PyObject *
+SSLChannelInformation_get_expiration_time_utc(SSLChannelInformation *self, void *closure)
+{
+    TraceMethodEnter(self);
+
+    return timestamp_to_DateTime(self->info.creationTime, true);
+}
+
+static PyObject *
+SSLChannelInformation_get_compression_method(SSLChannelInformation *self, void *closure)
+{
+    TraceMethodEnter(self);
+
+    return PyInt_FromLong(self->info.compressionMethod);
+}
+
+static PyObject *
+SSLChannelInformation_get_compression_method_name(SSLChannelInformation *self, void *closure)
+{
+    TraceMethodEnter(self);
+
+    return PyString_FromString(self->info.compressionMethodName);
+}
+
+static PyObject *
+SSLChannelInformation_get_session_id(SSLChannelInformation *self, void *closure)
+{
+    SECItem item;
+    TraceMethodEnter(self);
+
+    item.data = self->info.sessionID;
+    item.len = self->info.sessionIDLength;
+    return SecItem_new_from_SECItem(&item, SECITEM_buffer);
+}
+
+static
+PyGetSetDef SSLChannelInformation_getseters[] = {
+    {"protocol_version",        (getter)SSLChannelInformation_get_protocol_version,        NULL, "Returns the protocol version, major in octet[1], minor in octet[0] ", NULL},
+    {"protocol_version_str",    (getter)SSLChannelInformation_get_protocol_version_str,    NULL, "Returns the protocol version as a descriptive string", NULL},
+    {"protocol_version_enum",   (getter)SSLChannelInformation_get_protocol_version_enum,   NULL, "Returns the protocol version as an enumerated constant", NULL},
+    {"major_protocol_version",  (getter)SSLChannelInformation_get_major_protocol_version,  NULL, "Returns the major protocol version", NULL},
+    {"minor_protocol_version",  (getter)SSLChannelInformation_get_minor_protocol_version,  NULL, "Returns the minor protocol version", NULL},
+    {"cipher_suite",            (getter)SSLChannelInformation_get_cipher_suite,            NULL, "Returns the cipher suite enum", NULL},
+    {"auth_key_bits",           (getter)SSLChannelInformation_get_auth_key_bits,           NULL, "Returns the auth key bits", NULL},
+    {"kea_key_bits",            (getter)SSLChannelInformation_get_kea_key_bits,            NULL, "Returns the kea key bits", NULL},
+    {"creation_time",           (getter)SSLChannelInformation_get_creation_time,           NULL, "Returns creation time as a DateTime object in local time zone", NULL},
+    {"creation_time_utc",       (getter)SSLChannelInformation_get_creation_time_utc,       NULL, "Returns creation time as a DateTime object in UTC time zone", NULL},
+    {"last_access_time",        (getter)SSLChannelInformation_get_last_access_time,        NULL, "Returns last access time as a DateTime object in local time zone", NULL},
+    {"last_access_time_utc",    (getter)SSLChannelInformation_get_last_access_time_utc,    NULL, "Returns last access time as a DateTime object in UTC time zone", NULL},
+    {"expiration_time",         (getter)SSLChannelInformation_get_expiration_time,         NULL, "Returns expiration time as a DateTime object in local time zone", NULL},
+    {"expiration_time_utc",     (getter)SSLChannelInformation_get_expiration_time_utc,     NULL, "Returns expiration time as a DateTime object in UTC time zone", NULL},
+    {"compression_method",      (getter)SSLChannelInformation_get_compression_method,      NULL, "Returns the compression method enum", NULL},
+    {"compression_method_name", (getter)SSLChannelInformation_get_compression_method_name, NULL, "Returns the compression method name", NULL},
+    {"session_id",              (getter)SSLChannelInformation_get_session_id,              NULL, "Returns the session ID as a SecItem object", NULL},
+    {NULL}  /* Sentinel */
+};
+
+static PyMemberDef SSLChannelInformation_members[] = {
+    {NULL}  /* Sentinel */
+};
+
+/* ============================== Class Methods ============================= */
+
+static PyObject *
+SSLChannelInformation_format_lines(SSLChannelInformation *self, PyObject *args, PyObject *kwds)
+{
+    static char *kwlist[] = {"level", NULL};
+    int level = 0;
+    PyObject *lines = NULL;
+    PyObject *obj1 = NULL;
+    PyObject *obj2 = NULL;
+    unsigned int major, minor;
+
+    TraceMethodEnter(self);
+
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "|i:format_lines", kwlist,
+                                     &level))
+        return NULL;
+
+    if ((lines = PyList_New(0)) == NULL) {
+        return NULL;
+    }
+
+    
+    major = self->info.protocolVersion >> 8;
+    minor = self->info.protocolVersion & 0xff;
+    if ((obj2 = ssl_version_to_repr_kind(major, minor, AsString)) == NULL) {
+        goto fail;
+    }
+    if ((obj1 = PyString_FromFormat("%d.%d (%s)",
+                                    self->info.protocolVersion >> 8,
+                                    self->info.protocolVersion & 0xff,
+                                    PyString_AsString(obj2))) == NULL) {
+        goto fail;
+    }
+    FMT_OBJ_AND_APPEND(lines, _("Protocol Version"), obj1, level, fail);
+    Py_CLEAR(obj1);
+    Py_CLEAR(obj2);
+
+    if ((obj2 = cipher_suite_to_name(self->info.cipherSuite)) == NULL) {
+        goto fail;
+    }
+    if ((obj1 = PyString_FromFormat("%s (0x%x)",
+                                    PyString_AsString(obj2),
+                                    self->info.cipherSuite)) == NULL) {
+        goto fail;
+    }
+    FMT_OBJ_AND_APPEND(lines, _("Cipher Suite"), obj1, level, fail);
+    Py_CLEAR(obj1);
+    Py_CLEAR(obj2);
+
+    obj1 = PyInt_FromLong(self->info.authKeyBits);
+    FMT_OBJ_AND_APPEND(lines, _("Auth Key Bits"), obj1, level, fail);
+    Py_CLEAR(obj1);
+
+    obj1 = PyInt_FromLong(self->info.keaKeyBits);
+    FMT_OBJ_AND_APPEND(lines, _("Key Exchange Key Bits"), obj1, level, fail);
+    Py_CLEAR(obj1);
+
+    if ((obj1 = timestamp_to_DateTime(self->info.creationTime, false)) == NULL) {
+        goto fail;
+    }
+    FMT_OBJ_AND_APPEND(lines, _("Creation Time"), obj1, level, fail);
+    Py_CLEAR(obj1);
+
+    if ((obj1 = timestamp_to_DateTime(self->info.lastAccessTime, false)) == NULL) {
+        goto fail;
+    }
+    FMT_OBJ_AND_APPEND(lines, _("Last Access Time"), obj1, level, fail);
+    Py_CLEAR(obj1);
+
+    if ((obj1 = timestamp_to_DateTime(self->info.expirationTime, false)) == NULL) {
+        goto fail;
+    }
+    FMT_OBJ_AND_APPEND(lines, _("Expiration Time"), obj1, level, fail);
+    Py_CLEAR(obj1);
+
+    if ((obj1 = PyString_FromFormat("%s (0x%x)",
+                                    self->info.compressionMethodName,
+                                    self->info.compressionMethod)) == NULL) {
+        goto fail;
+    }
+    FMT_OBJ_AND_APPEND(lines, _("Compression Method"), obj1, level, fail);
+    Py_CLEAR(obj1);
+
+
+    if ((obj1 = raw_data_to_hex(self->info.sessionID,
+                                self->info.sessionIDLength,
+                                OCTETS_PER_LINE_DEFAULT,
+                                HEX_SEPARATOR_DEFAULT)) == NULL) {
+        goto fail;
+    }
+    FMT_LABEL_AND_APPEND(lines, _("Session ID"), level, fail);
+    APPEND_LINES_AND_CLEAR(lines, obj1, level+1, fail);
+
+
+    return lines;
+ fail:
+    Py_XDECREF(obj1);
+    Py_XDECREF(obj2);
+    Py_XDECREF(lines);
+    return NULL;
+}
+
+static PyObject *
+SSLChannelInformation_format(SSLChannelInformation *self, PyObject *args, PyObject *kwds)
+{
+    TraceMethodEnter(self);
+
+    return format_from_lines((format_lines_func)SSLChannelInformation_format_lines, (PyObject *)self, args, kwds);
+}
+
+static PyObject *
+SSLChannelInformation_str(SSLChannelInformation *self)
+{
+    PyObject *py_formatted_result = NULL;
+
+    TraceMethodEnter(self);
+
+    py_formatted_result =  SSLChannelInformation_format(self, empty_tuple, NULL);
+    return py_formatted_result;
+
+}
+
+static PyMethodDef SSLChannelInformation_methods[] = {
+    {"format_lines", (PyCFunction)SSLChannelInformation_format_lines,   METH_VARARGS|METH_KEYWORDS, generic_format_lines_doc},
+    {"format",       (PyCFunction)SSLChannelInformation_format,         METH_VARARGS|METH_KEYWORDS, generic_format_doc},
+    {NULL, NULL}  /* Sentinel */
+};
+
+
+
+/* =========================== Class Construction =========================== */
+
+static PyObject *
+SSLChannelInformation_new(PyTypeObject *type, PyObject *args, PyObject *kwds)
+{
+    SSLChannelInformation *self;
+
+    TraceObjNewEnter(type);
+
+    if ((self = (SSLChannelInformation *)type->tp_alloc(type, 0)) == NULL) {
+        return NULL;
+    }
+
+    TraceObjNewLeave(self);
+    return (PyObject *)self;
+}
+
+static void
+SSLChannelInformation_dealloc(SSLChannelInformation* self)
+{
+    TraceMethodEnter(self);
+
+    self->ob_type->tp_free((PyObject*)self);
+}
+
+PyDoc_STRVAR(SSLChannelInformation_doc,
+"SSLChannelInformation(obj)\n\
+\n\
+:Parameters:\n\
+    obj : xxx\n\
+\n\
+An object representing SSLChannelInformation.\n\
+");
+
+static int
+SSLChannelInformation_init(SSLChannelInformation *self, PyObject *args, PyObject *kwds)
+{
+    static char *kwlist[] = {"arg", NULL};
+    PyObject *arg;
+
+    TraceMethodEnter(self);
+
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "O|i:SSLChannelInformation", kwlist,
+                                     &arg))
+        return -1;
+
+    return 0;
+}
+
+static PyTypeObject SSLChannelInformationType = {
+    PyObject_HEAD_INIT(NULL)
+    0,						/* ob_size */
+    "nss.ssl.SSLChannelInfo",			/* tp_name */
+    sizeof(SSLChannelInformation),		/* tp_basicsize */
+    0,						/* tp_itemsize */
+    (destructor)SSLChannelInformation_dealloc,	/* tp_dealloc */
+    0,						/* tp_print */
+    0,						/* tp_getattr */
+    0,						/* tp_setattr */
+    0,						/* tp_compare */
+    0,						/* tp_repr */
+    0,						/* tp_as_number */
+    0,						/* tp_as_sequence */
+    0,						/* tp_as_mapping */
+    0,						/* tp_hash */
+    0,						/* tp_call */
+    (reprfunc)SSLChannelInformation_str,	/* tp_str */
+    0,						/* tp_getattro */
+    0,						/* tp_setattro */
+    0,						/* tp_as_buffer */
+    Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE,	/* tp_flags */
+    SSLChannelInformation_doc,			/* tp_doc */
+    (traverseproc)0,				/* tp_traverse */
+    (inquiry)0,					/* tp_clear */
+    0,						/* tp_richcompare */
+    0,						/* tp_weaklistoffset */
+    0,						/* tp_iter */
+    0,						/* tp_iternext */
+    SSLChannelInformation_methods,		/* tp_methods */
+    SSLChannelInformation_members,		/* tp_members */
+    SSLChannelInformation_getseters,		/* tp_getset */
+    0,						/* tp_base */
+    0,						/* tp_dict */
+    0,						/* tp_descr_get */
+    0,						/* tp_descr_set */
+    0,						/* tp_dictoffset */
+    (initproc)SSLChannelInformation_init,	/* tp_init */
+    0,						/* tp_alloc */
+    SSLChannelInformation_new,			/* tp_new */
+};
+
+static PyObject *
+SSLChannelInformation_new_from_SSLChannelInfo(SSLChannelInfo *info)
+{
+    SSLChannelInformation *self = NULL;
+
+    TraceObjNewEnter(NULL);
+
+    if ((self = (SSLChannelInformation *) SSLChannelInformationType.tp_new(&SSLChannelInformationType, NULL, NULL)) == NULL) {
+        return NULL;
+    }
+
+    self->info = *info
+
+    TraceObjNewLeave(self);
+    return (PyObject *) self;
+}
+
+/* ========================================================================== */
 /* ================================= Module ================================= */
 /* ========================================================================== */
 
 /* ============================== Module Methods ============================= */
 
-
-/*
- * WARNING: nssinit(), nss_init(), nss_shutdown() were deprecated in June 2009,
- * they should be removed after a suitible grace period. Each of these will
- * emit a deprecation warning upon use.
- */
-
-PyDoc_STRVAR(NSSinit_doc,
-"nssinit(cert_dir)\n\
-WARNING: nssinit() has been moved to the nss module, use nss.nss_init() instead of ssl.nssinit()\n\
-\n\
-:Parameters:\n\
-    cert_dir : string\n\
-        Pathname of the directory where the certificate, key, and\n\
-        security module databases reside.\n\
-\n\
-Sets up configuration files and performs other tasks required to run\n\
-Network Security Services.\n\
-");
-
-static PyObject *
-NSSinit(PyObject *self, PyObject *args)
-{
-    char *cert_dir;
-
-    TraceMethodEnter(self);
-
-    if (PyErr_Warn(PyExc_DeprecationWarning, "nssinit() has been moved to the nss module, use nss.nss_init() instead of ssl.nssinit()") < 0)
-        return NULL;
-
-    if (!PyArg_ParseTuple(args, "s:nssinit", &cert_dir)) {
-        return NULL;
-    }
-
-    if (NSS_Init(cert_dir) != SECSuccess) {
-        return set_nspr_error(NULL);
-    }
-    Py_RETURN_NONE;
-}
-
-PyDoc_STRVAR(NSS_init_doc,
-"nss_init(cert_dir)\n\
-WARNING: nss_init() has been moved to the nss module, use nss.nss_init() instead of ssl.nss_init()\n\
-\n\
-:Parameters:\n\
-    cert_dir : string\n\
-        Pathname of the directory where the certificate, key, and\n\
-        security module databases reside.\n\
-\n\
-Sets up configuration files and performs other tasks required to run\n\
-Network Security Services.\n\
-");
-
-static PyObject *
-NSS_init(PyObject *self, PyObject *args)
-{
-    char *cert_dir;
-
-    TraceMethodEnter(self);
-
-    if (PyErr_Warn(PyExc_DeprecationWarning, "nss_init() has been moved to the nss module, use nss.nss_init() instead of ssl.nss_init()") < 0)
-        return NULL;
-
-    if (!PyArg_ParseTuple(args, "s:nss_init", &cert_dir)) {
-        return NULL;
-    }
-
-    if (NSS_Init(cert_dir) != SECSuccess) {
-        return set_nspr_error(NULL);
-    }
-
-    Py_RETURN_NONE;
-}
-
-PyDoc_STRVAR(NSS_shutdown_doc,
-"nss_shutdown()\n\
-WARNING: nss_shutdown() has been moved to the nss module, use nss.nss_shutdown() instead of ssl.nss_shutdown()\n\
-\n\
-Closes the key and certificate databases that were opened by nss_init().\n\
-\n\
-Note that if any reference to an NSS object is leaked (for example, if an SSL\n\
-client application doesn't call clear_session_cache() first) then nss_shutdown fails\n\
-with the error code SEC_ERROR_BUSY.\n\
-");
-
-static PyObject *
-NSS_shutdown(PyObject *self, PyObject *args)
-{
-    TraceMethodEnter(self);
-
-    if (PyErr_Warn(PyExc_DeprecationWarning, "nss_shutdown() has been moved to the nss module, use nss.nss_shutdown() instead of ssl.nss_shutdown()") < 0)
-        return NULL;
-
-    Py_BEGIN_ALLOW_THREADS
-    if (NSS_Shutdown() != SECSuccess) {
-        Py_BLOCK_THREADS
-        return set_nspr_error(NULL);
-    }
-    Py_END_ALLOW_THREADS
-
-    Py_RETURN_NONE;
-}
 
 PyDoc_STRVAR(SSL_set_ssl_default_option_doc,
 "set_ssl_default_option(option, value)\n\
@@ -2879,6 +3896,48 @@ ssl_library_version_from_pyobject(PyObject *py_value, const char *bound, unsigne
     return SECFailure;
 }
 
+PyDoc_STRVAR(SSL_get_ssl_version_from_major_minor_doc,
+"get_ssl_version_from_major_minor(major, minor, repr_kind=AsString) -> Object\n\
+\n\
+:Parameters:\n\
+    major : int\n\
+        The major version number.\n\
+    mainor : int\n\
+        The minor version number.\n\
+    repr_kind : RepresentationKind constant\n\
+        Specifies what format the return value will be in.\n\
+        May be one of:\n\
+\n\
+        AsEnum\n\
+            The enumerated constant as an integer value.\n\
+        AsEnumName\n\
+            The name of the enumerated constant as a string.\n\
+        AsString\n\
+            A short friendly name for the enumerated constant.\n\
+\n\
+Given the major and minor SSL protocol versions return the SSL version\n\
+it's according to repr_kind\n\
+\n\
+Example:\n\
+    get_ssl_version_from_major_minor(3, 1, nss.AsString) -> 'tls1.0'\n\
+\n\
+");
+static PyObject *
+SSL_get_ssl_version_from_major_minor(PyObject *self, PyObject *args, PyObject *kwds)
+{
+    static char *kwlist[] = {"ssl_library_version", "repr_kind", NULL};
+    unsigned int major, minor;
+    RepresentationKind repr_kind = AsString;
+
+    TraceMethodEnter(self);
+
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "II|i:get_ssl_version_from_major_minor", kwlist,
+                                     &major, &minor, &repr_kind))
+        return NULL;
+
+    return ssl_version_to_repr_kind(major, minor, repr_kind);
+}
+
 PyDoc_STRVAR(SSL_ssl_library_version_name_doc,
 "ssl_library_version_name(ssl_library_version, repr_kind=AsEnumName) -> string\n\
 \n\
@@ -3111,13 +4170,94 @@ SSL_set_default_ssl_version_range(PyObject *self, PyObject *args, PyObject *kwds
 
 }
 
+PyDoc_STRVAR(SSL_get_cipher_suite_info_doc,
+"get_cipher_suite_info(suite) -> SSLCipherSuiteInfo\n\
+\n\
+:Parameters:\n\
+    suite : int\n\
+        a cipher suite enumerated constant\n\
+\n\
+Returns a `SSLCipherSuiteInfo object`.\n\
+");
+
+static PyObject *
+SSL_get_cipher_suite_info(PyObject *self, PyObject *args)
+{
+    unsigned int suite;
+    SSLCipherSuiteInfo info;
+
+    TraceMethodEnter(self);
+
+    if (!PyArg_ParseTuple(args, "I:get_cipher_suite_info",
+                          &suite))
+        return NULL;
+
+    if (SSL_GetCipherSuiteInfo(suite, &info, sizeof(info)) != SECSuccess) {
+        return set_nspr_error(NULL);
+    }
+
+    return SSLCipherSuiteInformation_new_from_SSLCipherSuiteInfo(&info);
+
+}
+
+PyDoc_STRVAR(SSL_ssl_cipher_suite_name_doc,
+"ssl_cipher_suite_name(cipher) -> string\n\
+\n\
+:Parameters:\n\
+    cipher : int\n\
+        SSL cipher enumerated constant\n\
+\n\
+Given an enumerated SSL Cipher constant\n\
+return it's name as a string\n\
+");
+static PyObject *
+SSL_ssl_cipher_suite_name(PyObject *self, PyObject *args)
+{
+    unsigned long cipher;
+
+    TraceMethodEnter(self);
+
+    if (!PyArg_ParseTuple(args, "k:ssl_cipher_suite_name",
+                          &cipher))
+        return NULL;
+
+    return cipher_suite_to_name(cipher);
+}
+
+PyDoc_STRVAR(SSL_ssl_cipher_suite_from_name_doc,
+"ssl_cipher_suite_from_name(name) -> int\n\
+\n\
+:Parameters:\n\
+    name : string\n\
+        name of SSL cipher enumerated constant\n\
+\n\
+Given the name of a SSL cipher constant\n\
+return it's integer constant\n\
+The string comparison is case insensitive.\n\
+");
+static PyObject *
+SSL_ssl_cipher_suite_from_name(PyObject *self, PyObject *args)
+{
+    PyObject *py_name;
+    unsigned long suite;
+
+    TraceMethodEnter(self);
+
+    if (!PyArg_ParseTuple(args, "S:ssl_cipher_suite_from_name",
+                          &py_name))
+        return NULL;
+
+    if (cipher_suite_from_name(py_name, &suite) != SECSuccess) {
+        return set_nspr_error(NULL);
+    }
+
+    return PyInt_FromLong(suite);
+}
+
 
 
 /* List of functions exported by this module. */
 static PyMethodDef module_methods[] = {
-{"nssinit",                                 (PyCFunction)NSSinit,                                     METH_VARARGS,               NSSinit_doc},
-{"nss_init",                                (PyCFunction)NSS_init,                                    METH_VARARGS,               NSS_init_doc},
-{"nss_shutdown",                            (PyCFunction)NSS_shutdown,                                METH_NOARGS,                NSS_shutdown_doc},
 {"set_ssl_default_option",                  (PyCFunction)SSL_set_ssl_default_option,                  METH_VARARGS,               SSL_set_ssl_default_option_doc},
 {"get_ssl_default_option",                  (PyCFunction)SSL_get_ssl_default_option,                  METH_VARARGS,               SSL_get_ssl_default_option_doc},
 {"set_default_cipher_pref",                 (PyCFunction)SSL_set_default_cipher_pref,                 METH_VARARGS,               SSL_set_default_cipher_pref_doc},
@@ -3134,11 +4274,15 @@ static PyMethodDef module_methods[] = {
 {"set_domestic_policy",                     (PyCFunction)NSS_set_domestic_policy,                     METH_NOARGS,                NSS_set_domestic_policy_doc},
 {"set_export_policy",                       (PyCFunction)NSS_set_export_policy,                       METH_NOARGS,                NSS_set_export_policy_doc},
 {"set_france_policy",                       (PyCFunction)NSS_set_france_policy,                       METH_NOARGS,                NSS_set_france_policy_doc},
+{"get_ssl_version_from_major_minor",        (PyCFunction)SSL_get_ssl_version_from_major_minor,        METH_VARARGS|METH_KEYWORDS, SSL_get_ssl_version_from_major_minor_doc},
 {"ssl_library_version_name",                (PyCFunction)SSL_ssl_library_version_name,                METH_VARARGS|METH_KEYWORDS, SSL_ssl_library_version_name_doc},
 {"ssl_library_version_from_name",           (PyCFunction)SSL_ssl_library_version_from_name,           METH_VARARGS,               SSL_ssl_library_version_from_name_doc},
 {"get_supported_ssl_version_range",         (PyCFunction)SSL_get_supported_ssl_version_range,         METH_VARARGS|METH_KEYWORDS, SSL_get_supported_ssl_version_range_doc},
 {"get_default_ssl_version_range",           (PyCFunction)SSL_get_default_ssl_version_range,           METH_VARARGS|METH_KEYWORDS, SSL_get_default_ssl_version_range_doc},
 {"set_default_ssl_version_range",           (PyCFunction)SSL_set_default_ssl_version_range,           METH_VARARGS|METH_KEYWORDS, SSL_set_default_ssl_version_range_doc},
+{"get_cipher_suite_info",                   (PyCFunction)SSL_get_cipher_suite_info,                   METH_VARARGS,               SSL_get_cipher_suite_info_doc},
+{"ssl_cipher_suite_name",                   (PyCFunction)SSL_ssl_cipher_suite_name,                   METH_VARARGS,               SSL_ssl_cipher_suite_name_doc},
+{"ssl_cipher_suite_from_name",              (PyCFunction)SSL_ssl_cipher_suite_from_name,              METH_VARARGS,               SSL_ssl_cipher_suite_from_name_doc},
 {NULL, NULL}            /* Sentinel */
 };
 
@@ -3226,7 +4370,14 @@ initssl(void)
         return;
     }
 
+    if ((empty_tuple = PyTuple_New(0)) == NULL) {
+        return;
+    }
+    Py_INCREF(empty_tuple);
+
     TYPE_READY(SSLSocketType);
+    TYPE_READY(SSLCipherSuiteInformationType);
+    TYPE_READY(SSLChannelInformationType);
 
     /* Export C API */
     if (PyModule_AddObject(m, "_C_API", PyCObject_FromVoidPtr((void *)&nss_ssl_c_api, NULL)) != 0)
@@ -3348,189 +4499,206 @@ if (_AddIntConstantWithLookup(m, alias, constant, \
     AddIntConstant(SSL_EN_DES_64_CBC_WITH_MD5);
     AddIntConstant(SSL_EN_DES_192_EDE3_CBC_WITH_MD5);
 
+    /**************************************************************************
+     * Cipher Suites
+     **************************************************************************/
+
+    if ((cipher_suite_name_to_value = PyDict_New()) == NULL) {
+        return;
+    }
+    if ((cipher_suite_value_to_name = PyDict_New()) == NULL) {
+        return;
+    }
+
+#define ExportConstant(constant)                      \
+if (_AddIntConstantWithLookup(m, #constant, constant, \
+    NULL, cipher_suite_name_to_value, cipher_suite_value_to_name) < 0) return;
+
     /* Deprecated SSL 3.0 & libssl names replaced by IANA-registered TLS names. */
 #ifndef SSL_DISABLE_DEPRECATED_CIPHER_SUITE_NAMES
-    AddIntConstant(SSL_NULL_WITH_NULL_NULL);
-    AddIntConstant(SSL_RSA_WITH_NULL_MD5);
-    AddIntConstant(SSL_RSA_WITH_NULL_SHA);
-    AddIntConstant(SSL_RSA_EXPORT_WITH_RC4_40_MD5);
-    AddIntConstant(SSL_RSA_WITH_RC4_128_MD5);
-    AddIntConstant(SSL_RSA_WITH_RC4_128_SHA);
-    AddIntConstant(SSL_RSA_EXPORT_WITH_RC2_CBC_40_MD5);
-    AddIntConstant(SSL_RSA_WITH_IDEA_CBC_SHA);
-    AddIntConstant(SSL_RSA_EXPORT_WITH_DES40_CBC_SHA);
-    AddIntConstant(SSL_RSA_WITH_DES_CBC_SHA);
-    AddIntConstant(SSL_RSA_WITH_3DES_EDE_CBC_SHA);
-    AddIntConstant(SSL_DH_DSS_EXPORT_WITH_DES40_CBC_SHA);
-    AddIntConstant(SSL_DH_DSS_WITH_DES_CBC_SHA);
-    AddIntConstant(SSL_DH_DSS_WITH_3DES_EDE_CBC_SHA);
-    AddIntConstant(SSL_DH_RSA_EXPORT_WITH_DES40_CBC_SHA);
-    AddIntConstant(SSL_DH_RSA_WITH_DES_CBC_SHA);
-    AddIntConstant(SSL_DH_RSA_WITH_3DES_EDE_CBC_SHA);
-    AddIntConstant(SSL_DHE_DSS_EXPORT_WITH_DES40_CBC_SHA);
-    AddIntConstant(SSL_DHE_DSS_WITH_DES_CBC_SHA);
-    AddIntConstant(SSL_DHE_DSS_WITH_3DES_EDE_CBC_SHA);
-    AddIntConstant(SSL_DHE_RSA_EXPORT_WITH_DES40_CBC_SHA);
-    AddIntConstant(SSL_DHE_RSA_WITH_DES_CBC_SHA);
-    AddIntConstant(SSL_DHE_RSA_WITH_3DES_EDE_CBC_SHA);
-    AddIntConstant(SSL_DH_ANON_WITH_RC4_128_MD5);
-    AddIntConstant(SSL_DH_ANON_EXPORT_WITH_DES40_CBC_SHA);
-    AddIntConstant(SSL_DH_ANON_WITH_DES_CBC_SHA);
-    AddIntConstant(SSL_DH_ANON_WITH_3DES_EDE_CBC_SHA);
-    AddIntConstant(SSL_DH_ANON_EXPORT_WITH_RC4_40_MD5);
-    AddIntConstant(TLS_DH_ANON_WITH_AES_128_CBC_SHA);
-    AddIntConstant(TLS_DH_ANON_WITH_AES_256_CBC_SHA);
-    AddIntConstant(TLS_DH_ANON_WITH_CAMELLIA_128_CBC_SHA);
-    AddIntConstant(TLS_DH_ANON_WITH_CAMELLIA_256_CBC_SHA);
+    ExportConstant(SSL_NULL_WITH_NULL_NULL);
+    ExportConstant(SSL_RSA_WITH_NULL_MD5);
+    ExportConstant(SSL_RSA_WITH_NULL_SHA);
+    ExportConstant(SSL_RSA_EXPORT_WITH_RC4_40_MD5);
+    ExportConstant(SSL_RSA_WITH_RC4_128_MD5);
+    ExportConstant(SSL_RSA_WITH_RC4_128_SHA);
+    ExportConstant(SSL_RSA_EXPORT_WITH_RC2_CBC_40_MD5);
+    ExportConstant(SSL_RSA_WITH_IDEA_CBC_SHA);
+    ExportConstant(SSL_RSA_EXPORT_WITH_DES40_CBC_SHA);
+    ExportConstant(SSL_RSA_WITH_DES_CBC_SHA);
+    ExportConstant(SSL_RSA_WITH_3DES_EDE_CBC_SHA);
+    ExportConstant(SSL_DH_DSS_EXPORT_WITH_DES40_CBC_SHA);
+    ExportConstant(SSL_DH_DSS_WITH_DES_CBC_SHA);
+    ExportConstant(SSL_DH_DSS_WITH_3DES_EDE_CBC_SHA);
+    ExportConstant(SSL_DH_RSA_EXPORT_WITH_DES40_CBC_SHA);
+    ExportConstant(SSL_DH_RSA_WITH_DES_CBC_SHA);
+    ExportConstant(SSL_DH_RSA_WITH_3DES_EDE_CBC_SHA);
+    ExportConstant(SSL_DHE_DSS_EXPORT_WITH_DES40_CBC_SHA);
+    ExportConstant(SSL_DHE_DSS_WITH_DES_CBC_SHA);
+    ExportConstant(SSL_DHE_DSS_WITH_3DES_EDE_CBC_SHA);
+    ExportConstant(SSL_DHE_RSA_EXPORT_WITH_DES40_CBC_SHA);
+    ExportConstant(SSL_DHE_RSA_WITH_DES_CBC_SHA);
+    ExportConstant(SSL_DHE_RSA_WITH_3DES_EDE_CBC_SHA);
+    ExportConstant(SSL_DH_ANON_WITH_RC4_128_MD5);
+    ExportConstant(SSL_DH_ANON_EXPORT_WITH_DES40_CBC_SHA);
+    ExportConstant(SSL_DH_ANON_WITH_DES_CBC_SHA);
+    ExportConstant(SSL_DH_ANON_WITH_3DES_EDE_CBC_SHA);
+    ExportConstant(SSL_DH_ANON_EXPORT_WITH_RC4_40_MD5);
+    ExportConstant(TLS_DH_ANON_WITH_AES_128_CBC_SHA);
+    ExportConstant(TLS_DH_ANON_WITH_AES_256_CBC_SHA);
+    ExportConstant(TLS_DH_ANON_WITH_CAMELLIA_128_CBC_SHA);
+    ExportConstant(TLS_DH_ANON_WITH_CAMELLIA_256_CBC_SHA);
 #endif
 
-    AddIntConstant(TLS_NULL_WITH_NULL_NULL);
+    ExportConstant(TLS_NULL_WITH_NULL_NULL);
 
-    AddIntConstant(TLS_RSA_WITH_NULL_MD5);
-    AddIntConstant(TLS_RSA_WITH_NULL_SHA);
-    AddIntConstant(TLS_RSA_EXPORT_WITH_RC4_40_MD5);
-    AddIntConstant(TLS_RSA_WITH_RC4_128_MD5);
-    AddIntConstant(TLS_RSA_WITH_RC4_128_SHA);
-    AddIntConstant(TLS_RSA_EXPORT_WITH_RC2_CBC_40_MD5);
-    AddIntConstant(TLS_RSA_WITH_IDEA_CBC_SHA);
-    AddIntConstant(TLS_RSA_EXPORT_WITH_DES40_CBC_SHA);
-    AddIntConstant(TLS_RSA_WITH_DES_CBC_SHA);
-    AddIntConstant(TLS_RSA_WITH_3DES_EDE_CBC_SHA);
+    ExportConstant(TLS_RSA_WITH_NULL_MD5);
+    ExportConstant(TLS_RSA_WITH_NULL_SHA);
+    ExportConstant(TLS_RSA_EXPORT_WITH_RC4_40_MD5);
+    ExportConstant(TLS_RSA_WITH_RC4_128_MD5);
+    ExportConstant(TLS_RSA_WITH_RC4_128_SHA);
+    ExportConstant(TLS_RSA_EXPORT_WITH_RC2_CBC_40_MD5);
+    ExportConstant(TLS_RSA_WITH_IDEA_CBC_SHA);
+    ExportConstant(TLS_RSA_EXPORT_WITH_DES40_CBC_SHA);
+    ExportConstant(TLS_RSA_WITH_DES_CBC_SHA);
+    ExportConstant(TLS_RSA_WITH_3DES_EDE_CBC_SHA);
 
-    AddIntConstant(TLS_DH_DSS_EXPORT_WITH_DES40_CBC_SHA);
-    AddIntConstant(TLS_DH_DSS_WITH_DES_CBC_SHA);
-    AddIntConstant(TLS_DH_DSS_WITH_3DES_EDE_CBC_SHA);
-    AddIntConstant(TLS_DH_RSA_EXPORT_WITH_DES40_CBC_SHA);
-    AddIntConstant(TLS_DH_RSA_WITH_DES_CBC_SHA);
-    AddIntConstant(TLS_DH_RSA_WITH_3DES_EDE_CBC_SHA);
+    ExportConstant(TLS_DH_DSS_EXPORT_WITH_DES40_CBC_SHA);
+    ExportConstant(TLS_DH_DSS_WITH_DES_CBC_SHA);
+    ExportConstant(TLS_DH_DSS_WITH_3DES_EDE_CBC_SHA);
+    ExportConstant(TLS_DH_RSA_EXPORT_WITH_DES40_CBC_SHA);
+    ExportConstant(TLS_DH_RSA_WITH_DES_CBC_SHA);
+    ExportConstant(TLS_DH_RSA_WITH_3DES_EDE_CBC_SHA);
 
-    AddIntConstant(TLS_DHE_DSS_EXPORT_WITH_DES40_CBC_SHA);
-    AddIntConstant(TLS_DHE_DSS_WITH_DES_CBC_SHA);
-    AddIntConstant(TLS_DHE_DSS_WITH_3DES_EDE_CBC_SHA);
-    AddIntConstant(TLS_DHE_RSA_EXPORT_WITH_DES40_CBC_SHA);
-    AddIntConstant(TLS_DHE_RSA_WITH_DES_CBC_SHA);
-    AddIntConstant(TLS_DHE_RSA_WITH_3DES_EDE_CBC_SHA);
+    ExportConstant(TLS_DHE_DSS_EXPORT_WITH_DES40_CBC_SHA);
+    ExportConstant(TLS_DHE_DSS_WITH_DES_CBC_SHA);
+    ExportConstant(TLS_DHE_DSS_WITH_3DES_EDE_CBC_SHA);
+    ExportConstant(TLS_DHE_RSA_EXPORT_WITH_DES40_CBC_SHA);
+    ExportConstant(TLS_DHE_RSA_WITH_DES_CBC_SHA);
+    ExportConstant(TLS_DHE_RSA_WITH_3DES_EDE_CBC_SHA);
 
-    AddIntConstant(TLS_DH_anon_EXPORT_WITH_RC4_40_MD5);
-    AddIntConstant(TLS_DH_anon_WITH_RC4_128_MD5);
-    AddIntConstant(TLS_DH_anon_EXPORT_WITH_DES40_CBC_SHA);
-    AddIntConstant(TLS_DH_anon_WITH_DES_CBC_SHA);
-    AddIntConstant(TLS_DH_anon_WITH_3DES_EDE_CBC_SHA);
+    ExportConstant(TLS_DH_anon_EXPORT_WITH_RC4_40_MD5);
+    ExportConstant(TLS_DH_anon_WITH_RC4_128_MD5);
+    ExportConstant(TLS_DH_anon_EXPORT_WITH_DES40_CBC_SHA);
+    ExportConstant(TLS_DH_anon_WITH_DES_CBC_SHA);
+    ExportConstant(TLS_DH_anon_WITH_3DES_EDE_CBC_SHA);
 
-    AddIntConstant(SSL_FORTEZZA_DMS_WITH_NULL_SHA);
-    AddIntConstant(SSL_FORTEZZA_DMS_WITH_FORTEZZA_CBC_SHA);
-    AddIntConstant(SSL_FORTEZZA_DMS_WITH_RC4_128_SHA);
+    ExportConstant(SSL_FORTEZZA_DMS_WITH_NULL_SHA);
+    ExportConstant(SSL_FORTEZZA_DMS_WITH_FORTEZZA_CBC_SHA);
+    ExportConstant(SSL_FORTEZZA_DMS_WITH_RC4_128_SHA);
 
-    AddIntConstant(TLS_RSA_WITH_AES_128_CBC_SHA);
-    AddIntConstant(TLS_DH_DSS_WITH_AES_128_CBC_SHA);
-    AddIntConstant(TLS_DH_RSA_WITH_AES_128_CBC_SHA);
-    AddIntConstant(TLS_DHE_DSS_WITH_AES_128_CBC_SHA);
-    AddIntConstant(TLS_DHE_RSA_WITH_AES_128_CBC_SHA);
-    AddIntConstant(TLS_DH_anon_WITH_AES_128_CBC_SHA);
+    ExportConstant(TLS_RSA_WITH_AES_128_CBC_SHA);
+    ExportConstant(TLS_DH_DSS_WITH_AES_128_CBC_SHA);
+    ExportConstant(TLS_DH_RSA_WITH_AES_128_CBC_SHA);
+    ExportConstant(TLS_DHE_DSS_WITH_AES_128_CBC_SHA);
+    ExportConstant(TLS_DHE_RSA_WITH_AES_128_CBC_SHA);
+    ExportConstant(TLS_DH_anon_WITH_AES_128_CBC_SHA);
 
-    AddIntConstant(TLS_RSA_WITH_AES_256_CBC_SHA);
-    AddIntConstant(TLS_DH_DSS_WITH_AES_256_CBC_SHA);
-    AddIntConstant(TLS_DH_RSA_WITH_AES_256_CBC_SHA);
-    AddIntConstant(TLS_DHE_DSS_WITH_AES_256_CBC_SHA);
-    AddIntConstant(TLS_DHE_RSA_WITH_AES_256_CBC_SHA);
-    AddIntConstant(TLS_DH_anon_WITH_AES_256_CBC_SHA);
-    AddIntConstant(TLS_RSA_WITH_NULL_SHA256);
-    AddIntConstant(TLS_RSA_WITH_AES_128_CBC_SHA256);
-    AddIntConstant(TLS_RSA_WITH_AES_256_CBC_SHA256);
+    ExportConstant(TLS_RSA_WITH_AES_256_CBC_SHA);
+    ExportConstant(TLS_DH_DSS_WITH_AES_256_CBC_SHA);
+    ExportConstant(TLS_DH_RSA_WITH_AES_256_CBC_SHA);
+    ExportConstant(TLS_DHE_DSS_WITH_AES_256_CBC_SHA);
+    ExportConstant(TLS_DHE_RSA_WITH_AES_256_CBC_SHA);
+    ExportConstant(TLS_DH_anon_WITH_AES_256_CBC_SHA);
+    ExportConstant(TLS_RSA_WITH_NULL_SHA256);
+    ExportConstant(TLS_RSA_WITH_AES_128_CBC_SHA256);
+    ExportConstant(TLS_RSA_WITH_AES_256_CBC_SHA256);
 
-    AddIntConstant(TLS_RSA_WITH_CAMELLIA_128_CBC_SHA);
-    AddIntConstant(TLS_DH_DSS_WITH_CAMELLIA_128_CBC_SHA);
-    AddIntConstant(TLS_DH_RSA_WITH_CAMELLIA_128_CBC_SHA);
-    AddIntConstant(TLS_DHE_DSS_WITH_CAMELLIA_128_CBC_SHA);
-    AddIntConstant(TLS_DHE_RSA_WITH_CAMELLIA_128_CBC_SHA);
-    AddIntConstant(TLS_DH_anon_WITH_CAMELLIA_128_CBC_SHA);
+    ExportConstant(TLS_RSA_WITH_CAMELLIA_128_CBC_SHA);
+    ExportConstant(TLS_DH_DSS_WITH_CAMELLIA_128_CBC_SHA);
+    ExportConstant(TLS_DH_RSA_WITH_CAMELLIA_128_CBC_SHA);
+    ExportConstant(TLS_DHE_DSS_WITH_CAMELLIA_128_CBC_SHA);
+    ExportConstant(TLS_DHE_RSA_WITH_CAMELLIA_128_CBC_SHA);
+    ExportConstant(TLS_DH_anon_WITH_CAMELLIA_128_CBC_SHA);
 
-    AddIntConstant(TLS_RSA_EXPORT1024_WITH_DES_CBC_SHA);
-    AddIntConstant(TLS_RSA_EXPORT1024_WITH_RC4_56_SHA);
+    ExportConstant(TLS_RSA_EXPORT1024_WITH_DES_CBC_SHA);
+    ExportConstant(TLS_RSA_EXPORT1024_WITH_RC4_56_SHA);
 
-    AddIntConstant(TLS_DHE_DSS_EXPORT1024_WITH_DES_CBC_SHA);
-    AddIntConstant(TLS_DHE_DSS_EXPORT1024_WITH_RC4_56_SHA);
-    AddIntConstant(TLS_DHE_DSS_WITH_RC4_128_SHA);
-    AddIntConstant(TLS_DHE_RSA_WITH_AES_128_CBC_SHA256);
-    AddIntConstant(TLS_DHE_RSA_WITH_AES_256_CBC_SHA256);
+    ExportConstant(TLS_DHE_DSS_EXPORT1024_WITH_DES_CBC_SHA);
+    ExportConstant(TLS_DHE_DSS_EXPORT1024_WITH_RC4_56_SHA);
+    ExportConstant(TLS_DHE_DSS_WITH_RC4_128_SHA);
+    ExportConstant(TLS_DHE_RSA_WITH_AES_128_CBC_SHA256);
+    ExportConstant(TLS_DHE_RSA_WITH_AES_256_CBC_SHA256);
 
-    AddIntConstant(TLS_RSA_WITH_CAMELLIA_256_CBC_SHA);
-    AddIntConstant(TLS_DH_DSS_WITH_CAMELLIA_256_CBC_SHA);
-    AddIntConstant(TLS_DH_RSA_WITH_CAMELLIA_256_CBC_SHA);
-    AddIntConstant(TLS_DHE_DSS_WITH_CAMELLIA_256_CBC_SHA);
-    AddIntConstant(TLS_DHE_RSA_WITH_CAMELLIA_256_CBC_SHA);
-    AddIntConstant(TLS_DH_anon_WITH_CAMELLIA_256_CBC_SHA);
+    ExportConstant(TLS_RSA_WITH_CAMELLIA_256_CBC_SHA);
+    ExportConstant(TLS_DH_DSS_WITH_CAMELLIA_256_CBC_SHA);
+    ExportConstant(TLS_DH_RSA_WITH_CAMELLIA_256_CBC_SHA);
+    ExportConstant(TLS_DHE_DSS_WITH_CAMELLIA_256_CBC_SHA);
+    ExportConstant(TLS_DHE_RSA_WITH_CAMELLIA_256_CBC_SHA);
+    ExportConstant(TLS_DH_anon_WITH_CAMELLIA_256_CBC_SHA);
 
-    AddIntConstant(TLS_RSA_WITH_SEED_CBC_SHA);
+    ExportConstant(TLS_RSA_WITH_SEED_CBC_SHA);
 
-    AddIntConstant(TLS_RSA_WITH_AES_128_GCM_SHA256);
-    AddIntConstant(TLS_DHE_RSA_WITH_AES_128_GCM_SHA256);
-    AddIntConstant(TLS_DHE_DSS_WITH_AES_128_GCM_SHA256);
+    ExportConstant(TLS_RSA_WITH_AES_128_GCM_SHA256);
+    ExportConstant(TLS_DHE_RSA_WITH_AES_128_GCM_SHA256);
+    ExportConstant(TLS_DHE_DSS_WITH_AES_128_GCM_SHA256);
 
     /* TLS "Signaling Cipher Suite Value" (SCSV). May be requested by client.
      * Must NEVER be chosen by server.  SSL 3.0 server acknowledges by sending
      * back an empty Renegotiation Info (RI) server hello extension.
      */
-    AddIntConstant(TLS_EMPTY_RENEGOTIATION_INFO_SCSV);
+    ExportConstant(TLS_EMPTY_RENEGOTIATION_INFO_SCSV);
 
     /* TLS_FALLBACK_SCSV is a signaling cipher suite value that indicates that a
      * handshake is the result of TLS version fallback.
      */
-    AddIntConstant(TLS_FALLBACK_SCSV);
+    ExportConstant(TLS_FALLBACK_SCSV);
 
     /* Cipher Suite Values starting with 0xC000 are defined in informational
      * RFCs.
      */
-    AddIntConstant(TLS_ECDH_ECDSA_WITH_NULL_SHA);
-    AddIntConstant(TLS_ECDH_ECDSA_WITH_RC4_128_SHA);
-    AddIntConstant(TLS_ECDH_ECDSA_WITH_3DES_EDE_CBC_SHA);
-    AddIntConstant(TLS_ECDH_ECDSA_WITH_AES_128_CBC_SHA);
-    AddIntConstant(TLS_ECDH_ECDSA_WITH_AES_256_CBC_SHA);
+    ExportConstant(TLS_ECDH_ECDSA_WITH_NULL_SHA);
+    ExportConstant(TLS_ECDH_ECDSA_WITH_RC4_128_SHA);
+    ExportConstant(TLS_ECDH_ECDSA_WITH_3DES_EDE_CBC_SHA);
+    ExportConstant(TLS_ECDH_ECDSA_WITH_AES_128_CBC_SHA);
+    ExportConstant(TLS_ECDH_ECDSA_WITH_AES_256_CBC_SHA);
 
-    AddIntConstant(TLS_ECDHE_ECDSA_WITH_NULL_SHA);
-    AddIntConstant(TLS_ECDHE_ECDSA_WITH_RC4_128_SHA);
-    AddIntConstant(TLS_ECDHE_ECDSA_WITH_3DES_EDE_CBC_SHA);
-    AddIntConstant(TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA);
-    AddIntConstant(TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA);
+    ExportConstant(TLS_ECDHE_ECDSA_WITH_NULL_SHA);
+    ExportConstant(TLS_ECDHE_ECDSA_WITH_RC4_128_SHA);
+    ExportConstant(TLS_ECDHE_ECDSA_WITH_3DES_EDE_CBC_SHA);
+    ExportConstant(TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA);
+    ExportConstant(TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA);
 
-    AddIntConstant(TLS_ECDH_RSA_WITH_NULL_SHA);
-    AddIntConstant(TLS_ECDH_RSA_WITH_RC4_128_SHA);
-    AddIntConstant(TLS_ECDH_RSA_WITH_3DES_EDE_CBC_SHA);
-    AddIntConstant(TLS_ECDH_RSA_WITH_AES_128_CBC_SHA);
-    AddIntConstant(TLS_ECDH_RSA_WITH_AES_256_CBC_SHA);
+    ExportConstant(TLS_ECDH_RSA_WITH_NULL_SHA);
+    ExportConstant(TLS_ECDH_RSA_WITH_RC4_128_SHA);
+    ExportConstant(TLS_ECDH_RSA_WITH_3DES_EDE_CBC_SHA);
+    ExportConstant(TLS_ECDH_RSA_WITH_AES_128_CBC_SHA);
+    ExportConstant(TLS_ECDH_RSA_WITH_AES_256_CBC_SHA);
 
-    AddIntConstant(TLS_ECDHE_RSA_WITH_NULL_SHA);
-    AddIntConstant(TLS_ECDHE_RSA_WITH_RC4_128_SHA);
-    AddIntConstant(TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA);
-    AddIntConstant(TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA);
-    AddIntConstant(TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA);
+    ExportConstant(TLS_ECDHE_RSA_WITH_NULL_SHA);
+    ExportConstant(TLS_ECDHE_RSA_WITH_RC4_128_SHA);
+    ExportConstant(TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA);
+    ExportConstant(TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA);
+    ExportConstant(TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA);
 
-    AddIntConstant(TLS_ECDH_anon_WITH_NULL_SHA);
-    AddIntConstant(TLS_ECDH_anon_WITH_RC4_128_SHA);
-    AddIntConstant(TLS_ECDH_anon_WITH_3DES_EDE_CBC_SHA);
-    AddIntConstant(TLS_ECDH_anon_WITH_AES_128_CBC_SHA);
-    AddIntConstant(TLS_ECDH_anon_WITH_AES_256_CBC_SHA);
+    ExportConstant(TLS_ECDH_anon_WITH_NULL_SHA);
+    ExportConstant(TLS_ECDH_anon_WITH_RC4_128_SHA);
+    ExportConstant(TLS_ECDH_anon_WITH_3DES_EDE_CBC_SHA);
+    ExportConstant(TLS_ECDH_anon_WITH_AES_128_CBC_SHA);
+    ExportConstant(TLS_ECDH_anon_WITH_AES_256_CBC_SHA);
 
-    AddIntConstant(TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256);
-    AddIntConstant(TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256);
+    ExportConstant(TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256);
+    ExportConstant(TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256);
 
-    AddIntConstant(TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256);
-    AddIntConstant(TLS_ECDH_ECDSA_WITH_AES_128_GCM_SHA256);
-    AddIntConstant(TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256);
-    AddIntConstant(TLS_ECDH_RSA_WITH_AES_128_GCM_SHA256);
+    ExportConstant(TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256);
+    ExportConstant(TLS_ECDH_ECDSA_WITH_AES_128_GCM_SHA256);
+    ExportConstant(TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256);
+    ExportConstant(TLS_ECDH_RSA_WITH_AES_128_GCM_SHA256);
 
     /* Netscape "experimental" cipher suites. */
-    AddIntConstant(SSL_RSA_OLDFIPS_WITH_3DES_EDE_CBC_SHA);
-    AddIntConstant(SSL_RSA_OLDFIPS_WITH_DES_CBC_SHA);
+    ExportConstant(SSL_RSA_OLDFIPS_WITH_3DES_EDE_CBC_SHA);
+    ExportConstant(SSL_RSA_OLDFIPS_WITH_DES_CBC_SHA);
 
     /* New non-experimental openly spec'ed versions of those cipher suites. */
-    AddIntConstant(SSL_RSA_FIPS_WITH_3DES_EDE_CBC_SHA);
-    AddIntConstant(SSL_RSA_FIPS_WITH_DES_CBC_SHA);
+    ExportConstant(SSL_RSA_FIPS_WITH_3DES_EDE_CBC_SHA);
+    ExportConstant(SSL_RSA_FIPS_WITH_DES_CBC_SHA);
 
     /* DTLS-SRTP cipher suites from RFC 5764 */
-    AddIntConstant(SRTP_AES128_CM_HMAC_SHA1_80);
-    AddIntConstant(SRTP_AES128_CM_HMAC_SHA1_32);
-    AddIntConstant(SRTP_NULL_HMAC_SHA1_80);
-    AddIntConstant(SRTP_NULL_HMAC_SHA1_32);
+    ExportConstant(SRTP_AES128_CM_HMAC_SHA1_80);
+    ExportConstant(SRTP_AES128_CM_HMAC_SHA1_32);
+    ExportConstant(SRTP_NULL_HMAC_SHA1_80);
+    ExportConstant(SRTP_NULL_HMAC_SHA1_32);
+
+#undef ExportConstant
 
 }
