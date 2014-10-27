@@ -355,10 +355,12 @@ NewType_new_from_NSSType(NSSType *id)
 #define PY_SSIZE_T_CLEAN
 #include "Python.h"
 #include "structmember.h"
+#include "datetime.h"
 
 #include "py_nspr_common.h"
 #define NSS_NSS_MODULE
 #include "py_nss.h"
+#include "py_shared_doc.h"
 #include "py_nspr_error.h"
 
 #include "secder.h"
@@ -379,8 +381,6 @@ NewType_new_from_NSSType(NSSType *id)
 
 #define MAX_AVAS 10
 #define MAX_RDNS 10
-#define OCTETS_PER_LINE_DEFAULT 16
-#define HEX_SEPARATOR_DEFAULT ":"
 
 #ifdef DEBUG
 #include "py_traceback.h"
@@ -534,8 +534,6 @@ PyString_UTF8(PyObject *obj, char *name);
 /* ========================================================================== */
 
 
-typedef PyObject *(*format_lines_func)(PyObject *self, PyObject *args, PyObject *kwds);
-
 static PyObject *
 line_fmt_tuple(int level, const char *label, PyObject *py_value);
 
@@ -553,140 +551,6 @@ format_from_lines(format_lines_func formatter, PyObject *self, PyObject *args, P
 
 static PyObject *
 py_indented_format(PyObject *self, PyObject *args, PyObject *kwds);
-
-#define FMT_OBJ_AND_APPEND(dst_fmt_tuples, label, src_obj, level, fail) \
-{                                                                       \
-    PyObject *fmt_tuple = NULL;                                         \
-                                                                        \
-    if ((fmt_tuple = line_fmt_tuple(level, label, src_obj)) == NULL) {  \
-        goto fail;                                                      \
-    }                                                                   \
-    if (PyList_Append(dst_fmt_tuples, fmt_tuple) != 0) {                \
-        Py_DECREF(fmt_tuple);                                           \
-        goto fail;                                                      \
-    }                                                                   \
-}
-
-#define FMT_LABEL_AND_APPEND(dst_fmt_tuples, label, level, fail)        \
-{                                                                       \
-    PyObject *fmt_tuple = NULL;                                         \
-                                                                        \
-    if ((fmt_tuple = fmt_label(level, label)) == NULL) {                \
-        goto fail;                                                      \
-    }                                                                   \
-    if (PyList_Append(dst_fmt_tuples, fmt_tuple) != 0) {                \
-        Py_DECREF(fmt_tuple);                                           \
-        goto fail;                                                      \
-    }                                                                   \
-}
-
-#define APPEND_LINE_TUPLES_AND_CLEAR(dst_fmt_tuples, src_fmt_tuples, fail) \
-{                                                                       \
-    PyObject *src_obj;                                                  \
-    Py_ssize_t len, i;                                                  \
-    if (src_fmt_tuples) {                                               \
-        len = PyList_Size(src_fmt_tuples);                              \
-        for (i = 0; i < len; i++) {                                     \
-            src_obj = PyList_GetItem(src_fmt_tuples, i);                \
-            PyList_Append(dst_fmt_tuples, src_obj);                     \
-        }                                                               \
-        Py_CLEAR(src_fmt_tuples);                                       \
-    }                                                                   \
-}
-
-#define APPEND_LINES_AND_CLEAR(dst_fmt_tuples, src_lines, level, fail)  \
-{                                                                       \
-    PyObject *src_obj;                                                  \
-    Py_ssize_t len, i;                                                  \
-    if (src_lines) {                                                    \
-        len = PySequence_Size(src_lines);                               \
-        for (i = 0; i < len; i++) {                                     \
-            src_obj = PySequence_GetItem(src_lines, i);                 \
-            FMT_OBJ_AND_APPEND(dst_fmt_tuples, NULL, src_obj, level, fail); \
-            Py_DECREF(src_obj);                                         \
-        }                                                               \
-        Py_CLEAR(src_lines);                                            \
-    }                                                                   \
-}
-
-#define CALL_FORMAT_LINES_AND_APPEND(dst_fmt_tuples, obj, level, fail)  \
-{                                                                       \
-    PyObject *obj_line_fmt_tuples;                                      \
-                                                                        \
-    if ((obj_line_fmt_tuples =                                          \
-         PyObject_CallMethod(obj, "format_lines",                       \
-                             "(i)", level)) == NULL) {                  \
-        goto fail;                                                      \
-    }                                                                   \
-                                                                        \
-    APPEND_LINE_TUPLES_AND_CLEAR(dst_fmt_tuples, obj_line_fmt_tuples, fail); \
-}
-
-
-#define APPEND_OBJ_TO_HEX_LINES_AND_CLEAR(dst_fmt_tuples, obj, level, fail) \
-{                                                                       \
-    PyObject *obj_lines;                                                \
-                                                                        \
-    if ((obj_lines = obj_to_hex(obj, OCTETS_PER_LINE_DEFAULT,           \
-                                HEX_SEPARATOR_DEFAULT)) == NULL) {      \
-        goto fail;                                                      \
-    }                                                                   \
-    Py_CLEAR(obj);                                                      \
-    APPEND_LINES_AND_CLEAR(dst_fmt_tuples, obj_lines, level, fail);     \
-}
-
-#define FMT_SEC_INT_OBJ_APPEND_AND_CLEAR(dst_fmt_tuples, label, obj, level, fail) \
-{                                                                       \
-    PyObject *obj_lines = NULL;                                         \
-    SecItem *item = (SecItem *)obj;                                     \
-                                                                        \
-    FMT_LABEL_AND_APPEND(dst_fmt_tuples, label, level, fail);           \
-    if ((obj_lines = secitem_integer_format_lines(&item->item, level+1)) == NULL) { \
-        goto fail;                                                      \
-    }                                                                   \
-    Py_CLEAR(obj);                                                      \
-    APPEND_LINE_TUPLES_AND_CLEAR(dst_fmt_tuples, obj_lines, fail);      \
-}
-
-PyDoc_STRVAR(generic_format_doc,
-"format(level=0, indent='    ') -> string)\n\
-\n\
-:Parameters:\n\
-    level : integer\n\
-        Initial indentation level, all subsequent indents are relative\n\
-        to this starting level.\n\
-    indent : string\n\
-        string replicated once for each indent level then prepended to output line\n\
-\n\
-This is equivalent to:\n\
-indented_format(obj.format_lines()) on an object providing a format_lines() method.\n\
-");
-
-PyDoc_STRVAR(generic_format_lines_doc,
-"format_lines(level=0) -> [(level, string),...]\n\
-\n\
-:Parameters:\n\
-    level : integer\n\
-        Initial indentation level, all subsequent indents are relative\n\
-        to this starting level.\n\
-\n\
-Formats the object into a sequence of lines with indent level\n\
-information.  The return value is a list where each list item is a\n\
-tuple.  The first item in the tuple is an integer\n\
-representing the indentation level for that line. Any remaining items\n\
-in the tuple are strings to be output on that line.\n\
-\n\
-The output of this function can be formatted into a single string by\n\
-calling `indented_format()`, e.g.:\n\
-\n\
-    print indented_format(obj.format_lines())\n\
-\n\
-The reason this function returns a tuple as opposed to an single\n\
-indented string is to support other text formatting systems such as\n\
-GUI's with indentation controls.  See `indented_format()` for a\n\
-complete explanation.\n\
-");
-
 
 /* Steals reference to obj_str */
 static PyObject *
@@ -1794,6 +1658,9 @@ CERTCertExtensions_from_CERTAttribute(PRArenaPool *arena,
 static SECStatus
 My_CERT_GetCertificateRequestExtensions(CERTCertificateRequest *req, CERTCertExtension ***exts);
 
+static PyObject *
+timestamp_to_DateTime(time_t timestamp, bool utc);
+
 /* ==================================== */
 
 typedef struct BitStringTableStr {
@@ -1843,6 +1710,23 @@ static BitStringTable CertTypeDef[] = {
     BITSTRING_TBL_INIT(NS_CERT_TYPE_EMAIL_CA,          _("Email CA")          ), /* bit 6 */
     BITSTRING_TBL_INIT(NS_CERT_TYPE_OBJECT_SIGNING_CA, _("Object Signing CA") ), /* bit 7 */
 };
+
+static PyObject *
+timestamp_to_DateTime(time_t timestamp, bool utc)
+{
+    double d_timestamp = timestamp;
+    PyObject *py_datetime = NULL;
+    char *method;
+
+    method = utc ? "utcfromtimestamp" : "fromtimestamp";
+    if ((py_datetime = 
+         PyObject_CallMethod((PyObject *)PyDateTimeAPI->DateTimeType,
+                             method, "(d)", d_timestamp)) == NULL) {
+            return NULL;
+    }
+
+    return py_datetime;
+}
 
 /* returns new reference or NULL on error */
 PyObject *
@@ -5209,6 +5093,8 @@ SecItem_str(SecItem *self)
         break;
     case SECITEM_algorithm:
         return oid_secitem_to_pystr_desc(&self->item);
+    case SECITEM_buffer:
+        return secitem_to_pystr_hex(&self->item);
     default:
         return der_any_secitem_to_pystr(&self->item);
         break;
@@ -23973,6 +23859,13 @@ static PyNSPR_NSS_C_API_Type nspr_nss_c_api =
     cert_distnames_as_CERTDistNames,
     _AddIntConstantWithLookup,
     _AddIntConstantAlias,
+    format_from_lines,
+    line_fmt_tuple,
+    obj_sprintf,
+    obj_to_hex,
+    raw_data_to_hex,
+    fmt_label,
+    timestamp_to_DateTime
 };
 
 /* ============================== Module Construction ============================= */
@@ -23990,6 +23883,8 @@ initnss(void)
     if (import_nspr_error_c_api() < 0) {
         return;
     }
+
+    PyDateTime_IMPORT;
 
     if ((m = Py_InitModule3("nss.nss", module_methods, module_doc)) == NULL) {
         return;

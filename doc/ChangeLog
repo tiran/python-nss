@@ -1,26 +1,91 @@
 2014-10-21  John Dennis  <jdennis@redhat.com> 0.16.0
   The primary enhancements in this version is adding support for the
-  setting trust attributes on a Certificate and the SSL version range API.
+  setting trust attributes on a Certificate, the SSL version range API,
+  information on the SSL cipher suites and information on the SSL connection.
 
   * The following module functions were added:
-    - get_default_ssl_version_range
-    - get_supported_ssl_version_range
-    - set_default_ssl_version_range
-    - ssl_library_version_from_name
-    - ssl_library_version_name
+
+    - ssl.get_ssl_version_from_major_minor
+    - ssl.get_default_ssl_version_range
+    - ssl.get_supported_ssl_version_range
+    - ssl.set_default_ssl_version_range
+    - ssl.ssl_library_version_from_name
+    - ssl.ssl_library_version_name
+    - ssl.get_cipher_suite_info
+    - ssl.ssl_cipher_suite_name
+    - ssl.ssl_cipher_suite_from_name
+
+  * The following deprecated module functions were removed:
+
+    - ssl.nssinit
+    - ssl.nss_ini
+    - ssl.nss_shutdown
+
+  * The following classes were added:
+
+    - SSLCipherSuiteInfo
+    - SSLChannelInfo
 
   * The following class methods were added:
 
     - Certificate.trust_flags
     - Certificate.set_trust_attributes
+
     - SSLSocket.set_ssl_version_range
     - SSLSocket.get_ssl_version_range
+    - SSLSocket.get_ssl_channel_info
+    - SSLSocket.get_negotiated_host
+    - SSLSocket.connection_info_format_lines
+    - SSLSocket.connection_info_format
+    - SSLSocket.connection_info_str
+	
+    - SSLCipherSuiteInfo.format_lines
+    - SSLCipherSuiteInfo.format
+
+    - SSLChannelInfo.format_lines
+    - SSLChannelInfo.format
 
   * The following class properties were added:
 
     - Certificate.ssl_trust_flags
     - Certificate.email_trust_flags
     - Certificate.signing_trust_flags
+
+    - SSLCipherSuiteInfo.cipher_suite
+    - SSLCipherSuiteInfo.cipher_suite_name
+    - SSLCipherSuiteInfo.auth_algorithm
+    - SSLCipherSuiteInfo.auth_algorithm_name
+    - SSLCipherSuiteInfo.kea_type
+    - SSLCipherSuiteInfo.kea_type_name
+    - SSLCipherSuiteInfo.symmetric_cipher
+    - SSLCipherSuiteInfo.symmetric_cipher_name
+    - SSLCipherSuiteInfo.symmetric_key_bits
+    - SSLCipherSuiteInfo.symmetric_key_space
+    - SSLCipherSuiteInfo.effective_key_bits
+    - SSLCipherSuiteInfo.mac_algorithm
+    - SSLCipherSuiteInfo.mac_algorithm_name
+    - SSLCipherSuiteInfo.mac_bits
+    - SSLCipherSuiteInfo.is_fips
+    - SSLCipherSuiteInfo.is_exportable
+    - SSLCipherSuiteInfo.is_nonstandard
+
+    - SSLChannelInfo.protocol_version
+    - SSLChannelInfo.protocol_version_str
+    - SSLChannelInfo.protocol_version_enum
+    - SSLChannelInfo.major_protocol_version
+    - SSLChannelInfo.minor_protocol_version
+    - SSLChannelInfo.cipher_suite
+    - SSLChannelInfo.auth_key_bits
+    - SSLChannelInfo.kea_key_bits
+    - SSLChannelInfo.creation_time
+    - SSLChannelInfo.creation_time_utc
+    - SSLChannelInfo.last_access_time
+    - SSLChannelInfo.last_access_time_utc
+    - SSLChannelInfo.expiration_time
+    - SSLChannelInfo.expiration_time_utc
+    - SSLChannelInfo.compression_method
+    - SSLChannelInfo.compression_method_name
+    - SSLChannelInfo.session_id
 
   * The following files were added:
 
@@ -131,6 +196,7 @@
     - ssl.tls1.3
 
    * The following methods were missing thread locks, this has been fixed.
+
      - nss.nss_initialize
      - nss.nss_init_context
      - nss.nss_shutdown_context

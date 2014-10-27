@@ -414,6 +414,18 @@ typedef struct {
                                      PyObject *value_to_name);
     int (*_AddIntConstantAlias)(const char *name, long value,
                                 PyObject *name_to_value);
+    PyObject *(*format_from_lines)(format_lines_func formatter, PyObject *self,
+                                   PyObject *args, PyObject *kwds);
+    PyObject *(*line_fmt_tuple)(int level, const char *label,
+                                PyObject *py_value);
+    PyObject *(*obj_sprintf)(const char *fmt, ...);
+    PyObject *(*obj_to_hex)(PyObject *obj,
+                            int octets_per_line, char *separator);
+    PyObject *(*raw_data_to_hex)(unsigned char *data, int data_len,
+                                 int octets_per_line, char *separator);
+    PyObject *(*fmt_label)(int level, char *label);
+    PyObject *(*timestamp_to_DateTime)(time_t timestamp, bool utc);
+
 
 
 } PyNSPR_NSS_C_API_Type;
@@ -452,6 +464,13 @@ static PyNSPR_NSS_C_API_Type nspr_nss_c_api;
 #define cert_distnames_as_CERTDistNames (*nspr_nss_c_api.cert_distnames_as_CERTDistNames)
 #define _AddIntConstantWithLookup (*nspr_nss_c_api._AddIntConstantWithLookup)
 #define _AddIntConstantAlias (*nspr_nss_c_api._AddIntConstantAlias)
+#define format_from_lines (*nspr_nss_c_api.format_from_lines)
+#define line_fmt_tuple (*nspr_nss_c_api.line_fmt_tuple)
+#define obj_sprintf (*nspr_nss_c_api.obj_sprintf)
+#define obj_to_hex (*nspr_nss_c_api.obj_to_hex)
+#define raw_data_to_hex (*nspr_nss_c_api.raw_data_to_hex)
+#define fmt_label (*nspr_nss_c_api.fmt_label)
+#define timestamp_to_DateTime (*nspr_nss_c_api.timestamp_to_DateTime)
 
 static int
 import_nspr_nss_c_api(void)

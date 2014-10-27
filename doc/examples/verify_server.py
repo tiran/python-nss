@@ -27,7 +27,13 @@ GET /index.html HTTP/1.0
 # -----------------------------------------------------------------------------
 
 def handshake_callback(sock):
-    print "handshake complete, peer = %s" % (sock.get_peer_name())
+    print "-- handshake complete --"
+    print "peer: %s" % (sock.get_peer_name())
+    print "negotiated host: %s" % (sock.get_negotiated_host())
+    print
+    print sock.connection_info_str()
+    print "-- handshake complete --"
+    print
 
 def auth_certificate_callback(sock, check_sig, is_server, certdb):
     print "auth_certificate_callback: check_sig=%s is_server=%s" % (check_sig, is_server)
@@ -170,14 +176,48 @@ parser.set_defaults(db_name = 'sql:pki',
                     port = 443,
                     )
 
+parser.add_argument('--min-ssl-version',
+                    help='minimum SSL version')
+
+parser.add_argument('--max-ssl-version',
+                    help='minimum SSL version')
+
 options = parser.parse_args()
 
 # Perform basic configuration and setup
 try:
     nss.nss_init(options.db_name)
     ssl.set_domestic_policy()
+
+    min_ssl_version, max_ssl_version = \
+        ssl.get_supported_ssl_version_range(repr_kind=nss.AsString)
+    print "Supported SSL version range: min=%s, max=%s" % \
+        (min_ssl_version, max_ssl_version)
+
+    min_ssl_version, max_ssl_version = \
+        ssl.get_default_ssl_version_range(repr_kind=nss.AsString)
+    print "Default SSL version range: min=%s, max=%s" % \
+        (min_ssl_version, max_ssl_version)
+
+    if options.min_ssl_version is not None or \
+       options.max_ssl_version is not None:
+
+        if options.min_ssl_version is not None:
+            min_ssl_version  = options.min_ssl_version
+        if options.max_ssl_version is not None:
+            max_ssl_version  = options.max_ssl_version
+
+        print "Setting default SSL version range: min=%s, max=%s" % \
+            (min_ssl_version, max_ssl_version)
+        ssl.set_default_ssl_version_range(min_ssl_version, max_ssl_version)
+
+        min_ssl_version, max_ssl_version = \
+            ssl.get_default_ssl_version_range(repr_kind=nss.AsString)
+        print "Default SSL version range now: min=%s, max=%s" % \
+            (min_ssl_version, max_ssl_version)
+
 except Exception, e:
-    print >>sys.stderr, e.strerror
+    print >>sys.stderr, str(e)
     sys.exit(1)
 
 client()
