@@ -78,9 +78,7 @@ NewType_format_lines(NewType *self, PyObject *args, PyObject *kwds)
     static char *kwlist[] = {"level", NULL};
     int level = 0;
     PyObject *lines = NULL;
-    PyObject *obj = NULL;
-
-    SECOidTag alg_tag;
+    PyObject *obj1 = NULL;
 
     TraceMethodEnter(self);
 
@@ -93,7 +91,7 @@ NewType_format_lines(NewType *self, PyObject *args, PyObject *kwds)
 
     return lines;
  fail:
-    Py_XDECREF(obj);
+    Py_XDECREF(obj1);
     Py_XDECREF(lines);
     return NULL;
 }
@@ -499,6 +497,7 @@ PyObject *
 PyString_UTF8(PyObject *obj, char *name);
 
 
+// FIXME, should this be SecItem_param() instead?
 #define SECITEM_PARAM(py_param, pitem, tmp_item, none_ok, param_name)   \
 {                                                                       \
     pitem = NULL;                                                       \
@@ -1370,7 +1369,6 @@ static PyObject *pkcs12_cipher_value_to_name = NULL;
 static PyTypeObject PK11SymKeyType;
 static PyTypeObject PK11ContextType;
 static PyTypeObject SecItemType;
-static PyTypeObject PK11SymKeyType;
 static PyTypeObject AVAType;
 static PyTypeObject RDNType;
 static PyTypeObject DNType;
@@ -1661,6 +1659,9 @@ My_CERT_GetCertificateRequestExtensions(CERTCertificateRequest *req, CERTCertExt
 static PyObject *
 timestamp_to_DateTime(time_t timestamp, bool utc);
 
+static PyObject *
+pk11_pk11_disabled_reason_str(PyObject *self, PyObject *args);
+
 /* ==================================== */
 
 typedef struct BitStringTableStr {
@@ -1719,7 +1720,7 @@ timestamp_to_DateTime(time_t timestamp, bool utc)
     char *method;
 
     method = utc ? "utcfromtimestamp" : "fromtimestamp";
-    if ((py_datetime = 
+    if ((py_datetime =
          PyObject_CallMethod((PyObject *)PyDateTimeAPI->DateTimeType,
                              method, "(d)", d_timestamp)) == NULL) {
             return NULL;
@@ -1744,6 +1745,38 @@ PyString_UTF8(PyObject *obj, char *name)
     PyErr_Format(PyExc_TypeError, "%s must be a string, not %.200s",
                  name, Py_TYPE(obj)->tp_name);
     return NULL;
+}
+
+static SECStatus
+SecItem_param(PyObject *py_param, SECItem **pitem, SECItem *tmp_item,
+              bool none_ok, const char *param_name)
+{
+    *pitem = NULL;
+    if (py_param) {
+        if (PySecItem_Check(py_param)) {
+            *pitem = &((SecItem *)py_param)->item;
+        } else if (none_ok && PyNone_Check(py_param)) {
+            *pitem = NULL;
+        } else if (PyObject_CheckReadBuffer(py_param)) {
+            unsigned char *data = NULL;
+            Py_ssize_t data_len;
+
+            if (PyObject_AsReadBuffer(py_param, (void *)&data, &data_len))
+                return SECFailure;
+
+            tmp_item->data = data;
+            tmp_item->len = data_len;
+            *pitem = tmp_item;
+        } else {
+            if (none_ok) {
+                PyErr_Format(PyExc_TypeError, "%s must be SecItem, buffer compatible or None", param_name);
+            } else {
+                PyErr_Format(PyExc_TypeError, "%s must be SecItem or buffer compatible", param_name);
+            }
+            return SECFailure;
+        }
+    }
+    return SECSuccess;
 }
 
 /*
@@ -5016,10 +5049,20 @@ SecItem_dealloc(SecItem* self)
     TraceMethodEnter(self);
 
     if (self->item.data) {
+        /* zero out memory block before freeing */
+        memset(self->item.data, 0, self->item.len);
         PyMem_FREE(self->item.data);
     }
 
     self->ob_type->tp_free((PyObject*)self);
+}
+
+static void
+SecItem_decref(SecItem* self)
+{
+    TraceMethodEnter(self);
+
+    Py_XDECREF(self);
 }
 
 PyDoc_STRVAR(SecItem_doc,
@@ -5519,7 +5562,7 @@ KDF2Params_format_lines(SECItem *item, int level)
     FMT_OBJ_AND_APPEND(lines, _("Iteration Count"), obj, level, fail);
     Py_CLEAR(obj);
 
-    obj = integer_secitem_to_pystr(&params.iterationCount);
+    obj = integer_secitem_to_pystr(&params.keyLength);
     FMT_OBJ_AND_APPEND(lines, _("Key Length"), obj, level, fail);
     Py_CLEAR(obj);
 
@@ -5686,7 +5729,6 @@ AlgorithmID_format_lines(AlgorithmID *self, PyObject *args, PyObject *kwds)
     int level = 0;
     PyObject *lines = NULL;
     PyObject *obj = NULL;
-
     SECOidTag alg_tag;
 
     TraceMethodEnter(self);
@@ -5777,9 +5819,96 @@ AlgorithmID_str(AlgorithmID *self)
 
 }
 
+PyDoc_STRVAR(AlgorithmID_get_pbe_crypto_mechanism_doc,
+"get_pbe_crypto_mechanism(sym_key, padded=True) -> (mechanism, params)\n\
+\n\
+:Parameters:\n\
+    sym_key : PK11SymKey object\n\
+        The symmetric key returned from `PK11Slot.pbe_key_gen()`\n\
+    padded : bool\n\
+        Block ciphers require the input data to be a multiple of the cipher\n\
+        block size. The necessary padding can be performed internally,\n\
+        this is controlled by selecting a pad vs. non-pad cipher mechanism.\n\
+        If the padded flag is True the returned mechanism will support\n\
+        padding if possible. If you know you do not need or want a padded\n\
+        mechanism set this flag to False. Selection of a padded mechanism\n\
+        is performed internally by calling `nss.get_pad_mechanism()`.\n\
+\n\
+This function generates the parameters needed for\n\
+`nss.create_context_by_sym_key()`, for example:\n\
+\n\
+    alg_id = nss.create_pbev2_algorithm_id()\n\
+    sym_key = slot.pbe_key_gen(alg_id, password)\n\
+    mechanism, params = alg_id.get_pbe_crypto_mechanism(sym_key)\n\
+    encrypt_ctx = nss.create_context_by_sym_key(mechanism, nss.CKA_ENCRYPT, sym_key, params)\n\
+\n\
+");
+
+static PyObject *
+AlgorithmID_get_pbe_crypto_mechanism(AlgorithmID *self, PyObject *args, PyObject *kwds)
+{
+    static char *kwlist[] = {"alg_id", "padded", NULL};
+    PyPK11SymKey *py_sym_key = NULL;
+    PyObject *py_padded = NULL;
+    PRBool padded = PR_TRUE;
+    CK_MECHANISM_TYPE mechanism;
+    SecItem *py_pwitem = NULL;
+    SECItem *params = NULL;
+    PyObject *py_params = NULL;
+    PyObject *tuple = NULL;
+
+    TraceMethodEnter(self);
+
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "O!|O!:get_pbe_crypto_mechanism", kwlist,
+                                      &PK11SymKeyType, &py_sym_key,
+                                      &PyBool_Type, &py_padded))
+        return NULL;
+
+    if (py_padded) {
+        padded = PyBoolAsPRBool(py_padded);
+    }
+
+    /*
+     * PK11Slot_pbe_key_gen
+     */
+
+    py_pwitem = (SecItem *)PK11_GetSymKeyUserData(py_sym_key->pk11_sym_key);
+
+
+    if ((mechanism = PK11_GetPBECryptoMechanism(&self->id, &params,
+                                                &py_pwitem->item)) == CKM_INVALID_MECHANISM) {
+
+        return set_nspr_error(NULL);
+    }
+
+    if (padded) {
+        mechanism = PK11_GetPadMechanism(mechanism);
+    }
+
+    if ((py_params = SecItem_new_from_SECItem(params, SECITEM_sym_key_params)) == NULL) {
+        if (params) {
+            SECITEM_ZfreeItem(params, PR_TRUE);
+        }
+        return NULL;
+    }
+    if (params) {
+        SECITEM_ZfreeItem(params, PR_TRUE);
+    }
+
+    if ((tuple = PyTuple_New(2)) == NULL) {
+        return NULL;
+    }
+
+    PyTuple_SetItem(tuple, 0, PyInt_FromLong(mechanism));
+    PyTuple_SetItem(tuple, 1, py_params);
+
+    return tuple;
+}
+
 static PyMethodDef AlgorithmID_methods[] = {
-    {"format_lines", (PyCFunction)AlgorithmID_format_lines,   METH_VARARGS|METH_KEYWORDS, generic_format_lines_doc},
-    {"format",       (PyCFunction)AlgorithmID_format,         METH_VARARGS|METH_KEYWORDS, generic_format_doc},
+    {"format_lines",             (PyCFunction)AlgorithmID_format_lines,             METH_VARARGS|METH_KEYWORDS, generic_format_lines_doc},
+    {"format",                   (PyCFunction)AlgorithmID_format,                   METH_VARARGS|METH_KEYWORDS, generic_format_doc},
+    {"get_pbe_crypto_mechanism", (PyCFunction)AlgorithmID_get_pbe_crypto_mechanism, METH_VARARGS|METH_KEYWORDS, AlgorithmID_get_pbe_crypto_mechanism_doc},
     {NULL, NULL}  /* Sentinel */
 };
 
@@ -6315,6 +6444,7 @@ KEYPQGParams_init(KEYPQGParams *self, PyObject *args, PyObject *kwds)
                                      &py_prime, &py_subprime, &py_base))
         return -1;
 
+    // FIXME: doc says None is OK, but SECITEM_PARAM none_ok is false
     SECITEM_PARAM(py_prime, prime_item, prime_tmp_item, false, "prime");
     SECITEM_PARAM(py_subprime, subprime_item, subprime_tmp_item, false, "subprime");
     SECITEM_PARAM(py_base, base_item, base_tmp_item, false, "base");
@@ -9019,18 +9149,24 @@ static PyObject *
 Certificate_check_valid_times(Certificate *self, PyObject *args, PyObject *kwds)
 {
     static char *kwlist[] = {"time", "allow_override", NULL};
-    int allow_override = 0;
     PRTime pr_time = 0;
+    PyObject *py_allow_override = NULL;
+    PRBool allow_override = PR_FALSE;
     SECCertTimeValidity validity;
 
     TraceMethodEnter(self);
 
-    if (!PyArg_ParseTupleAndKeywords(args, kwds, "|O&i:check_valid_times", kwlist,
-                                     PRTimeConvert, &pr_time, &allow_override))
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "|O&O!:check_valid_times", kwlist,
+                                     PRTimeConvert, &pr_time,
+                                     &PyBool_Type, &py_allow_override))
         return NULL;
 
     if (!pr_time) {
         pr_time = PR_Now();
+    }
+
+    if (py_allow_override) {
+        allow_override = PyBoolAsPRBool(py_allow_override);
     }
 
     validity = CERT_CheckCertValidTimes(self->cert, pr_time, allow_override);
@@ -9950,7 +10086,7 @@ Certificate_init(Certificate *self, PyObject *args, PyObject *kwds)
     PyObject *py_perm = NULL;
     PyObject *py_nickname = NULL;
 
-    SECItem tmp_item;
+    SECItem der_tmp_item;
     SECItem *der_item = NULL;
     CERTCertDBHandle *certdb_handle = NULL;
     SECItem *der_certs = NULL;
@@ -9968,7 +10104,7 @@ Certificate_init(Certificate *self, PyObject *args, PyObject *kwds)
                                      UTF8OrNoneConvert, &py_nickname))
         return -1;
 
-    SECITEM_PARAM(py_data, der_item, tmp_item, false, "data");
+    SECITEM_PARAM(py_data, der_item, der_tmp_item, false, "data");
 
     if (py_certdb) {
         certdb_handle = py_certdb->handle;
@@ -12808,6 +12944,8 @@ static PyMemberDef PK11Slot_members[] = {
 
 /* ========== Slot Info Functions ========== */
 
+// FIXME: should these be properties rather than methods?
+
 PyDoc_STRVAR(PK11Slot_is_hw_doc,
 "is_hw() -> bool\n\
 \n\
@@ -13441,7 +13579,245 @@ PK11Slot_list_certs(PK11Slot *self, PyObject *args)
     return tuple;
 }
 
+PyDoc_STRVAR(PK11Slot_pbe_key_gen_doc,
+"pbe_key_gen(algid, password, [user_data1, ...]) -> PK11SymKey object\n\
+\n\
+:Parameters:\n\
+    algid : AlgorithmID object\n\
+        algorithm id\n\
+    password : string\n\
+        the password used to create the PBE Key\n\
+    user_dataN : object ...\n\
+        zero or more caller supplied parameters which will\n\
+        be passed to the password callback function\n\
+\n\
+Generate a PBE symmetric key.\n\
+");
+static PyObject *
+PK11Slot_pbe_key_gen(PK11Slot *self, PyObject *args)
+{
+    Py_ssize_t n_base_args = 2;
+    Py_ssize_t argc;
+    PyObject *parse_args = NULL;
+    PyObject *pin_args = NULL;
+    AlgorithmID *py_algid = NULL;
+    char *password = NULL;
+    Py_ssize_t password_len = 0;
+    SECItem pwitem;
+    PK11SymKey *sym_key;
+    PyObject *py_pwitem = NULL;
+
+    TraceMethodEnter(self);
+
+    argc = PyTuple_Size(args);
+    if (argc == n_base_args) {
+        Py_INCREF(args);
+        parse_args = args;
+    } else {
+        parse_args = PyTuple_GetSlice(args, 0, n_base_args);
+    }
+    if (!PyArg_ParseTuple(parse_args, "O!s#:pbe_key_gen",
+                          &AlgorithmIDType, &py_algid,
+                          &password, &password_len)) {
+        Py_DECREF(parse_args);
+        return NULL;
+    }
+    Py_DECREF(parse_args);
+
+    pin_args = PyTuple_GetSlice(args, n_base_args, argc);
+
+    pwitem.data = (unsigned char *)password;
+    pwitem.len = password_len;
+
+    Py_BEGIN_ALLOW_THREADS
+    if ((sym_key = PK11_PBEKeyGen(self->slot, &py_algid->id,
+                                  &pwitem, PR_FALSE, pin_args)) == NULL) {
+	Py_BLOCK_THREADS
+        Py_DECREF(pin_args);
+        return set_nspr_error(NULL);
+    }
+    Py_END_ALLOW_THREADS
+
+    Py_DECREF(pin_args);
+
+    /*
+     * Store the password in the symkey userData so it can be referenced
+     * by PK11_GetPBECryptoMechanism
+     */
+    if ((py_pwitem = SecItem_new_from_SECItem(&pwitem, SECITEM_utf8_string)) == NULL) {
+        PK11_FreeSymKey(sym_key);
+        return NULL;
+    }
+
+    PK11_SetSymKeyUserData(sym_key, py_pwitem,
+                           (PK11FreeDataFunc)SecItem_decref);
+
+    return PyPK11SymKey_new_from_PK11SymKey(sym_key);
+}
+
+static PyObject *
+PK11Slot_format_lines(PK11Slot *self, PyObject *args, PyObject *kwds)
+{
+    static char *kwlist[] = {"level", NULL};
+    int level = 0;
+    PyObject *lines = NULL;
+    PyObject *obj1 = NULL;
+    PyObject *obj2 = NULL;
+    PyObject *obj3 = NULL;
+    PyObject *obj4 = NULL;
+    PyObject *obj5 = NULL;
+
+    TraceMethodEnter(self);
+
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "|i:format_lines", kwlist,
+                                     &level))
+        return NULL;
+
+    if ((lines = PyList_New(0)) == NULL) {
+        return NULL;
+    }
+
+    obj1 = PK11_get_slot_name(self, NULL);
+    FMT_OBJ_AND_APPEND(lines, _("Slot Name"), obj1, level, fail);
+    Py_CLEAR(obj1);
+
+    obj1 = PK11_get_token_name(self, NULL);
+    FMT_OBJ_AND_APPEND(lines, _("Token Name"), obj1, level, fail);
+    Py_CLEAR(obj1);
+
+    if ((obj1 = PyObject_CallMethod((PyObject *)self, "is_hw", NULL)) == NULL) {
+        goto fail;
+    }
+    FMT_OBJ_AND_APPEND(lines, _("Is Hardware"), obj1, level, fail);
+    Py_CLEAR(obj1);
+
+    if ((obj1 = PyObject_CallMethod((PyObject *)self, "is_present", NULL)) == NULL) {
+        goto fail;
+    }
+    FMT_OBJ_AND_APPEND(lines, _("Is Present"), obj1, level, fail);
+    Py_CLEAR(obj1);
+
+    if ((obj1 = PyObject_CallMethod((PyObject *)self, "is_read_only", NULL)) == NULL) {
+        goto fail;
+    }
+    FMT_OBJ_AND_APPEND(lines, _("Is Read Only"), obj1, level, fail);
+    Py_CLEAR(obj1);
+
+    if ((obj1 = PyObject_CallMethod((PyObject *)self, "is_internal", NULL)) == NULL) {
+        goto fail;
+    }
+    FMT_OBJ_AND_APPEND(lines, _("Is Internal"), obj1, level, fail);
+    Py_CLEAR(obj1);
+
+    if ((obj1 = PyObject_CallMethod((PyObject *)self, "need_login", NULL)) == NULL) {
+        goto fail;
+    }
+    FMT_OBJ_AND_APPEND(lines, _("Needs Login"), obj1, level, fail);
+    Py_CLEAR(obj1);
+
+
+    if ((obj1 = PyObject_CallMethod((PyObject *)self, "need_user_init", NULL)) == NULL) {
+        goto fail;
+    }
+    FMT_OBJ_AND_APPEND(lines, _("Needs User Init"), obj1, level, fail);
+    Py_CLEAR(obj1);
+
+    if ((obj1 = PyObject_CallMethod((PyObject *)self, "is_friendly", NULL)) == NULL) {
+        goto fail;
+    }
+    FMT_OBJ_AND_APPEND(lines, _("Is Friendly"), obj1, level, fail);
+    Py_CLEAR(obj1);
+
+    if ((obj1 = PyObject_CallMethod((PyObject *)self, "is_removable", NULL)) == NULL) {
+        goto fail;
+    }
+    FMT_OBJ_AND_APPEND(lines, _("Is Removable"), obj1, level, fail);
+    Py_CLEAR(obj1);
+
+    if ((obj1 = PyObject_CallMethod((PyObject *)self, "has_protected_authentication_path", NULL)) == NULL) {
+        goto fail;
+    }
+    FMT_OBJ_AND_APPEND(lines, _("Has Protected Authentication Path"), obj1, level, fail);
+    Py_CLEAR(obj1);
+
+    if ((obj1 = PyObject_CallMethod((PyObject *)self, "is_disabled", NULL)) == NULL) {
+        goto fail;
+    }
+    if ((obj2 = PyObject_CallMethod((PyObject *)self, "get_disabled_reason", NULL)) == NULL) {
+        goto fail;
+    }
+    if ((obj3 = Py_BuildValue("(O)", obj2)) == NULL) {
+        goto fail;
+    }
+
+    if ((obj4 = pk11_pk11_disabled_reason_str(NULL, obj3)) == NULL) {
+        goto fail;
+    }
+
+    if ((obj5 = obj_sprintf("%s (%s)", obj1, obj4)) == NULL) {
+        goto fail;
+    }
+
+    FMT_OBJ_AND_APPEND(lines, _("Is Disabled"), obj5, level, fail);
+    Py_CLEAR(obj1);
+    Py_CLEAR(obj2);
+    Py_CLEAR(obj3);
+    Py_CLEAR(obj4);
+    Py_CLEAR(obj5);
+
+    if ((obj1 = PyObject_CallMethod((PyObject *)self, "has_root_certs", NULL)) == NULL) {
+        goto fail;
+    }
+    FMT_OBJ_AND_APPEND(lines, _("Has Root Certs"), obj1, level, fail);
+    Py_CLEAR(obj1);
+
+    if ((obj1 = PyObject_CallMethod((PyObject *)self, "get_best_wrap_mechanism", NULL)) == NULL) {
+        goto fail;
+    }
+    obj2 = key_mechanism_type_to_pystr(PyInt_AsLong(obj1));
+    if ((obj3 = obj_sprintf("%s (%#x)", obj2, obj1)) == NULL) {
+        goto fail;
+    }
+    FMT_OBJ_AND_APPEND(lines, _("Best Wrap Mechanism"), obj3, level, fail);
+    Py_CLEAR(obj1);
+    Py_CLEAR(obj2);
+    Py_CLEAR(obj3);
+
+    return lines;
+
+ fail:
+    Py_XDECREF(obj1);
+    Py_XDECREF(obj2);
+    Py_XDECREF(obj3);
+    Py_XDECREF(obj4);
+    Py_XDECREF(obj5);
+    Py_XDECREF(lines);
+    return NULL;
+}
+
+static PyObject *
+PK11Slot_format(PK11Slot *self, PyObject *args, PyObject *kwds)
+{
+    TraceMethodEnter(self);
+
+    return format_from_lines((format_lines_func)PK11Slot_format_lines, (PyObject *)self, args, kwds);
+}
+
+static PyObject *
+PK11Slot_str(PK11Slot *self)
+{
+    PyObject *py_formatted_result = NULL;
+
+    TraceMethodEnter(self);
+
+    py_formatted_result =  PK11Slot_format(self, empty_tuple, NULL);
+    return py_formatted_result;
+
+}
+
 static PyMethodDef PK11Slot_methods[] = {
+    {"format_lines",                      (PyCFunction)PK11Slot_format_lines,                      METH_VARARGS|METH_KEYWORDS, generic_format_lines_doc},
+    {"format",                            (PyCFunction)PK11Slot_format,                            METH_VARARGS|METH_KEYWORDS, generic_format_doc},
     {"is_hw",                             (PyCFunction)PK11Slot_is_hw,                             METH_NOARGS,                PK11Slot_is_hw_doc},
     {"is_present",                        (PyCFunction)PK11Slot_is_present,                        METH_NOARGS,                PK11Slot_is_present_doc},
     {"is_read_only",                      (PyCFunction)PK11Slot_is_read_only,                      METH_NOARGS,                PK11Slot_is_read_only_doc},
@@ -13464,6 +13840,7 @@ static PyMethodDef PK11Slot_methods[] = {
     {"key_gen",                           (PyCFunction)PK11Slot_key_gen,                           METH_VARARGS,               PK11Slot_key_gen_doc},
     {"generate_key_pair",                 (PyCFunction)PK11Slot_generate_key_pair,                 METH_VARARGS,               PK11Slot_generate_key_pair_doc},
     {"list_certs",                        (PyCFunction)PK11Slot_list_certs,                        METH_NOARGS,                PK11Slot_list_certs_doc},
+    {"pbe_key_gen",                       (PyCFunction)PK11Slot_pbe_key_gen,                       METH_VARARGS,               PK11Slot_pbe_key_gen_doc},
     {NULL, NULL}  /* Sentinel */
 };
 
@@ -13530,7 +13907,7 @@ static PyTypeObject PK11SlotType = {
     0,						/* tp_as_mapping */
     0,						/* tp_hash */
     0,						/* tp_call */
-    0,						/* tp_str */
+    (reprfunc)PK11Slot_str,			/* tp_str */
     0,						/* tp_getattro */
     0,						/* tp_setattro */
     0,						/* tp_as_buffer */
@@ -13642,6 +14019,91 @@ static PyMemberDef PK11SymKey_members[] = {
 };
 
 /* ============================== Class Methods ============================= */
+
+static PyObject *
+PK11SymKey_format_lines(PyPK11SymKey *self, PyObject *args, PyObject *kwds)
+{
+    static char *kwlist[] = {"level", NULL};
+    int level = 0;
+    PyObject *lines = NULL;
+    PyObject *obj1 = NULL;
+    PyObject *obj2 = NULL;
+    PyObject *obj3 = NULL;
+
+    TraceMethodEnter(self);
+
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "|i:format_lines", kwlist,
+                                     &level))
+        return NULL;
+
+    if ((lines = PyList_New(0)) == NULL) {
+        return NULL;
+    }
+
+    obj1 = PK11SymKey_get_mechanism(self, NULL);
+    obj2 = key_mechanism_type_to_pystr(PyInt_AsLong(obj1));
+    if ((obj3 = obj_sprintf("%s (%#x)", obj2, obj1)) == NULL) {
+        goto fail;
+    }
+    FMT_OBJ_AND_APPEND(lines, _("Mechanism"), obj3, level, fail);
+    Py_CLEAR(obj1);
+    Py_CLEAR(obj2);
+    Py_CLEAR(obj3);
+
+    obj1 = PK11SymKey_get_key_length(self, NULL);
+    FMT_OBJ_AND_APPEND(lines, _("Key Length"), obj1, level, fail);
+    Py_CLEAR(obj1);
+
+    if ((obj1 = PK11SymKey_get_key_data(self, NULL)) != NULL) {
+        FMT_LABEL_AND_APPEND(lines, _("Key Data"), level, fail);
+        APPEND_OBJ_TO_HEX_LINES_AND_CLEAR(lines, obj1, level+1, fail);
+    } else {
+        PyObject *error_type, *error_value, *error_traceback;
+
+        PyErr_Fetch(&error_type, &error_value, &error_traceback);
+
+        obj1 = PyObject_Str(error_value);
+        FMT_OBJ_AND_APPEND(lines, _("Key Data"), obj1, level, fail);
+        Py_CLEAR(obj1);
+
+        Py_XDECREF(error_type);
+        Py_XDECREF(error_value);
+        Py_XDECREF(error_traceback);
+    }
+
+    obj1 = PK11SymKey_get_slot(self, NULL);
+    FMT_LABEL_AND_APPEND(lines, _("PK11 Slot"), level, fail);
+    CALL_FORMAT_LINES_AND_APPEND(lines, obj1, level+1, fail);
+    Py_CLEAR(obj1);
+
+    return lines;
+ fail:
+    Py_XDECREF(obj1);
+    Py_XDECREF(obj2);
+    Py_XDECREF(obj3);
+    Py_XDECREF(lines);
+    return NULL;
+}
+
+static PyObject *
+PK11SymKey_format(PyPK11SymKey *self, PyObject *args, PyObject *kwds)
+{
+    TraceMethodEnter(self);
+
+    return format_from_lines((format_lines_func)PK11SymKey_format_lines, (PyObject *)self, args, kwds);
+}
+
+static PyObject *
+PK11SymKey_str(PyPK11SymKey *self)
+{
+    PyObject *py_formatted_result = NULL;
+
+    TraceMethodEnter(self);
+
+    py_formatted_result =  PK11SymKey_format(self, empty_tuple, NULL);
+    return py_formatted_result;
+
+}
 
 PyDoc_STRVAR(PK11SymKey_derive_doc,
 "derive(mechanism, sec_param, target, operation, key_size) -> PK11SymKey\n\
@@ -13785,13 +14247,9 @@ PK11SymKey_repr(PyPK11SymKey *self)
                                Py_TYPE(self)->tp_name, self);
 }
 
-static PyObject *
-PK11SymKey_str(PyPK11SymKey *self)
-{
-    return PK11SymKey_repr(self);
-}
-
 static PyMethodDef PK11SymKey_methods[] = {
+    {"format_lines",   (PyCFunction)PK11SymKey_format_lines,     METH_VARARGS|METH_KEYWORDS, generic_format_lines_doc},
+    {"format",         (PyCFunction)PK11SymKey_format,           METH_VARARGS|METH_KEYWORDS, generic_format_doc},
     {"derive",         (PyCFunction)PK11SymKey_derive,           METH_VARARGS, PK11SymKey_derive_doc},
     {"wrap_sym_key",   (PyCFunction)PK11SymKey_wrap_sym_key,     METH_VARARGS, PK11SymKey_wrap_sym_key_doc},
     {"unwrap_sym_key", (PyCFunction)PK11SymKey_unwrap_sym_key,   METH_VARARGS, PK11SymKey_unwrap_sym_key_doc},
@@ -14107,6 +14565,7 @@ PK11Context_digest_final(PyPK11Context *self, PyObject *args)
     Py_ssize_t out_buf_alloc_len;
     unsigned int suggested_out_len = 0, actual_out_len;
     PyObject *py_out_string;
+    SECStatus result;
 
     TraceMethodEnter(self);
 
@@ -14119,6 +14578,18 @@ PK11Context_digest_final(PyPK11Context *self, PyObject *args)
      * not equal the actual number of bytes written we resize the string before
      * returning it so the caller sees a string whose length exactly matches
      * the number of bytes written by the PK11 function.
+     *
+     * NSS WART
+     *
+     * We must be careful to detect the case when the 1st call to
+     * DigestFinal returns a zero output length and not call it
+     * again. This is because when there is nothing further to do
+     * DigestFinal will close the context and release its resources
+     * even if all you're doing is performing a buffer size check. I
+     * believe this is a violation of the PKCS11 C API spec which says
+     * that a call to check buffer size has no side effect. I could
+     * find no NSS documentation as to the defined behavior in NSS.
+     * This has been filed as Bug 1095725.
      */
 
     if (PK11_DigestFinal(self->pk11_context, NULL, &suggested_out_len, 0) != SECSuccess) {
@@ -14132,18 +14603,23 @@ PK11Context_digest_final(PyPK11Context *self, PyObject *args)
     }
     out_buf = PyString_AsString(py_out_string);
 
-    /*
-     * Now that we have the output buffer perform the cipher operation.
-     */
-    if (PK11_DigestFinal(self->pk11_context, out_buf,
-                         &actual_out_len, out_buf_alloc_len) != SECSuccess) {
-        Py_DECREF(py_out_string);
-        return set_nspr_error(NULL);
+    result = PK11_DigestFinal(self->pk11_context, out_buf,
+                              &actual_out_len, out_buf_alloc_len);
+
+    if (result != SECSuccess) {
+        /*
+         * Did we hit the above bug? If so ignore it, otherwise report failure.
+         */ 
+        if (!(suggested_out_len == 0 &&
+              PORT_GetError() == SEC_ERROR_LIBRARY_FAILURE)) {
+            Py_DECREF(py_out_string);
+            return set_nspr_error(NULL);
+        }
     }
 
     if (actual_out_len != out_buf_alloc_len) {
         if (_PyString_Resize(&py_out_string, actual_out_len) < 0) {
-        return NULL;
+            return NULL;
         }
     }
 
@@ -15504,7 +15980,7 @@ AuthorityInfoAccesses_init(AuthorityInfoAccesses *self, PyObject *args, PyObject
 {
     static char *kwlist[] = {"auth_info_accesses", NULL};
     PyObject *py_data = NULL;
-    SECItem tmp_item;
+    SECItem der_tmp_item;
     SECItem *der_item = NULL;
 
 
@@ -15514,7 +15990,7 @@ AuthorityInfoAccesses_init(AuthorityInfoAccesses *self, PyObject *args, PyObject
                                      &py_data))
         return -1;
 
-    SECITEM_PARAM(py_data, der_item, tmp_item, false, "data");
+    SECITEM_PARAM(py_data, der_item, der_tmp_item, false, "data");
 
     return AuthorityInfoAccesses_init_from_SECItem(self, der_item);
 }
@@ -16962,7 +17438,7 @@ CertificateRequest_init(CertificateRequest *self, PyObject *args, PyObject *kwds
 {
     static char *kwlist[] = {"data", NULL};
     PyObject *py_data = NULL;
-    SECItem tmp_item;
+    SECItem der_tmp_item;
     SECItem *der_item = NULL;
 
     TraceMethodEnter(self);
@@ -16971,7 +17447,7 @@ CertificateRequest_init(CertificateRequest *self, PyObject *args, PyObject *kwds
                                      &py_data))
         return -1;
 
-    SECITEM_PARAM(py_data, der_item, tmp_item, true, "data");
+    SECITEM_PARAM(py_data, der_item, der_tmp_item, true, "data");
     if (der_item) {
         return CertificateRequest_init_from_SECItem(self, der_item);
     } else {
@@ -22101,6 +22577,115 @@ pk11_import_crl(PyObject *self, PyObject *args)
     return SignedCRL_new_from_CERTSignedCRL(signed_crl);
 }
 
+PyDoc_STRVAR(pk11_create_pbev2_algorithm_id_doc,
+"create_pbev2_algorithm_id(pbe_alg=SEC_OID_PKCS5_PBKDF2, cipher_alg=SEC_OID_AES_256_CBC, prf_alg=SEC_OID_HMAC_SHA1, key_length=0, iterations=100, salt=None) -> AlgorithmID \n\
+\n\
+:Parameters:\n\
+    pbe_alg : may be one of integer, string or SecItem (see below)\n\
+        password based encryption algorithm\n\
+    cipher_alg : may be one of integer, string or SecItem (see below)\n\
+        cipher algorithm\n\
+    prf_alg : may be one of integer, string or SecItem (see below)\n\
+        pseudo-random function algorithm\n\
+    key_length : int\n\
+        Number of octets in derived key DK. Must be a valid value for the\n\
+        cipher_alg. If zero then NSS will select the longest key length\n\
+        appropriate for the cipher\n\
+    iterations : int\n\
+        Number of times the pseudo-random function is applied to generate\n\
+        the symmetric key.\n\
+    salt : SecItem or str or any buffer compatible object or None\n\
+        Cyrptographic salt. If None a random salt will be generated.\n\
+\n\
+The default values are appropriate for most users desiring a PKCS5v2\n\
+PBE symmetric key.\n\
+\n\
+The pbe, cipher and prf algorithms may be specified in any of the\n\
+following manners:\n\
+\n\
+    * integer:: A SEC OID enumeration constant, also known as a tag\n\
+      (i.e. SEC_OID_*) for example SEC_OID_PKCS5_PBKDF2.\n\
+    * string:: A string for the tag name\n\
+      (e.g. 'SEC_OID_PKCS5_PBKDF2') The 'SEC_OID\\_' prefix is\n\
+      optional. A string in dotted decimal representation, for\n\
+      example 'OID.1.2.840.113549.1.5.12'.\n\
+      The 'OID.' prefix is optional. Case is not significant.\n\
+    * SecItem:: A SecItem object encapsulating the OID in \n\
+          DER format.\n\
+\n\
+");
+
+static PyObject *
+pk11_create_pbev2_algorithm_id(PyObject *self, PyObject *args, PyObject *kwds)
+{
+    static char *kwlist[] = {"pbe_alg", "cipher_alg", "prf_alg",
+                             "key_length", "iterations", "salt", NULL};
+    PyObject *py_pbe_alg = NULL;
+    SECOidTag pbe_alg_tag = SEC_OID_PKCS5_PBKDF2;
+
+    PyObject *py_cipher_alg = NULL;
+    SECOidTag cipher_alg_tag = SEC_OID_AES_256_CBC;
+
+    PyObject *py_prf_alg = NULL;
+    SECOidTag prf_alg_tag = SEC_OID_HMAC_SHA1;
+
+    int key_length = 0;
+    int iterations = 100;
+
+    PyObject *py_salt = NULL;
+    SECItem salt_tmp_item;
+    SECItem *salt_item = NULL;
+
+    SECAlgorithmID *algid = NULL;
+    PyObject *py_algorithm_id = NULL;
+
+    TraceMethodEnter(self);
+
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "|OOOiiO:create_pbev2_algorithm_id", kwlist,
+                                     &py_pbe_alg, &py_cipher_alg, &py_prf_alg,
+                                     &key_length, &iterations, &py_salt))
+        return NULL;
+
+    if (py_pbe_alg) {
+        if ((pbe_alg_tag = get_oid_tag_from_object(py_pbe_alg)) == -1) {
+            return NULL;
+        }
+    }
+
+    if (py_cipher_alg) {
+        if ((cipher_alg_tag = get_oid_tag_from_object(py_cipher_alg)) == -1) {
+            return NULL;
+        }
+    }
+
+    if (py_prf_alg) {
+        if ((prf_alg_tag = get_oid_tag_from_object(py_prf_alg)) == -1) {
+            return NULL;
+        }
+    }
+
+    if (SecItem_param(py_salt, &salt_item, &salt_tmp_item,
+                      true, "salt") != SECSuccess) {
+        return NULL;
+    }
+
+    if ((algid = PK11_CreatePBEV2AlgorithmID(pbe_alg_tag,
+                                             cipher_alg_tag,
+                                             prf_alg_tag,
+                                             key_length,
+                                             iterations,
+                                             salt_item)) == NULL) {
+        return set_nspr_error(NULL);
+    }
+
+    if ((py_algorithm_id = AlgorithmID_new_from_SECAlgorithmID(algid)) == NULL) {
+        SECOID_DestroyAlgorithmID(algid, PR_TRUE);
+        return NULL;
+    }
+    SECOID_DestroyAlgorithmID(algid, PR_TRUE);
+    return py_algorithm_id;
+}
+
 PyDoc_STRVAR(cert_decode_der_crl_doc,
 "decode_der_crl(der_crl, type=SEC_CRL_TYPE, decode_options=CRL_DECODE_DEFAULT_OPTIONS) -> SignedCRL\n\
 \n\
@@ -22154,7 +22739,7 @@ PyDoc_STRVAR(nss_read_der_from_file_doc,
     file : file name or file object\n\
         If string treat as file path to open and read,\n\
         if file object read from file object.\n\
-    ascii : boolean\n\
+    ascii : bool\n\
         If True treat file contents as ascii data.\n\
         If PEM delimiters are found strip them.\n\
         Then base64 decode the contents.\n\
@@ -23325,6 +23910,7 @@ nss_fingerprint_format_lines(PyObject *self, PyObject *args, PyObject *kwds)
                                      &py_data, &level))
         return NULL;
 
+    // FIXME: Should this be SecItem_param()?
     if (PySecItem_Check(py_data)) {
         der_item = &((SecItem *)py_data)->item;
     } else if (PyObject_CheckReadBuffer(py_data)) {
@@ -23373,7 +23959,7 @@ PyDoc_STRVAR(cert_set_use_pkix_for_validation_doc,
 "set_use_pkix_for_validation(flag) -> prev_flag\n\
 \n\
 :Parameters:\n\
-    flag : boolean\n\
+    flag : bool\n\
         Boolean flag, True to enable PKIX validation,\n\
         False to disable PKIX validation.\n\
 \n\
@@ -23806,6 +24392,7 @@ module_methods[] = {
     {"get_block_size",                   (PyCFunction)pk11_get_block_size,                 METH_VARARGS|METH_KEYWORDS, pk11_get_block_size_doc},
     {"get_pad_mechanism",                (PyCFunction)pk11_get_pad_mechanism,              METH_VARARGS,               pk11_get_pad_mechanism_doc},
     {"import_crl",                       (PyCFunction)pk11_import_crl,                     METH_VARARGS,               pk11_import_crl_doc},
+    {"create_pbev2_algorithm_id",        (PyCFunction)pk11_create_pbev2_algorithm_id,      METH_VARARGS|METH_KEYWORDS, pk11_create_pbev2_algorithm_id_doc},
     {"need_pw_init",                     (PyCFunction)pk11_pk11_need_pw_init,              METH_NOARGS,                pk11_pk11_need_pw_init_doc},
     {"token_exists",                     (PyCFunction)pk11_pk11_token_exists,              METH_NOARGS,                pk11_pk11_token_exists_doc},
     {"is_fips",                          (PyCFunction)pk11_pk11_is_fips,                   METH_NOARGS,                pk11_pk11_is_fips_doc},

@@ -40,6 +40,7 @@ typedef enum SECItemKindEnum {
     SECITEM_utf8_string,
     SECITEM_bit_string,
     SECITEM_certificate,
+    SECITEM_sym_key_params,
 } SECItemKind;
 
 typedef struct {
