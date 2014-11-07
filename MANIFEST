@@ -5,6 +5,7 @@ README
 setup.cfg
 setup.py
 doc/ChangeLog
+doc/examples/pbkdf2_example.py
 doc/examples/cert_dump.py
 doc/examples/cert_trust.py
 doc/examples/httplib_example.py
