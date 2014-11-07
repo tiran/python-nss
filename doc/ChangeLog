@@ -1,3 +1,25 @@
+2014-11-07  John Dennis  <jdennis@redhat.com> 0.17.0
+  The primary enhancement in this version is adding support for PBKDF2
+
+  * The following module functions were added:
+
+    - nss.create_pbev2_algorithm_id
+
+  * The following class methods were added:
+
+    - nss.AlgorithmID.get_pbe_crypto_mechanism
+
+    - nss.PK11Slot.pbe_key_gen
+    - nss.PK11Slot.format_lines
+    - nss.PK11Slot.format
+
+    - nss.Pk11SymKey.format_lines
+    - nss.Pk11SymKey.format
+
+  * The following files were added:
+
+    - doc/examples/pbkdf2_example.py
+
 2014-10-21  John Dennis  <jdennis@redhat.com> 0.16.0
   The primary enhancements in this version is adding support for the
   setting trust attributes on a Certificate, the SSL version range API,
