@@ -60,7 +60,7 @@ def generate_key():
 
     return alg_id, sym_key
 
-def get_encryption_contexts(alg_id, sym_key):
+def get_encryption_context(alg_id, sym_key):
 
     # In order for NSS to encrypt and decrypt data it needs an
     # encryption context to perform the operation in. The cipher used
@@ -69,32 +69,80 @@ def get_encryption_contexts(alg_id, sym_key):
     # Initialization Vector (IV) and possibly other values.
     # The get_pbe_crypto_mechanism() call computes the mechanism
     # and parameters for the PBE symmetric key we're using.
+    #
+    # Because the decryption context needs the same params used in
+    # the encryption context we save the param block returned by
+    # get_pbe_crypto_mechanism(). So that it can be passed to
+    # create_context_by_sym_key() when creating the decryption context.
+    # It's often the case the decryption is performed by a separate
+    # process so in this example we illustrate exchanging the param
+    # as base64 data.
+
     mechanism, params = alg_id.get_pbe_crypto_mechanism(sym_key)
 
+    # Format the params binary data into a base64 string.  The zero
+    # passed for the chars_per_line parameter indicates we want the
+    # base64 data as one single string as opposed to a list of wrapped
+    # strings.
+    params_base64 = params.to_base64(0)
+
     if not options.quiet:
-        print fmt_info("get_pbe_crypto_mechanism returned mechanism:",
+        print fmt_info("get_pbe_crypto_mechanism (encrypting) returned mechanism:",
                        nss.key_mechanism_type_name(mechanism))
+        print fmt_info("get_pbe_crypto_mechanism (encrypting) returned params:",
+                       params)
         print
 
-    # Now we have enough information to create a context encrypting
+    # Now we have enough information to create an encrypting context
     # and decrypting the data.
 
     encrypt_ctx = nss.create_context_by_sym_key(mechanism, nss.CKA_ENCRYPT,
                                                 sym_key, params)
+
+    # Return the encrypting context and it's parameter block so that the
+    # decryption context can use the same parameter block.
+    return encrypt_ctx, params_base64
+
+def get_decryption_context(alg_id, sym_key, params_base64):
+
+    # Build a decryption context using the same parameters used
+    # when the encryption context was created.
+
+    # Do NOT use the params returned by get_pbe_crypto_mechanism()
+    # because the params often include an IV (Initialization Vector)
+    # created with random data, therefore the params used in the
+    # encryption context will not match the params needed for the
+    # decryption context. Instead use the params used in the
+    # encryption context. For interoperability reasons we exchange the
+    # params as base64 encoded binary data.
+
+    mechanism, params = alg_id.get_pbe_crypto_mechanism(sym_key)
+
+    # Recreate the params used during encryption by initializing a
+    # SecItem from base64 text data (indicated by ascii=True)
+    params = nss.SecItem(params_base64, ascii=True)
+
+    if not options.quiet:
+        print fmt_info("get_pbe_crypto_mechanism (decrypting) returned mechanism:",
+                       nss.key_mechanism_type_name(mechanism))
+        print
+
+    # Now we have enough information to create a decrypting context
+
     decrypt_ctx = nss.create_context_by_sym_key(mechanism, nss.CKA_DECRYPT,
                                                 sym_key, params)
 
-    return encrypt_ctx, decrypt_ctx
+    return decrypt_ctx
 
 def do_pbkdf2():
 
     # Generate a symmetric key
     alg_id, sym_key = generate_key()
 
-    # Get encryption contexts to encrypt and decrypt given the sym_key
-    encrypt_ctx, decrypt_ctx = get_encryption_contexts(alg_id, sym_key)
+    # Get encryption contexts to encrypt
+    encrypt_ctx, params_base64 = get_encryption_context(alg_id, sym_key)
 
-    # First encrypt the plain text input, then decrypt again
+    # First encrypt the plain text input
 
     print fmt_info("Plain Text", options.plain_text)
     print
@@ -106,6 +154,9 @@ def do_pbkdf2():
 
     print fmt_info("Cipher Text", cipher_text, hex_data=True)
     print
+
+    # Get decryption contexts to decrypt
+    decrypt_ctx = get_decryption_context(alg_id, sym_key, params_base64)
 
     # Decode the cipher text by feeding it to cipher_op getting plain text back.
     # Append the final bit of plain text by calling digest_final

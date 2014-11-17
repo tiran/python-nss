@@ -48,7 +48,7 @@ Certificate Request:
         Requested Extensions:
             X509v3 Basic Constraints: critical
                 CA:FALSE
-            X509v3 Subject Key Identifier: 
+            X509v3 Subject Key Identifier:
                 8B:84:44:E2:3B:21:CD:54:37:95:2D:B7:E8:D1:B1:D8:0E:96:56:10
     Signature Algorithm: sha256WithRSAEncryption
          97:1c:5f:8c:27:35:fd:78:8f:76:a0:a0:be:43:54:be:62:54:
@@ -109,7 +109,7 @@ class TestCertRequest(unittest.TestCase):
 
     def setUp(self):
         nss.nss_init_nodb()
-        self.csr_der = nss.base64_to_binary(pem)
+        self.csr_der = nss.SecItem(pem, ascii=True)
         self.csr = nss.CertificateRequest(self.csr_der)
 
     def tearDown(self):
@@ -122,7 +122,7 @@ class TestCertRequest(unittest.TestCase):
         self.assertEqual(str(csr.subject), 'CN=localhost')
         self.assertEqual(csr.version, 0)
 
-        # Validate the CSR Subject Public Key 
+        # Validate the CSR Subject Public Key
         pub_key = csr.subject_public_key_info
         pub_key_algorithm = pub_key.algorithm
 
