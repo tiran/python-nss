@@ -8,6 +8,7 @@
   * The following class methods were added:
 
     - nss.AlgorithmID.get_pbe_crypto_mechanism
+    - nss.AlgorithmID.get_pbe_iv
 
     - nss.PK11Slot.pbe_key_gen
     - nss.PK11Slot.format_lines
@@ -16,9 +17,16 @@
     - nss.Pk11SymKey.format_lines
     - nss.Pk11SymKey.format
 
-  * The following files were added:
+    - nss.SecItem.to_base64
+    - nss.SecItem.format_lines
+    - nss.SecItem.format
+
+	* The following files were added:
 
     - doc/examples/pbkdf2_example.py
+
+  * The SecItem constructor added 'ascii' parameter to permit initialization
+    from base64 and/or PEM textual data.
 
 2014-10-21  John Dennis  <jdennis@redhat.com> 0.16.0
   The primary enhancements in this version is adding support for the
@@ -60,7 +68,7 @@
     - SSLSocket.connection_info_format_lines
     - SSLSocket.connection_info_format
     - SSLSocket.connection_info_str
-	
+
     - SSLCipherSuiteInfo.format_lines
     - SSLCipherSuiteInfo.format
 

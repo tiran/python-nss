@@ -1781,18 +1781,61 @@ SecItem_param(PyObject *py_param, SECItem **pitem, SECItem *tmp_item,
 
 /*
  * Parse text as base64 data. base64 may optionally be wrapped in PEM
- * header/footer. Return python SecItem.
+ * header/footer. der SECItem must be freed with
+ * SECITEM_FreeItem(&der, PR_FALSE);
  */
-static PyObject *
-base64_to_SecItem(char *text)
+static SECStatus
+base64_to_SECItem(SECItem *der, char *text, size_t text_len)
 {
-    PyObject *py_sec_item;
-    SECItem der;
+    char *p, *text_end, *tmp, *der_begin, *der_end;
+
+    der->data = NULL;
+    der->len = 0;
+    der->type = siBuffer;
+
+    p = text;
+    text_end = text + text_len;
+    /* check for headers and trailers and remove them */
+    if ((tmp = PL_strnstr(p, "-----BEGIN", text_end-p)) != NULL) {
+        p = tmp;
+        tmp = PORT_Strchr(p, '\n');
+        if (!tmp) {
+            tmp = strchr(p, '\r'); /* maybe this is a MAC file */
+        }
+        if (!tmp) {
+            PyErr_SetString(PyExc_ValueError, "no line ending after PEM BEGIN");
+            return SECFailure;
+        }
+        p = der_begin = tmp + 1;
+        tmp = PL_strnstr(p, "-----END", text_end-p);
+        if (tmp != NULL) {
+            der_end = tmp;
+            *der_end = '\0';
+        } else {
+            PyErr_SetString(PyExc_ValueError, "no PEM END found");
+            return SECFailure;
+        }
+    } else {
+        der_begin = p;
+        der_end = p + strlen(p);
+    }
+
+    /* Convert to binary */
+    if (NSSBase64_DecodeBuffer(NULL, der, der_begin, der_end - der_begin) == NULL) {
+        set_nspr_error("Could not base64 decode");
+        return SECFailure;
+    }
+    return SECSuccess;
+}
+
+SECStatus
+base64_to_SECItemX(SECItem *der, char *text)
+{
     char *p, *tmp, *der_begin, *der_end;
 
-    der.data = NULL;
-    der.len = 0;
-    der.type = siBuffer;
+    der->data = NULL;
+    der->len = 0;
+    der->type = siBuffer;
 
     p = text;
     /* check for headers and trailers and remove them */
@@ -1804,7 +1847,7 @@ base64_to_SecItem(char *text)
         }
         if (!tmp) {
             PyErr_SetString(PyExc_ValueError, "no line ending after PEM BEGIN");
-            return NULL;
+            return SECFailure;
         }
         p = der_begin = tmp + 1;
         tmp = strstr(p, "-----END");
@@ -1813,7 +1856,7 @@ base64_to_SecItem(char *text)
             *der_end = '\0';
         } else {
             PyErr_SetString(PyExc_ValueError, "no PEM END found");
-            return NULL;
+            return SECFailure;
         }
     } else {
         der_begin = p;
@@ -1821,12 +1864,109 @@ base64_to_SecItem(char *text)
     }
 
     /* Convert to binary */
-    if (NSSBase64_DecodeBuffer(NULL, &der, der_begin, der_end - der_begin) == NULL) {
-        return set_nspr_error("Could not base64 decode");
+    if (NSSBase64_DecodeBuffer(NULL, der, der_begin, der_end - der_begin) == NULL) {
+        set_nspr_error("Could not base64 decode");
+        return SECFailure;
     }
+    return SECSuccess;
+}
+
+/*
+ * Parse text as base64 data. base64 may optionally be wrapped in PEM
+ * header/footer. Return python SecItem.
+ */
+static PyObject *
+base64_to_SecItem(char *text)
+{
+    PyObject *py_sec_item;
+    SECItem der;
+
+    if (base64_to_SECItem(&der, text, strlen(text)) != SECSuccess) {
+        return NULL;
+    }
+
     py_sec_item = SecItem_new_from_SECItem(&der, SECITEM_unknown);
     SECITEM_FreeItem(&der, PR_FALSE);
     return py_sec_item;
+}
+
+static PyObject *
+SECItem_to_base64(SECItem *item, size_t chars_per_line, char *pem_type)
+{
+    char *base64 = NULL;
+    PyObject *lines = NULL;
+    PyObject *py_base64 = NULL;
+    size_t base64_len = 0;
+
+    if ((base64 = NSSBase64_EncodeItem(NULL, NULL, 0, item)) == NULL) {
+        return set_nspr_error("unable to encode SECItem to base64");
+    }
+
+    if (pem_type && chars_per_line == 0) {
+        chars_per_line = 64;
+    }
+
+    base64_len = strlen(base64);
+    if (chars_per_line) {
+        size_t n_lines, line_number, line_len;
+        char *src, *src_end;
+        PyObject *line = NULL;
+
+        n_lines = ((base64_len + chars_per_line - 1) / chars_per_line);
+
+        if (pem_type) {
+            n_lines += 2;
+        }
+
+        if ((lines = PyList_New(n_lines)) == NULL) {
+            goto fail;
+        }
+        line_number = 0;
+
+        if (pem_type) {
+            if ((line = PyString_FromFormat("-----BEGIN %s-----",
+                                            pem_type)) == NULL) {
+                goto fail;
+            }
+            PyList_SetItem(lines, line_number++, line);
+        }
+
+        src = base64;
+        src_end = base64 + base64_len;
+
+        while(src < src_end) {
+            line_len = MIN(chars_per_line, src_end - src);
+            if ((line = PyString_FromStringAndSize(src, line_len)) == NULL) {
+                goto fail;
+            }
+            PyList_SetItem(lines, line_number++, line);
+
+            src += line_len;
+        }
+
+        if (pem_type) {
+            if ((line = PyString_FromFormat("-----END %s-----",
+                                            pem_type)) == NULL) {
+                goto fail;
+            }
+            PyList_SetItem(lines, line_number++, line);
+        }
+
+        PORT_Free(base64);
+        return lines;
+    } else {
+        py_base64 = PyString_FromStringAndSize(base64, base64_len);
+        PORT_Free(base64);
+        return py_base64;
+
+    }
+
+ fail:
+    if (base64)
+        PORT_Free(base64);
+    Py_XDECREF(lines);
+    Py_XDECREF(py_base64);
+    return NULL;
 }
 
 /*
@@ -4970,6 +5110,88 @@ SecItem_to_hex(SecItem *self, PyObject *args, PyObject *kwds)
     return raw_data_to_hex(self->item.data, self->item.len, octets_per_line, separator);
 }
 
+PyDoc_STRVAR(SecItem_to_base64_doc,
+"to_base64(chars_per_line=64, pem_type=) -> string or list of strings\n\
+\n\
+:Parameters:\n\
+    chars_per_line : integer\n\
+        Number of characters formatted on one line, if 0 then\n\
+        return a single string instead of an array of lines\n\
+    pem_type : string\n\
+        If supplied the base64 encoded data will be wrapped with\n\
+        a PEM header and footer whose type is the string.\n\
+\n\
+Format the binary data in the SecItem as base64 string(s).\n\
+Either a list of strings is returned or a single string.\n\
+\n\
+If chars_per_line is greater than zero then a list of\n\
+strings will be returned where each string contains\n\
+chars_per_line number of characters (except for the last\n\
+string in the list which will contain the remainder of the\n\
+characters). Returning a list of \"lines\" makes it convenient\n\
+for a caller to format a block of base64 data with line\n\
+wrapping. If chars_per_line is greater than zero indicating\n\
+a list result is desired a list is always returned even if\n\
+the number of characters would produce only a single line.\n\
+\n\
+If chars_per_line is zero then a single string is returned,\n\
+(no line splitting is performed).\n\
+\n\
+Examples:\n\
+\n\
+If data is:\n\
+\n\
+    c8:94:00:9f:c2:8d:a2:5a:61:92:f2:cd:39:75:73:f4\n\
+\n\
+data.to_hex(0) will return the single string:\n\
+\n\
+    'yJQAn8KNolphkvLNOXVz9A=='\n\
+\n\
+data.to_hex(5) will return a list of strings of length 5:\n\
+\n\
+    ['yJQAn',\n\
+     '8KNol',\n\
+     'phkvL',\n\
+     'NOXVz',\n\
+     '9A==']\n\
+\n\
+If you specify the pem_type optional parameter the return value\n\
+will be a list of strings whose first and last strings will be a\n\
+PEM header and footer. For example if pem_type='CERTIFICATE'\n\
+then the return value will be like this:\n\
+\n\
+    ['-----BEGIN CERTIFICATE-----',\n\
+    'yJQAn8KNolphkvLNOXVz9A=='\n\
+     '-----END CERTIFICATE-----']\n\
+    ]\n\
+\n\
+When a list of strings is returned it is easy to form a single\n\
+text block using the line ending of your choice, for example:\n\
+\n\
+    '\n'.join(data.to_base64())\n\
+\n\
+Thus a PEM block can be formed like this:\n\
+\n\
+    '\n\.join(data.to_hex(pem_type='CERTIFICATE'))\n\
+\n\
+");
+
+static PyObject *
+SecItem_to_base64(SecItem *self, PyObject *args, PyObject *kwds)
+{
+    static char *kwlist[] = {"chars_per_line", "pem_type", NULL};
+    int chars_per_line = 64;
+    char *pem_type = NULL;
+
+    TraceMethodEnter(self);
+
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "|is:to_base64", kwlist,
+                                     &chars_per_line, &pem_type))
+        return NULL;
+
+    return SECItem_to_base64(&self->item, chars_per_line, pem_type);
+}
+
 PyDoc_STRVAR(SecItem_der_to_hex_doc,
 "der_to_hex(octets_per_line=0, separator=':') -> string or list of strings\n\
 \n\
@@ -5014,10 +5236,51 @@ SecItem_der_to_hex(SecItem *self, PyObject *args, PyObject *kwds)
     return raw_data_to_hex(tmp_item.data, tmp_item.len, octets_per_line, separator);
 }
 
+static PyObject *
+SecItem_format_lines(SecItem *self, PyObject *args, PyObject *kwds)
+{
+    static char *kwlist[] = {"level", NULL};
+    int level = 0;
+    PyObject *lines = NULL;
+    PyObject *obj1 = NULL;
+
+    TraceMethodEnter(self);
+
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "|i:format_lines", kwlist, &level))
+        return NULL;
+
+    if ((lines = PyList_New(0)) == NULL) {
+        return NULL;
+    }
+
+    FMT_LABEL_AND_APPEND(lines, _("Data"), level, fail);
+    if ((obj1 = SecItem_get_data(self, NULL)) == NULL) {
+        goto fail;
+    }
+    APPEND_OBJ_TO_HEX_LINES_AND_CLEAR(lines, obj1, level+1, fail);
+
+    return lines;
+ fail:
+    Py_XDECREF(obj1);
+    Py_XDECREF(lines);
+    return NULL;
+}
+
+static PyObject *
+SecItem_format(SecItem *self, PyObject *args, PyObject *kwds)
+{
+    TraceMethodEnter(self);
+
+    return format_from_lines((format_lines_func)SecItem_format_lines, (PyObject *)self, args, kwds);
+}
+
 static PyMethodDef SecItem_methods[] = {
+    {"format_lines",     (PyCFunction)SecItem_format_lines,     METH_VARARGS|METH_KEYWORDS, generic_format_lines_doc},
+    {"format",           (PyCFunction)SecItem_format,           METH_VARARGS|METH_KEYWORDS, generic_format_doc},
     {"get_oid_sequence", (PyCFunction)SecItem_get_oid_sequence, METH_VARARGS|METH_KEYWORDS, SecItem_get_oid_sequence_doc},
     {"get_integer",      (PyCFunction)SecItem_get_integer,      METH_NOARGS,                SecItem_get_integer_doc},
     {"to_hex",           (PyCFunction)SecItem_to_hex,           METH_VARARGS|METH_KEYWORDS, SecItem_to_hex_doc},
+    {"to_base64",        (PyCFunction)SecItem_to_base64,        METH_VARARGS|METH_KEYWORDS, SecItem_to_base64_doc},
     {"der_to_hex",       (PyCFunction)SecItem_der_to_hex,       METH_VARARGS|METH_KEYWORDS, SecItem_der_to_hex_doc},
     {NULL, NULL}  /* Sentinel */
 };
@@ -5066,40 +5329,64 @@ SecItem_decref(SecItem* self)
 }
 
 PyDoc_STRVAR(SecItem_doc,
-"SecItem(data=None, type=siBuffer)\n\
+"SecItem(data=None, type=siBuffer, ascii=False)\n\
 \n\
 :Parameters:\n\
     data : any read buffer compatible object (e.g. buffer or string)\n\
         raw data to initialize from\n\
     type : int\n\
         SECItemType constant (e.g. si*)\n\
+    ascii : bool\n\
+        If true then data is interpretted as base64 encoded.\n\
+        A PEM header and footer is permissible, if present the\n\
+        base64 data will be found inside the PEM delimiters.\n\
 \n\
-Encoded data. Used internally by NSS\n\
+A SecItem is a block of binary data. It contains the data, a count of\n\
+the number of octets in the data and optionally a type describing the\n\
+contents of the data. SecItem's are used throughout NSS to pass blocks\n\
+of binary data back and forth. Because the binary data is often DER\n\
+(Distinguished Encoding Rule) ASN.1 data the data is often referred to\n\
+as 'der'.\n\
+\n\
+SecItem's are often returned by NSS functions.\n\
+\n\
+You can create and initialize a SecItem yourself by passing the data\n\
+to the SecItem constructor. If you do initialize the data you may either\n\
+pass binary data or text (when ascii == True). When you pass ascii data\n\
+it will be interpreted as base64 encoded binary data. The base64 text may\n\
+optionally be wrapped inside PEM delimiters, but PEM format is not required.\n\
 ");
 static int
 SecItem_init(SecItem *self, PyObject *args, PyObject *kwds)
 {
-    static char *kwlist[] = {"data", "type", NULL};
+    static char *kwlist[] = {"data", "type", "ascii", NULL};
     const void *buffer = NULL;
     Py_ssize_t buffer_len;
     int type = siBuffer;
+    int ascii = 0;
 
     TraceMethodEnter(self);
 
-    if (!PyArg_ParseTupleAndKeywords(args, kwds, "|z#i:SecItem", kwlist,
-                                     &buffer, &buffer_len, &type))
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "|z#ii:SecItem", kwlist,
+                                     &buffer, &buffer_len, &type, &ascii))
         return -1;
 
     if (buffer) {
         self->kind = SECITEM_buffer;
         self->item.type = type;
-        self->item.len = buffer_len;
-        if ((self->item.data = PyMem_MALLOC(buffer_len)) == NULL) {
-            PyErr_Format(PyExc_MemoryError, "not enough memory to copy buffer of size %zd into SecItem",
-                         buffer_len);
-            return -1;
+        if (ascii) {
+            if (base64_to_SECItem(&self->item, (char *)buffer, buffer_len) != SECSuccess) {
+                return -1;
+            }
+        } else {
+            self->item.len = buffer_len;
+            if ((self->item.data = PyMem_MALLOC(buffer_len)) == NULL) {
+                PyErr_Format(PyExc_MemoryError, "not enough memory to copy buffer of size %zd into SecItem",
+                             buffer_len);
+                return -1;
+            }
+            memmove(self->item.data, buffer, buffer_len);
         }
-        memmove(self->item.data, buffer, buffer_len);
     } else {                    /* empty buffer */
         self->kind = SECITEM_buffer;
         self->item.type = siBuffer;
@@ -5343,6 +5630,12 @@ static PyTypeObject SecItemType = {
     0,						/* tp_alloc */
     SecItem_new,				/* tp_new */
 };
+
+/*
+ * NSS WART - We always have to copy the SECItem because there are
+ * more than 1 way to free a SECItem pointer depending on how it was
+ * allocated.
+ */
 
 static PyObject *
 SecItem_new_from_SECItem(const SECItem *item, SECItemKind kind)
@@ -5905,10 +6198,48 @@ AlgorithmID_get_pbe_crypto_mechanism(AlgorithmID *self, PyObject *args, PyObject
     return tuple;
 }
 
+PyDoc_STRVAR(AlgorithmID_get_pbe_iv_doc,
+"get_pbe_iv(password) -> SecItem\n\
+\n\
+:Parameters:\n\
+    password : string\n\
+        the password used to create the PBE Key\n\
+\n\
+Returns the IV (Initialization Vector) used for the PBE cipher.\n\
+");
+
+static PyObject *
+AlgorithmID_get_pbe_iv(AlgorithmID *self, PyObject *args)
+{
+    char *password = NULL;
+    Py_ssize_t password_len = 0;
+    SECItem pwitem;
+    SECItem *iv;
+    PyObject *py_iv = NULL;
+
+    TraceMethodEnter(self);
+
+    if (!PyArg_ParseTuple(args, "s#:get_pbe_iv",
+                          &password, &password_len))
+        return NULL;
+
+    pwitem.data = (unsigned char *)password;
+    pwitem.len = password_len;
+
+    if ((iv = PK11_GetPBEIV(&self->id, &pwitem)) == NULL) {
+        return set_nspr_error(NULL);
+    }
+
+    py_iv = SecItem_new_from_SECItem(iv, SECITEM_iv_param);
+    SECITEM_FreeItem(iv, PR_TRUE);
+    return py_iv;
+}
+
 static PyMethodDef AlgorithmID_methods[] = {
     {"format_lines",             (PyCFunction)AlgorithmID_format_lines,             METH_VARARGS|METH_KEYWORDS, generic_format_lines_doc},
     {"format",                   (PyCFunction)AlgorithmID_format,                   METH_VARARGS|METH_KEYWORDS, generic_format_doc},
     {"get_pbe_crypto_mechanism", (PyCFunction)AlgorithmID_get_pbe_crypto_mechanism, METH_VARARGS|METH_KEYWORDS, AlgorithmID_get_pbe_crypto_mechanism_doc},
+    {"get_pbe_iv",               (PyCFunction)AlgorithmID_get_pbe_iv,               METH_VARARGS,               AlgorithmID_get_pbe_iv_doc},
     {NULL, NULL}  /* Sentinel */
 };
 
@@ -14609,7 +14940,7 @@ PK11Context_digest_final(PyPK11Context *self, PyObject *args)
     if (result != SECSuccess) {
         /*
          * Did we hit the above bug? If so ignore it, otherwise report failure.
-         */ 
+         */
         if (!(suggested_out_len == 0 &&
               PORT_GetError() == SEC_ERROR_LIBRARY_FAILURE)) {
             Py_DECREF(py_out_string);
@@ -22289,6 +22620,7 @@ pk11_param_from_iv(PyObject *self, PyObject *args, PyObject *kwds)
         return set_nspr_error(NULL);
     }
 
+    // FIXME - SecItem_new_from_SECItem makes a copy, the sec_param should be freed)
     return SecItem_new_from_SECItem(sec_param, SECITEM_iv_param);
 }
 
@@ -22811,6 +23143,14 @@ The text is assumed to contain base64 text. The base64 text may\n\
 optionally be wrapped in a PEM header and footer.\n\
 \n\
 Returns a SecItem containg the binary data.\n\
+\n\
+Note, a SecItem can be initialized directly from base64 text by\n\
+utilizing the ascii parameter to the SecItem constructor, thus\n\
+the two are equivalent:\n\
+\n\
+    sec_item = nss.base64_to_binary(text)\n\
+    sec_tiem = nss.SecItem(text, ascii=True)\n\
+\n\
 ");
 
 static PyObject *
