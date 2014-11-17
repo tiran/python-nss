@@ -5141,38 +5141,54 @@ Examples:\n\
 \n\
 If data is:\n\
 \n\
+::\n\
+\n\
     c8:94:00:9f:c2:8d:a2:5a:61:92:f2:cd:39:75:73:f4\n\
 \n\
 data.to_hex(0) will return the single string:\n\
 \n\
+::\n\
+\n\
     'yJQAn8KNolphkvLNOXVz9A=='\n\
 \n\
-data.to_hex(5) will return a list of strings of length 5:\n\
+data.to_hex(5) will return a list of strings where each string has\n\
+a length of 5 (except the last string which may be shorter):\n\
 \n\
-    ['yJQAn',\n\
-     '8KNol',\n\
-     'phkvL',\n\
-     'NOXVz',\n\
-     '9A==']\n\
+::\n\
+\n\
+    [\n\
+         'yJQAn',\n\
+         '8KNol',\n\
+         'phkvL',\n\
+         'NOXVz',\n\
+         '9A=='\n\
+    ]\n\
 \n\
 If you specify the pem_type optional parameter the return value\n\
 will be a list of strings whose first and last strings will be a\n\
 PEM header and footer. For example if pem_type='CERTIFICATE'\n\
 then the return value will be like this:\n\
 \n\
-    ['-----BEGIN CERTIFICATE-----',\n\
-    'yJQAn8KNolphkvLNOXVz9A=='\n\
-     '-----END CERTIFICATE-----']\n\
+::\n\
+\n\
+    [\n\
+        '-----BEGIN CERTIFICATE-----',\n\
+        'yJQAn8KNolphkvLNOXVz9A=='\n\
+        '-----END CERTIFICATE-----'\n\
     ]\n\
 \n\
 When a list of strings is returned it is easy to form a single\n\
 text block using the line ending of your choice, for example:\n\
 \n\
-    '\n'.join(data.to_base64())\n\
+::\n\
+\n\
+    '\\n'.join(data.to_base64())\n\
 \n\
 Thus a PEM block can be formed like this:\n\
 \n\
-    '\n\.join(data.to_hex(pem_type='CERTIFICATE'))\n\
+::\n\
+\n\
+    '\\n'\.join(data.to_hex(pem_type='CERTIFICATE'))\n\
 \n\
 ");
 
