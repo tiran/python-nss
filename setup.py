@@ -21,9 +21,11 @@ version = "0.17.0"
 
 doc_manifest = [
     [['include README LICENSE* doc/ChangeLog',
-      'recursive-include doc *.py *.txt',],
+      'recursive-include doc *.py *.txt',
+      'prune doc/examples/pki'],
      [('^doc/', '')], None],
-    [['recursive-include test *.py *.txt',],
+    [['recursive-include test run_tests setup_certs.py test_*.py util.py *.txt',
+      'prune test/pki'],
      None , None],
     [['recursive-include lib *.py *.txt',],
      [('^lib/', '')] , 'examples'],
