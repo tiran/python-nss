@@ -5188,7 +5188,7 @@ Thus a PEM block can be formed like this:\n\
 \n\
 ::\n\
 \n\
-    '\\n'\.join(data.to_hex(pem_type='CERTIFICATE'))\n\
+    '\\n'\.join(data.to_base64(pem_type='CERTIFICATE'))\n\
 \n\
 ");
 
