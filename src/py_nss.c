@@ -1969,6 +1969,20 @@ SECItem_to_base64(SECItem *item, size_t chars_per_line, char *pem_type)
     return NULL;
 }
 
+static bool
+pyobject_has_method(PyObject* obj, const char *method_name)
+{
+    PyObject *attr;
+    int is_callable;
+
+    if ((attr = PyObject_GetAttrString(obj, method_name)) == NULL) {
+        return false;
+    }
+    is_callable = PyCallable_Check(attr);
+    Py_DECREF(attr);
+    return is_callable ? true : false;
+}
+
 /*
  * read_data_from_file(PyObject *file_arg)
  *
@@ -1992,11 +2006,11 @@ read_data_from_file(PyObject *file_arg)
         if ((py_file = PyFile_FromString(PyString_AsString(file_arg), "r")) == NULL) {
             return NULL;
         }
-    } else if (PyFile_Check(file_arg)) {
+    } else if (pyobject_has_method(file_arg, "read")) {
         py_file = file_arg;
 	Py_INCREF(py_file);
     } else {
-        PyErr_SetString(PyExc_TypeError, "Bad file, must be pathname or file object");
+        PyErr_SetString(PyExc_TypeError, "Bad file, must be pathname or file like object with read() method");
         return NULL;
     }
 
@@ -5188,7 +5202,7 @@ Thus a PEM block can be formed like this:\n\
 \n\
 ::\n\
 \n\
-    '\\n'\.join(data.to_base64(pem_type='CERTIFICATE'))\n\
+    '\\n'.join(data.to_base64(pem_type='CERTIFICATE'))\n\
 \n\
 ");
 
