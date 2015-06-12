@@ -22,7 +22,7 @@ REQUIRE_CLIENT_CERT_ALWAYS = 4
 
 verbose = False
 info = False
-password = 'db_passwd'
+password = 'DB_passwd'
 use_ssl = True
 client_cert_action = NO_CLIENT_CERT
 db_name = 'sql:pki'

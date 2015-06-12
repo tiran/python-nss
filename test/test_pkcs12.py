@@ -15,8 +15,8 @@ import nss.nss as nss
 
 verbose = False
 db_name = 'sql:pki'
-db_passwd = 'db_passwd'
-pk12_passwd = 'pk12_passwd'
+db_passwd = 'DB_passwd'
+pk12_passwd = 'PK12_passwd'
 
 cert_nickname = 'test_user'
 pk12_filename = '%s.p12' % cert_nickname
@@ -115,6 +115,9 @@ def strip_key_from_pk12_listing(text):
         raise ValueError('Could not file Key section in pk12 listing')
     return text[match.start(0):]
 
+def strip_salt_from_pk12_listing(text):
+    return re.sub(r'\s+Salt:\s*\n.*', '', text)
+
 #-------------------------------------------------------------------------------
 
 def load_tests(loader, tests, pattern):
@@ -206,9 +209,11 @@ class TestPKCS12Export(unittest.TestCase):
 
         pk12_listing = list_pk12(pk12_filename)
         pk12_listing = strip_key_from_pk12_listing(pk12_listing)
+        pk12_listing = strip_salt_from_pk12_listing(pk12_listing)
 
         exported_pk12_listing = list_pk12(exported_pk12_filename)
         exported_pk12_listing = strip_key_from_pk12_listing(exported_pk12_listing)
+        exported_pk12_listing = strip_salt_from_pk12_listing(exported_pk12_listing)
 
         self.assertEqual(pk12_listing, exported_pk12_listing)
 
