@@ -4,6 +4,7 @@ import argparse
 import atexit
 import logging
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -11,6 +12,12 @@ from string import Template
 import tempfile
 
 #-------------------------------------------------------------------------------
+logger = None
+
+FIPS_SWITCH_FAILED_ERR = 11
+FIPS_ALREADY_ON_ERR = 12
+FIPS_ALREADY_OFF_ERR = 13
+
 
 class CmdError(Exception):
     def __init__(self, cmd_args, returncode, message=None, stdout=None, stderr=None):
@@ -41,7 +48,7 @@ def run_cmd(cmd_args, input=None):
         returncode = p.returncode
         if returncode != 0:
             raise CmdError(cmd_args, returncode,
-                           'failed %s' % (', '.join(cmd_args)),
+                           'failed %s' % (' '.join(cmd_args)),
                            stdout, stderr)
         return stdout, stderr
     except OSError as e:
@@ -319,9 +326,75 @@ def add_trusted_certs(options):
     run_cmd(cmd_args)
     return name
 
+def parse_fips_enabled(string):
+    if re.search('FIPS mode disabled', string):
+        return False
+    if re.search('FIPS mode enabled', string):
+        return True
+    raise ValueError('unknown fips enabled string: "%s"' % string)
+
+def get_system_fips_enabled():
+    fips_path = '/proc/sys/crypto/fips_enabled'
+
+    try:
+        with open(fips_path) as f:
+            data = f.read()
+    except Exception as e:
+        logger.warning("Unable to determine system FIPS mode: %s" % e)
+        data = '0'
+
+    value = int(data)
+    if value:
+        return True
+    else:
+        return False
+        
+
+def get_db_fips_enabled(db_name):
+    cmd_args = ['/usr/bin/modutil',
+                '-dbdir', db_name,               # NSS database
+                '-chkfips', 'true',              # enable/disable fips
+                ]
+
+    try:
+        stdout, stderr = run_cmd(cmd_args)
+        return parse_fips_enabled(stdout)
+    except CmdError as e:
+        if e.returncode == FIPS_SWITCH_FAILED_ERR:
+            return parse_fips_enabled(e.stdout)
+        else:
+            raise
+        
+def set_fips_mode(options):
+    if options.fips:
+        state = 'true'
+    else:
+        if get_system_fips_enabled():
+            logger.warning("System FIPS enabled, cannot disable FIPS")
+            return
+        state = 'false'
+
+    logging.info('setting fips: %s', state)
+
+    cmd_args = ['/usr/bin/modutil',
+                '-dbdir', options.db_name,       # NSS database
+                '-fips', state,                  # enable/disable fips
+                '-force'
+                ]
+
+    try:
+        stdout, stderr = run_cmd(cmd_args)
+    except CmdError as e:
+        if options.fips and e.returncode == FIPS_ALREADY_ON_ERR:
+            pass
+        elif not options.fips and e.returncode == FIPS_ALREADY_OFF_ERR:
+            pass
+        else:
+            raise
 #-------------------------------------------------------------------------------
 
 def setup_certs(args):
+    global logger
 
     # --- cmd ---
     parser = argparse.ArgumentParser(description='create certs for testing',
@@ -393,6 +466,9 @@ def setup_certs(args):
     parser.add_argument('--serial-file', dest='serial_file',
                         help='name of file used to track next serial number')
 
+    parser.add_argument('--db-fips', action='store_true',
+                        help='enable FIPS mode on NSS Database')
+
     parser.set_defaults(verbose = False,
                         debug = False,
                         quiet = False,
@@ -402,7 +478,7 @@ def setup_certs(args):
                         hostname = os.uname()[1],
                         db_type = 'sql',
                         db_dir = 'pki',
-                        db_passwd = 'db_passwd',
+                        db_passwd = 'DB_passwd',
                         ca_subject = 'CN=Test CA',
                         ca_nickname = 'test_ca',
                         server_subject =  'CN=${hostname}',
@@ -416,6 +492,7 @@ def setup_certs(args):
                         valid_months = 12,
                         ca_path_len = 2,
                         serial_file = '${db_dir}/serial',
+                        fips = False,
                         )
 
 
@@ -468,6 +545,7 @@ def setup_certs(args):
 
     try:
         create_database(options)
+        set_fips_mode(options)
         cert_nicknames.append(create_ca_cert(options))
         cert_nicknames.append(create_server_cert(options))
         cert_nicknames.append(create_client_cert(options))
@@ -488,6 +566,8 @@ def setup_certs(args):
     logging.info('---------- Summary ----------')
     logging.info('NSS database name="%s", password="%s"',
                  options.db_name, options.db_passwd)
+    logging.info('system FIPS mode=%s', get_system_fips_enabled());
+    logging.info('DB FIPS mode=%s', get_db_fips_enabled(options.db_name));
     logging.info('CA nickname="%s", CA subject="%s"',
                  options.ca_nickname, options.ca_subject)
     logging.info('server nickname="%s", server subject="%s"',
