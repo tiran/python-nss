@@ -1547,6 +1547,13 @@ HostEntry_new_from_PRNetAddr(PRNetAddr *pr_netaddr)
     }                                                                   \
 }
 
+#define SOCKET_CHECK_OPEN(py_socket)                            \
+{                                                               \
+    if (!py_socket->open_for_read || !py_socket->pr_socket) {   \
+        return err_closed();                                    \
+    }                                                           \
+}
+
 static void
 Socket_init_from_PRFileDesc(Socket *self, PRFileDesc *pr_socket, int family)
 {
@@ -2079,7 +2086,7 @@ Socket_connect(Socket *self, PyObject *args, PyObject *kwds)
     }
     Py_END_ALLOW_THREADS
 
-    self->open_for_read = 1;
+    SOCKET_OPEN_FOR_READ(self);
     Py_RETURN_NONE;
 }
 
@@ -2138,6 +2145,7 @@ Socket_accept(Socket *self, PyObject *args, PyObject *kwds)
     if ((py_socket = Socket_new_from_PRFileDesc(pr_socket, self->family)) == NULL) {
         goto error;
     }
+    SOCKET_OPEN_FOR_READ(py_socket);
 
     if ((return_values = Py_BuildValue("NN", py_socket, py_netaddr)) == NULL) {
         goto error;
@@ -2222,6 +2230,7 @@ Socket_accept_read(Socket *self, PyObject *args, PyObject *kwds)
     if ((py_socket = Socket_new_from_PRFileDesc(pr_socket, self->family)) == NULL) {
         goto error;
     }
+    SOCKET_OPEN_FOR_READ(py_socket);
 
     if ((return_values = Py_BuildValue("NNN", py_socket, py_netaddr, py_buf)) == NULL) {
         goto error;
@@ -2353,7 +2362,7 @@ Socket_shutdown(Socket *self, PyObject *args, PyObject *kwds)
     Py_END_ALLOW_THREADS
 
     if (how == PR_SHUTDOWN_RCV || how == PR_SHUTDOWN_BOTH) {
-        self->open_for_read = 0;
+        SOCKET_CLOSED_FOR_READ(self);
     }
 
     Py_RETURN_NONE;
@@ -2384,7 +2393,7 @@ Socket_close(Socket *self, PyObject *args)
     }
     Py_END_ALLOW_THREADS
 
-    self->open_for_read = 0;
+    SOCKET_CLOSED_FOR_READ(self);
     self->pr_socket = NULL;
     Py_RETURN_NONE;
 }
@@ -2434,6 +2443,8 @@ _readline(Socket *self, long size)
     unsigned int timeout = PR_INTERVAL_NO_TIMEOUT;
     long read_len, space_available, amount_read, line_len, tail_len;
     PyObject *line = NULL;
+
+    SOCKET_CHECK_OPEN(self);
 
     while (1) {
         /* Is there a complete line already buffered? */
@@ -2558,9 +2569,7 @@ Socket_readlines(Socket *self, PyObject *args, PyObject *kwds)
 static PyObject *
 Socket_iter(Socket *self)
 {
-    if (!self->open_for_read) {
-        return err_closed();
-    }
+    SOCKET_CHECK_OPEN(self);
 
     Py_INCREF(self);
     return (PyObject *)self;
@@ -2621,6 +2630,8 @@ _recv(Socket *self, long requested_amount, unsigned int timeout)
     PyObject *py_buf = NULL;
     long read_len, amount_read, result_len, tail_len;
     char *dst = NULL;
+
+    SOCKET_CHECK_OPEN(self);
 
     result_len = 0;
     read_len = requested_amount;
@@ -2708,6 +2719,7 @@ Socket_read(Socket *self, PyObject *args, PyObject *kwds)
     if (!PyArg_ParseTupleAndKeywords(args, kwds, "|l:read", kwlist, &requested_amount))
         return NULL;
 
+    SOCKET_CHECK_OPEN(self);
 
     /* If read a specific amount then use recv */
     if (requested_amount >= 0) {
@@ -2797,6 +2809,8 @@ Socket_recv_from(Socket *self, PyObject *args, PyObject *kwds)
         return NULL;
 
     SOCKET_CHECK_FAMILY(py_netaddr);
+
+    SOCKET_CHECK_OPEN(self);
 
     ASSIGN_REF(self->py_netaddr, py_netaddr);
 

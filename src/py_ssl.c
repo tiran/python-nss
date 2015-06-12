@@ -575,6 +575,7 @@ SSLSocket_accept(SSLSocket *self, PyObject *args, PyObject *kwds)
     if ((py_ssl_socket = SSLSocket_new_from_PRFileDesc(pr_socket, self->family)) == NULL) {
         goto error;
     }
+    SOCKET_OPEN_FOR_READ(py_ssl_socket);
 
     if ((return_value = Py_BuildValue("NN", py_ssl_socket, py_netaddr)) == NULL) {
         goto error;
