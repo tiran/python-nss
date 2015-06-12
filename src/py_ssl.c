@@ -1638,7 +1638,7 @@ SSLSocket_set_certificate_db(SSLSocket *self, PyObject *args)
 {
     CertDB *py_certdb = NULL;
 
-    if (!PyArg_ParseTuple(args, "O!:set_certificate_db", CertDBType, &py_certdb))
+    if (!PyArg_ParseTuple(args, "O!:set_certificate_db", &CertDBType, &py_certdb))
         return NULL;
 
     if (SSL_CertDBHandleSet(self->pr_socket, py_certdb->handle) != SECSuccess) {
