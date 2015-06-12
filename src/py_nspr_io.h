@@ -61,6 +61,20 @@ typedef struct {
 } ReadAhead;
 
 
+#define SOCKET_OPEN_FOR_READ(py_socket)         \
+{                                               \
+    Socket *sock = (Socket*)py_socket;          \
+                                                \
+    sock->open_for_read = 1;                    \
+}
+
+#define SOCKET_CLOSED_FOR_READ(py_socket)       \
+{                                               \
+    Socket *sock = (Socket*)py_socket;          \
+                                                \
+    sock->open_for_read = 0;                    \
+}
+
 #define INIT_READAHEAD(readahead)               \
 {                                               \
     (readahead)->buf = NULL;                    \
