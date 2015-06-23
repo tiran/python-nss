@@ -5,6 +5,7 @@ import os
 import re
 import subprocess
 import shlex
+import StringIO
 import unittest
 
 from nss.error import NSPRError
@@ -123,7 +124,9 @@ def strip_salt_from_pk12_listing(text):
 def load_tests(loader, tests, pattern):
     suite = unittest.TestSuite()
     tests = loader.loadTestsFromNames(['test_pkcs12.TestPKCS12Decoder.test_read',
-                                       'test_pkcs12.TestPKCS12Decoder.test_import',
+                                       'test_pkcs12.TestPKCS12Decoder.test_import_filename',
+                                       'test_pkcs12.TestPKCS12Decoder.test_import_fileobj',
+                                       'test_pkcs12.TestPKCS12Decoder.test_import_filelike',
                                        'test_pkcs12.TestPKCS12Export.test_export',
                                        ])
     suite.addTests(tests)
@@ -175,13 +178,46 @@ class TestPKCS12Decoder(unittest.TestCase):
 
         self.assertEqual(cert_bag_count, 2)
 
-    def test_import(self):
-        if verbose: print "test_import"
+    def test_import_filename(self):
+        if verbose: print "test_import_filename"
         delete_cert_from_db(cert_nickname)
         self.assertEqual(get_cert_der_from_db(cert_nickname), None)
 
         slot = nss.get_internal_key_slot()
         pkcs12 = nss.PKCS12Decoder(pk12_filename, pk12_passwd, slot)
+        slot.authenticate()
+        pkcs12.database_import()
+        cert_der = get_cert_der_from_db(cert_nickname)
+        self.assertEqual(cert_der, self.cert_der)
+
+    def test_import_fileobj(self):
+        if verbose: print "test_import_fileobj"
+        delete_cert_from_db(cert_nickname)
+        self.assertEqual(get_cert_der_from_db(cert_nickname), None)
+
+        slot = nss.get_internal_key_slot()
+
+        file_obj = open(pk12_filename)
+
+        pkcs12 = nss.PKCS12Decoder(file_obj, pk12_passwd, slot)
+        file_obj.close()
+        slot.authenticate()
+        pkcs12.database_import()
+        cert_der = get_cert_der_from_db(cert_nickname)
+        self.assertEqual(cert_der, self.cert_der)
+
+    def test_import_filelike(self):
+        if verbose: print "test_import_filelike"
+        delete_cert_from_db(cert_nickname)
+        self.assertEqual(get_cert_der_from_db(cert_nickname), None)
+
+        slot = nss.get_internal_key_slot()
+
+        with open(pk12_filename) as f:
+            data = f.read()
+        file_obj = StringIO.StringIO(data)
+
+        pkcs12 = nss.PKCS12Decoder(file_obj, pk12_passwd, slot)
         slot.authenticate()
         pkcs12.database_import()
         cert_der = get_cert_der_from_db(cert_nickname)
