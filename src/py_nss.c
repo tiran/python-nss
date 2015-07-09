@@ -24141,7 +24141,7 @@ pkcs12_export(PyObject *self, PyObject *args, PyObject *kwds)
     key_cipher = SEC_OID_PKCS12_V2_PBE_WITH_SHA1_AND_3KEY_TRIPLE_DES_CBC;
     cert_cipher = PK11_IsFIPS() ? SEC_OID_UNKNOWN : SEC_OID_PKCS12_V2_PBE_WITH_SHA1_AND_40_BIT_RC2_CBC;
 
-    if (!PyArg_ParseTupleAndKeywords(args, kwds, "eses#|IIO!:pkcs12_export", kwlist,
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "eses#|IIO&:pkcs12_export", kwlist,
                                      "utf-8", &utf8_nickname,
                                      "utf-8", &utf8_pkcs12_password, &utf8_pkcs12_password_len,
                                      &key_cipher, &cert_cipher,
