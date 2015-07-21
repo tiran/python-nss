@@ -58,7 +58,7 @@ def update_version():
         f.write("__version__ = '%s'\n" % version)
 
     if need_to_update:
-        print "Updating version in \"%s\" to \"%s\"" % (version_file, version)
+        print("Updating version in \"%s\" to \"%s\"" % (version_file, version))
         os.rename(tmp_file, version_file)
     else:
         os.unlink(tmp_file)
@@ -315,11 +315,11 @@ def main(argv):
 
     for arg in argv[:]:
         if arg in ('-d', '--debug'):
-            print "compiling with debug"
+            print("compiling with debug")
             extra_compile_args += debug_compile_args
             argv.remove(arg)
         if arg in ('-t', '--trace'):
-            print "compiling with trace"
+            print("compiling with trace")
             extra_compile_args += ['-DDEBUG']
             argv.remove(arg)
 
