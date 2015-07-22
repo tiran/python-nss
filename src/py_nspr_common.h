@@ -190,7 +190,7 @@ typedef PyObject *(*ssizessizeargfunc)(PyObject *, Py_ssize_t, Py_ssize_t);
 #define TYPE_READY(type)                                                \
 {                                                                       \
     if (PyType_Ready(&type) < 0)                                        \
-        return;                                                         \
+        return MOD_ERROR_VAL;                                           \
     Py_INCREF(&type);                                                   \
     PyModule_AddObject(m, rindex(type.tp_name, '.')+1, (PyObject *)&type); \
 }
@@ -203,14 +203,14 @@ typedef PyObject *(*ssizessizeargfunc)(PyObject *, Py_ssize_t, Py_ssize_t);
     if ((dict = PyModule_GetDict(m)) == NULL) {                         \
         PyErr_Format(PyExc_SystemError, "module '%s' has no __dict__",  \
                      PyModule_GetName(m));                              \
-        return;                                                         \
+        return MOD_ERROR_VAL;                                           \
     }                                                                   \
     if (PyDict_GetItemString(dict, #c)) {                               \
         PyErr_Format(PyExc_SystemError, "module '%s' already contains %s", \
                          PyModule_GetName(m), #c);                      \
-        return;                                                         \
+        return MOD_ERROR_VAL;                                           \
     }                                                                   \
-    if (PyModule_AddIntConstant(m, #c, c) < 0) return;                  \
+    if (PyModule_AddIntConstant(m, #c, c) < 0) return MOD_ERROR_VAL;    \
 }
 
 #define AddIntConstantName(name, c)                                     \
@@ -221,14 +221,14 @@ typedef PyObject *(*ssizessizeargfunc)(PyObject *, Py_ssize_t, Py_ssize_t);
     if ((dict = PyModule_GetDict(m)) == NULL) {                         \
         PyErr_Format(PyExc_SystemError, "module '%s' has no __dict__",  \
                      PyModule_GetName(m));                              \
-        return;                                                         \
+        return MOD_ERROR_VAL;                                           \
     }                                                                   \
     if (PyDict_GetItemString(dict, #c)) {                               \
         PyErr_Format(PyExc_SystemError, "module '%s' already contains %s", \
                          PyModule_GetName(m), #c);                      \
-        return;                                                         \
+        return MOD_ERROR_VAL;                                           \
     }                                                                   \
-    if (PyModule_AddIntConstant(m, #name, c) < 0) return;               \
+    if (PyModule_AddIntConstant(m, #name, c) < 0) return MOD_ERROR_VAL; \
 }
 
 #ifdef DEBUG

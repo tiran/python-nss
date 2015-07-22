@@ -352,6 +352,7 @@ NewType_new_from_NSSType(NSSType *id)
 
 #define PY_SSIZE_T_CLEAN
 #include "Python.h"
+#include "py_2_3_compat.h"
 #include "structmember.h"
 #include "datetime.h"
 
@@ -24827,28 +24828,52 @@ static PyNSPR_NSS_C_API_Type nspr_nss_c_api =
 
 /* ============================== Module Construction ============================= */
 
+#define MOD_NAME "nss.nss"
+
 PyDoc_STRVAR(module_doc,
 "This module implements the NSS functions\n\
 \n\
 ");
 
-PyMODINIT_FUNC
-initnss(void)
+#if PY_MAJOR_VERSION >= 3
+
+static struct PyModuleDef module_def = {
+    PyModuleDef_HEAD_INIT,
+    MOD_NAME,                   /* m_name */
+    doc,                        /* m_doc */
+    -1,                         /* m_size */
+    methods                     /* m_methods */
+    NULL,                       /* m_reload */
+    NULL,                       /* m_traverse */
+    NULL,                       /* m_clear */
+    NULL                        /* m_free */
+};
+
+#else /* PY_MAOR_VERSION < 3 */
+#endif /* PY_MAJOR_VERSION */
+
+MOD_INIT(nss)
 {
     PyObject *m;
 
     if (import_nspr_error_c_api() < 0) {
-        return;
+        return MOD_ERROR_VAL;
     }
 
     PyDateTime_IMPORT;
 
-    if ((m = Py_InitModule3("nss.nss", module_methods, module_doc)) == NULL) {
-        return;
+#if PY_MAJOR_VERSION >= 3
+    m = PyModule_Create(&module_def);
+#else
+    m = Py_InitModule3(MOD_NAME, module_methods, module_doc);
+#endif
+
+    if (m == NULL) {
+        return MOD_ERROR_VAL MOD_ERROR_VAL;
     }
 
     if ((empty_tuple = PyTuple_New(0)) == NULL) {
-        return;
+        return MOD_ERROR_VAL;
     }
     Py_INCREF(empty_tuple);
 
@@ -24890,7 +24915,7 @@ initnss(void)
 
     /* Export C API */
     if (PyModule_AddObject(m, "_C_API", PyCObject_FromVoidPtr((void *)&nspr_nss_c_api, NULL)) != 0) {
-        return;
+        return MOD_ERROR_VAL;
     }
 
     AddIntConstant(OCTETS_PER_LINE_DEFAULT);
@@ -25026,15 +25051,15 @@ initnss(void)
      ***************************************************************************/
 
     if ((crl_reason_name_to_value = PyDict_New()) == NULL) {
-        return;
+        return MOD_ERROR_VAL;
     }
     if ((crl_reason_value_to_name = PyDict_New()) == NULL) {
-        return;
+        return MOD_ERROR_VAL;
     }
 
 #define ExportConstant(constant)                      \
 if (_AddIntConstantWithLookup(m, #constant, constant, \
-    "crlEntry", crl_reason_name_to_value, crl_reason_value_to_name) < 0) return;
+    "crlEntry", crl_reason_name_to_value, crl_reason_value_to_name) < 0) return MOD_ERROR_VAL;
 
     ExportConstant(crlEntryReasonUnspecified);
     ExportConstant(crlEntryReasonKeyCompromise);
@@ -25054,15 +25079,15 @@ if (_AddIntConstantWithLookup(m, #constant, constant, \
      ***************************************************************************/
 
     if ((general_name_name_to_value = PyDict_New()) == NULL) {
-        return;
+        return MOD_ERROR_VAL;
     }
     if ((general_name_value_to_name = PyDict_New()) == NULL) {
-        return;
+        return MOD_ERROR_VAL;
     }
 
 #define ExportConstant(constant)                      \
 if (_AddIntConstantWithLookup(m, #constant, constant, \
-    "cert", general_name_name_to_value, general_name_value_to_name) < 0) return;
+    "cert", general_name_name_to_value, general_name_value_to_name) < 0) return MOD_ERROR_VAL;
 
     ExportConstant(certOtherName);
     ExportConstant(certRFC822Name);
@@ -25081,15 +25106,15 @@ if (_AddIntConstantWithLookup(m, #constant, constant, \
      ***************************************************************************/
 
     if ((ckm_name_to_value = PyDict_New()) == NULL) {
-        return;
+        return MOD_ERROR_VAL;
     }
     if ((ckm_value_to_name = PyDict_New()) == NULL) {
-        return;
+        return MOD_ERROR_VAL;
     }
 
 #define ExportConstant(constant)                      \
 if (_AddIntConstantWithLookup(m, #constant, constant, \
-    "CKM_", ckm_name_to_value, ckm_value_to_name) < 0) return;
+    "CKM_", ckm_name_to_value, ckm_value_to_name) < 0) return MOD_ERROR_VAL;
 
     ExportConstant(CKM_RSA_PKCS_KEY_PAIR_GEN);
     ExportConstant(CKM_RSA_PKCS);
@@ -25439,15 +25464,15 @@ if (_AddIntConstantWithLookup(m, #constant, constant, \
      * Attribute Types
      ***************************************************************************/
     if ((cka_name_to_value = PyDict_New()) == NULL) {
-        return;
+        return MOD_ERROR_VAL;
     }
     if ((cka_value_to_name = PyDict_New()) == NULL) {
-        return;
+        return MOD_ERROR_VAL;
     }
 
 #define ExportConstant(constant)                      \
 if (_AddIntConstantWithLookup(m, #constant, constant, \
-    "CKA_", cka_name_to_value, cka_value_to_name) < 0) return;
+    "CKA_", cka_name_to_value, cka_value_to_name) < 0) return MOD_ERROR_VAL;
 
     /* The following attribute types are defined: */
     ExportConstant(CKA_CLASS);
@@ -25583,15 +25608,15 @@ if (_AddIntConstantWithLookup(m, #constant, constant, \
      ***************************************************************************/
 
     if ((sec_oid_name_to_value = PyDict_New()) == NULL) {
-        return;
+        return MOD_ERROR_VAL;
     }
     if ((sec_oid_value_to_name = PyDict_New()) == NULL) {
-        return;
+        return MOD_ERROR_VAL;
     }
 
 #define ExportConstant(constant)                      \
 if (_AddIntConstantWithLookup(m, #constant, constant, \
-    "SEC_OID_", sec_oid_name_to_value, sec_oid_value_to_name) < 0) return;
+    "SEC_OID_", sec_oid_name_to_value, sec_oid_value_to_name) < 0) return MOD_ERROR_VAL;
 
     ExportConstant(SEC_OID_UNKNOWN);
     ExportConstant(SEC_OID_MD2);
@@ -26016,15 +26041,15 @@ if (_AddIntConstantWithLookup(m, #constant, constant, \
      ***************************************************************************/
 
     if ((pkcs12_cipher_name_to_value = PyDict_New()) == NULL) {
-        return;
+        return MOD_ERROR_VAL;
     }
     if ((pkcs12_cipher_value_to_name = PyDict_New()) == NULL) {
-        return;
+        return MOD_ERROR_VAL;
     }
 
 #define ExportConstant(constant)                      \
 if (_AddIntConstantWithLookup(m, #constant, constant, \
-    "PKCS12_", pkcs12_cipher_name_to_value, pkcs12_cipher_value_to_name) < 0) return;
+    "PKCS12_", pkcs12_cipher_name_to_value, pkcs12_cipher_value_to_name) < 0) return MOD_ERROR_VAL;
 
     ExportConstant(PKCS12_RC2_CBC_40);
     ExportConstant(PKCS12_RC2_CBC_128);
@@ -26033,4 +26058,5 @@ if (_AddIntConstantWithLookup(m, #constant, constant, \
     ExportConstant(PKCS12_DES_56);
     ExportConstant(PKCS12_DES_EDE3_168);
 
+    return MOD_SUCCESS_VAL(m);
 }
