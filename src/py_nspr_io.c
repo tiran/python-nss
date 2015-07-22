@@ -10,6 +10,7 @@
 
 #define PY_SSIZE_T_CLEAN
 #include "Python.h"
+#include "py_2_3_compat.h"
 #include "structmember.h"
 
 #include "py_nspr_common.h"
@@ -3815,21 +3816,45 @@ static PyNSPR_IO_C_API_Type nspr_io_c_api =
 
 /* ============================== Module Construction ============================= */
 
+#define MOD_NAME "nss.io"
+
 PyDoc_STRVAR(module_doc,
 "This module implements the NSPR IO functions\n\
 \n\
 ");
 
-PyMODINIT_FUNC
-initio(void)
+#if PY_MAJOR_VERSION >= 3
+
+static struct PyModuleDef module_def = {
+    PyModuleDef_HEAD_INIT,
+    MOD_NAME,                   /* m_name */
+    doc,                        /* m_doc */
+    -1,                         /* m_size */
+    methods                     /* m_methods */
+    NULL,                       /* m_reload */
+    NULL,                       /* m_traverse */
+    NULL,                       /* m_clear */
+    NULL                        /* m_free */
+};
+
+#else /* PY_MAOR_VERSION < 3 */
+#endif /* PY_MAJOR_VERSION */
+
+MOD_INIT(io)
 {
     PyObject *m;
 
     if (import_nspr_error_c_api() < 0)
-        return;
+        return MOD_ERROR_VAL;
 
-    if ((m = Py_InitModule3("io", module_methods, module_doc)) == NULL) {
-        return;
+#if PY_MAJOR_VERSION >= 3
+    m = PyModule_Create(&module_def);
+#else
+    m = Py_InitModule3(MOD_NAME, module_methods, module_doc);
+#endif
+
+    if (m == NULL) {
+        return MOD_ERROR_VAL;
     }
 
     TYPE_READY(NetworkAddressType);
@@ -3839,7 +3864,7 @@ initio(void)
 
     /* Export C API */
     if (PyModule_AddObject(m, "_C_API", PyCObject_FromVoidPtr((void *)&nspr_io_c_api, NULL)) != 0)
-        return;
+        return MOD_ERROR_VAL;
 
     /* Socket types */
     AddIntConstant(PR_AF_INET);
@@ -3905,4 +3930,5 @@ initio(void)
     AddIntConstant(PR_POLL_NVAL);
     AddIntConstant(PR_POLL_HUP);
 
+    return MOD_SUCCESS_VAL(m);
 }

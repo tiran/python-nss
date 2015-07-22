@@ -4,6 +4,7 @@
 
 #define PY_SSIZE_T_CLEAN
 #include "Python.h"
+#include "py_2_3_compat.h"
 #include "structmember.h"
 
 #define NSS_ERROR_MODULE
@@ -809,31 +810,56 @@ static PyNSPR_ERROR_C_API_Type nspr_error_c_api =
 
 /* ============================== Module Construction ============================= */
 
+#define MOD_NAME "nss.error"
+
 PyDoc_STRVAR(module_doc,
 "This module defines the NSPR errors and provides functions to\n\
 manipulate them.\n\
 ");
 
-PyMODINIT_FUNC
-initerror(void)
+#if PY_MAJOR_VERSION >= 3
+
+static struct PyModuleDef module_def = {
+    PyModuleDef_HEAD_INIT,
+    MOD_NAME,                   /* m_name */
+    doc,                        /* m_doc */
+    -1,                         /* m_size */
+    methods                     /* m_methods */
+    NULL,                       /* m_reload */
+    NULL,                       /* m_traverse */
+    NULL,                       /* m_clear */
+    NULL                        /* m_free */
+};
+
+#else /* PY_MAOR_VERSION < 3 */
+#endif /* PY_MAJOR_VERSION */
+
+MOD_INIT(error)
 {
     PyObject *m;
     PyObject *py_error_doc = NULL;
     PyObject *py_module_doc = NULL;
 
-    if ((m = Py_InitModule3("error", module_methods, module_doc)) == NULL)
-        return;
+#if PY_MAJOR_VERSION >= 3
+    m = PyModule_Create(&module_def);
+#else
+    m = Py_InitModule3(MOD_NAME, module_methods, module_doc);
+#endif
+
+    if (m == NULL) {
+        return MOD_ERROR_VAL;
+    }
 
     if ((empty_tuple = PyTuple_New(0)) == NULL) {
-        return;
+        return MOD_ERROR_VAL;
     }
     Py_INCREF(empty_tuple);
 
     if ((py_error_doc = init_py_nspr_errors(m)) == NULL)
-        return;
+        return MOD_ERROR_VAL;
 
     if ((py_module_doc = PyString_FromString(module_doc)) == NULL)
-        return;
+        return MOD_ERROR_VAL;
 
     PyString_ConcatAndDel(&py_module_doc, py_error_doc);
     PyModule_AddObject(m, "__doc__", py_module_doc);
@@ -846,6 +872,8 @@ initerror(void)
     /* Export C API */
     nspr_error_c_api.nspr_exception = (PyObject *)&NSPRErrorType;
     if (PyModule_AddObject(m, "_C_API", PyCObject_FromVoidPtr((void *)&nspr_error_c_api, NULL)) != 0)
-        return;
+        return MOD_ERROR_VAL;
+
+    return MOD_SUCCESS_VAL(m);
 
 }

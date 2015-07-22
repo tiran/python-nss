@@ -8,6 +8,7 @@
 
 #define PY_SSIZE_T_CLEAN
 #include "Python.h"
+#include "py_2_3_compat.h"
 #include "structmember.h"
 
 #include "py_nspr_common.h"
@@ -197,14 +198,14 @@ ssl_version_to_repr_kind(unsigned int major, unsigned int minor,
             version_enum = SSL_LIBRARY_VERSION_TLS_1_3;
             break;
         default:
-            PyErr_Format(PyExc_ValueError, 
+            PyErr_Format(PyExc_ValueError,
                          "Verson %d.%d has unkown minor version",
                          major, minor);
             return NULL;
         }
         break;
     default:
-        PyErr_Format(PyExc_ValueError, 
+        PyErr_Format(PyExc_ValueError,
                      "Verson %d.%d has unkown major version",
                      major, minor);
         return NULL;
@@ -2052,7 +2053,7 @@ SSLSocket_get_negotiated_host(SSLSocket *self, PyObject *args)
         SECITEM_FreeItem(host, PR_TRUE);
         return NULL;
     }
-    
+
     SECITEM_FreeItem(host, PR_TRUE);
     return py_host;
 }
@@ -2129,7 +2130,7 @@ SSLSocket_connection_info_format_lines(SSLSocket *self, PyObject *args, PyObject
     Py_CLEAR(obj1);
 
     if ((obj1 = PyString_FromFormat("%d-bit %s",
-                                    channel.keaKeyBits, 
+                                    channel.keaKeyBits,
                                     suite.keaTypeName)) == NULL) {
         goto fail;
     }
@@ -2561,7 +2562,7 @@ SSLCipherSuiteInformation_format_lines(SSLCipherSuiteInformation *self, PyObject
         return NULL;
     }
 
-    
+
     if ((obj1 = PyString_FromFormat("%s (0x%x)",
                                     self->info.cipherSuiteName,
                                     self->info.cipherSuite)) == NULL) {
@@ -2606,7 +2607,7 @@ SSLCipherSuiteInformation_format_lines(SSLCipherSuiteInformation *self, PyObject
     FMT_OBJ_AND_APPEND(lines, _("Symmetric Key Space"), obj1, level+1, fail);
     Py_CLEAR(obj1);
 
-    if ((obj1 = PyString_FromFormat("%s (0x%x)", 
+    if ((obj1 = PyString_FromFormat("%s (0x%x)",
                                     self->info.macAlgorithmName,
                                     self->info.macAlgorithm)) == NULL) {
         goto fail;
@@ -2971,7 +2972,7 @@ SSLChannelInformation_format_lines(SSLChannelInformation *self, PyObject *args, 
         return NULL;
     }
 
-    
+
     major = self->info.protocolVersion >> 8;
     minor = self->info.protocolVersion & 0xff;
     if ((obj2 = ssl_version_to_repr_kind(major, minor, AsString)) == NULL) {
@@ -4293,6 +4294,8 @@ static PyNSS_SSL_C_API_Type nss_ssl_c_api =
 
 /* ============================== Module Construction ============================= */
 
+#define MOD_NAME "nss.ssl"
+
 PyDoc_STRVAR(module_doc,
 "This module implements the SSL functionality in NSS\n\
 \n\
@@ -4346,30 +4349,52 @@ enabled at the time of the call, the same way\n\
 to keep the set of enabled versions contiguous.\n\
 ");
 
-PyMODINIT_FUNC
-initssl(void)
+#if PY_MAJOR_VERSION >= 3
+
+static struct PyModuleDef module_def = {
+    PyModuleDef_HEAD_INIT,
+    MOD_NAME,                   /* m_name */
+    doc,                        /* m_doc */
+    -1,                         /* m_size */
+    methods                     /* m_methods */
+    NULL,                       /* m_reload */
+    NULL,                       /* m_traverse */
+    NULL,                       /* m_clear */
+    NULL                        /* m_free */
+};
+
+#else /* PY_MAOR_VERSION < 3 */
+#endif /* PY_MAJOR_VERSION */
+
+MOD_INIT(ssl)
 {
     PyObject *m;
     int i;
 
 
     if (import_nspr_error_c_api() < 0)
-        return;
+        return MOD_ERROR_VAL;
 
     if (import_nspr_io_c_api() < 0)
-        return;
+        return MOD_ERROR_VAL;
 
     if (import_nspr_nss_c_api() < 0)
-        return;
+        return MOD_ERROR_VAL;
 
     SSLSocketType.tp_base = &SocketType;
 
-    if ((m = Py_InitModule3("nss.ssl", module_methods, module_doc)) == NULL) {
-        return;
+#if PY_MAJOR_VERSION >= 3
+    m = PyModule_Create(&module_def);
+#else
+    m = Py_InitModule3(MOD_NAME, module_methods, module_doc);
+#endif
+
+    if (m == NULL) {
+        return MOD_ERROR_VAL;
     }
 
     if ((empty_tuple = PyTuple_New(0)) == NULL) {
-        return;
+        return MOD_ERROR_VAL;
     }
     Py_INCREF(empty_tuple);
 
@@ -4379,11 +4404,11 @@ initssl(void)
 
     /* Export C API */
     if (PyModule_AddObject(m, "_C_API", PyCObject_FromVoidPtr((void *)&nss_ssl_c_api, NULL)) != 0)
-        return;
+        return MOD_ERROR_VAL;
 
     /* SSL_ImplementedCiphers */
     if ((py_ssl_implemented_ciphers = PyTuple_New(SSL_NumImplementedCiphers)) == NULL) {
-        return;
+        return MOD_ERROR_VAL;
     }
 
     for (i = 0; i < SSL_NumImplementedCiphers; i++) {
@@ -4397,15 +4422,15 @@ initssl(void)
      ***************************************************************************/
 
     if ((ssl_library_version_name_to_value = PyDict_New()) == NULL) {
-        return;
+        return MOD_ERROR_VAL;
     }
     if ((ssl_library_version_value_to_name = PyDict_New()) == NULL) {
-        return;
+        return MOD_ERROR_VAL;
     }
 
 #define ExportConstant(constant)                      \
 if (_AddIntConstantWithLookup(m, #constant, constant, \
-    NULL, ssl_library_version_name_to_value, ssl_library_version_value_to_name) < 0) return;
+    NULL, ssl_library_version_name_to_value, ssl_library_version_value_to_name) < 0) return MOD_ERROR_VAL;
 
     ExportConstant(SSL_LIBRARY_VERSION_2);
     ExportConstant(SSL_LIBRARY_VERSION_3_0);
@@ -4416,15 +4441,15 @@ if (_AddIntConstantWithLookup(m, #constant, constant, \
 
 
     if ((ssl_library_version_alias_to_value = PyDict_New()) == NULL) {
-        return;
+        return MOD_ERROR_VAL;
     }
     if ((ssl_library_version_value_to_alias = PyDict_New()) == NULL) {
-        return;
+        return MOD_ERROR_VAL;
     }
 
 #define ExportConstantAlias(constant, alias)          \
 if (_AddIntConstantWithLookup(m, alias, constant, \
-    NULL, ssl_library_version_alias_to_value, ssl_library_version_value_to_alias) < 0) return;
+    NULL, ssl_library_version_alias_to_value, ssl_library_version_value_to_alias) < 0) return MOD_ERROR_VAL;
 
     ExportConstantAlias(SSL_LIBRARY_VERSION_2,       "ssl2");
     ExportConstantAlias(SSL_LIBRARY_VERSION_3_0,     "ssl3");
@@ -4502,15 +4527,15 @@ if (_AddIntConstantWithLookup(m, alias, constant, \
      **************************************************************************/
 
     if ((cipher_suite_name_to_value = PyDict_New()) == NULL) {
-        return;
+        return MOD_ERROR_VAL;
     }
     if ((cipher_suite_value_to_name = PyDict_New()) == NULL) {
-        return;
+        return MOD_ERROR_VAL;
     }
 
 #define ExportConstant(constant)                      \
 if (_AddIntConstantWithLookup(m, #constant, constant, \
-    NULL, cipher_suite_name_to_value, cipher_suite_value_to_name) < 0) return;
+    NULL, cipher_suite_name_to_value, cipher_suite_value_to_name) < 0) return MOD_ERROR_VAL;
 
     /* Deprecated SSL 3.0 & libssl names replaced by IANA-registered TLS names. */
 #ifndef SSL_DISABLE_DEPRECATED_CIPHER_SUITE_NAMES
@@ -4699,4 +4724,5 @@ if (_AddIntConstantWithLookup(m, #constant, constant, \
 
 #undef ExportConstant
 
+    return MOD_SUCCESS_VAL(m);
 }
