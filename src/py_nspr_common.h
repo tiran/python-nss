@@ -4,6 +4,8 @@
 
 //#define DEBUG
 
+#define PACKAGE_NAME "nss"
+
 typedef PyObject *(*format_lines_func)(PyObject *self, PyObject *args, PyObject *kwds);
 
 typedef enum RepresentationKindEnum {

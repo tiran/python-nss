@@ -4294,8 +4294,6 @@ static PyNSS_SSL_C_API_Type nss_ssl_c_api =
 
 /* ============================== Module Construction ============================= */
 
-#define MOD_NAME "nss.ssl"
-
 PyDoc_STRVAR(module_doc,
 "This module implements the SSL functionality in NSS\n\
 \n\
@@ -4353,7 +4351,7 @@ to keep the set of enabled versions contiguous.\n\
 
 static struct PyModuleDef module_def = {
     PyModuleDef_HEAD_INIT,
-    MOD_NAME,                   /* m_name */
+    NSS_SSL_MODULE_NAME,        /* m_name */
     doc,                        /* m_doc */
     -1,                         /* m_size */
     methods                     /* m_methods */
@@ -4386,7 +4384,7 @@ MOD_INIT(ssl)
 #if PY_MAJOR_VERSION >= 3
     m = PyModule_Create(&module_def);
 #else
-    m = Py_InitModule3(MOD_NAME, module_methods, module_doc);
+    m = Py_InitModule3(NSS_SSL_MODULE_NAME, module_methods, module_doc);
 #endif
 
     if (m == NULL) {
@@ -4403,7 +4401,9 @@ MOD_INIT(ssl)
     TYPE_READY(SSLChannelInformationType);
 
     /* Export C API */
-    if (PyModule_AddObject(m, "_C_API", PyCObject_FromVoidPtr((void *)&nss_ssl_c_api, NULL)) != 0)
+    if (PyModule_AddObject(m, "_C_API",
+                           PyCapsule_New((void *)&nss_ssl_c_api,
+                                         PACKAGE_NAME "." NSS_SSL_MODULE_NAME "._C_API", NULL)) != 0)
         return MOD_ERROR_VAL;
 
     /* SSL_ImplementedCiphers */

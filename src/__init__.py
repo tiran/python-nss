@@ -300,4 +300,9 @@ FAQ
 To be added
 
 """
+import error
+import io
+import nss
+import ssl
+
 __version__ = '0.17.0'

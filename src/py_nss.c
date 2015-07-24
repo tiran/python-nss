@@ -24828,8 +24828,6 @@ static PyNSPR_NSS_C_API_Type nspr_nss_c_api =
 
 /* ============================== Module Construction ============================= */
 
-#define MOD_NAME "nss.nss"
-
 PyDoc_STRVAR(module_doc,
 "This module implements the NSS functions\n\
 \n\
@@ -24839,7 +24837,7 @@ PyDoc_STRVAR(module_doc,
 
 static struct PyModuleDef module_def = {
     PyModuleDef_HEAD_INIT,
-    MOD_NAME,                   /* m_name */
+    NSS_NSS_MODULE_NAME,        /* m_name */
     doc,                        /* m_doc */
     -1,                         /* m_size */
     methods                     /* m_methods */
@@ -24865,7 +24863,7 @@ MOD_INIT(nss)
 #if PY_MAJOR_VERSION >= 3
     m = PyModule_Create(&module_def);
 #else
-    m = Py_InitModule3(MOD_NAME, module_methods, module_doc);
+    m = Py_InitModule3(NSS_NSS_MODULE_NAME, module_methods, module_doc);
 #endif
 
     if (m == NULL) {
@@ -24914,7 +24912,9 @@ MOD_INIT(nss)
     TYPE_READY(CertVerifyLogType);
 
     /* Export C API */
-    if (PyModule_AddObject(m, "_C_API", PyCObject_FromVoidPtr((void *)&nspr_nss_c_api, NULL)) != 0) {
+    if (PyModule_AddObject(m, "_C_API",
+                           PyCapsule_New((void *)&nspr_nss_c_api,
+                                         PACKAGE_NAME "." NSS_NSS_MODULE_NAME "._C_API", NULL)) != 0) {
         return MOD_ERROR_VAL;
     }
 

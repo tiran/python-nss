@@ -6,6 +6,11 @@
 //        to an arena, so check to make sure we copy the items out and don't store the
 //        the item with the arena in it.
 
+#ifndef NSS_NSS_MODULE_H
+#define NSS_NSS_MODULE_H
+
+#define NSS_NSS_MODULE_NAME "nss"
+
 /* NSPR header files */
 #undef HAVE_LONG_LONG           /* FIXME: both Python.h and nspr.h define HAVE_LONG_LONG  */
 #include <stdbool.h>
@@ -476,34 +481,16 @@ static PyNSPR_NSS_C_API_Type nspr_nss_c_api;
 static int
 import_nspr_nss_c_api(void)
 {
-    PyObject *module = NULL;
-    PyObject *c_api_object = NULL;
     void *api = NULL;
 
-    if ((module = PyImport_ImportModule("nss.nss")) == NULL)
-        return -1;
-
-    if ((c_api_object = PyObject_GetAttrString(module, "_C_API")) == NULL) {
-        Py_DECREF(module);
-        return -1;
-    }
-
-    if (!(PyCObject_Check(c_api_object))) {
-        Py_DECREF(c_api_object);
-        Py_DECREF(module);
-        return -1;
-    }
-
-    if ((api = PyCObject_AsVoidPtr(c_api_object)) == NULL) {
-        Py_DECREF(c_api_object);
-        Py_DECREF(module);
+    if ((api = PyCapsule_Import(PACKAGE_NAME "." NSS_NSS_MODULE_NAME "._C_API", 0)) == NULL) {
         return -1;
     }
 
     memcpy(&nspr_nss_c_api, api, sizeof(nspr_nss_c_api));
-    Py_DECREF(c_api_object);
-    Py_DECREF(module);
+
     return 0;
 }
 
 #endif /* NSS_NSS_MODULE */
+#endif /* NSS_NSS_MODULE_H */

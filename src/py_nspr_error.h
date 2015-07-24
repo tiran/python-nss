@@ -2,6 +2,11 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#ifndef NSS_ERROR_MODULE_H
+#define NSS_ERROR_MODULE_H
+
+#define NSS_ERROR_MODULE_NAME "error"
+
 #include <stdbool.h>
 
 /* NSPR header files */
@@ -37,34 +42,16 @@ static PyNSPR_ERROR_C_API_Type nspr_error_c_api;
 static int
 import_nspr_error_c_api(void)
 {
-    PyObject *module = NULL;
-    PyObject *c_api_object = NULL;
     void *api = NULL;
 
-    if ((module = PyImport_ImportModule("nss.error")) == NULL)
-        return -1;
-
-    if ((c_api_object = PyObject_GetAttrString(module, "_C_API")) == NULL) {
-        Py_DECREF(module);
-        return -1;
-    }
-
-    if (!(PyCObject_Check(c_api_object))) {
-        Py_DECREF(c_api_object);
-        Py_DECREF(module);
-        return -1;
-    }
-
-    if ((api = PyCObject_AsVoidPtr(c_api_object)) == NULL) {
-        Py_DECREF(c_api_object);
-        Py_DECREF(module);
+    if ((api = PyCapsule_Import(PACKAGE_NAME "." NSS_ERROR_MODULE_NAME "._C_API", 0)) == NULL) {
         return -1;
     }
 
     memcpy(&nspr_error_c_api, api, sizeof(nspr_error_c_api));
-    Py_DECREF(c_api_object);
-    Py_DECREF(module);
+
     return 0;
 }
 
 #endif /* NSS_ERROR_MODULE */
+#endif /* NSS_ERROR_MODULE_H */
