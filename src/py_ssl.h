@@ -2,6 +2,11 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#ifndef NSS_SSL_MODULE_H
+#define NSS_SSL_MODULE_H
+
+#define NSS_SSL_MODULE_NAME "ssl"
+
 #undef HAVE_LONG_LONG           /* FIXME: both Python.h and nspr.h define HAVE_LONG_LONG  */
 #include "nss.h"
 #include "ssl.h"
@@ -60,34 +65,16 @@ static PyNSS_SSL_C_API_Type nss_ssl_c_api;
 static int
 import_nss_ssl_c_api(void)
 {
-    PyObject *module = NULL;
-    PyObject *c_api_object = NULL;
     void *api = NULL;
 
-    if ((module = PyImport_ImportModule("nss.ss;")) == NULL)
-        return -1;
-
-    if ((c_api_object = PyObject_GetAttrString(module, "_C_API")) == NULL) {
-        Py_DECREF(module);
-        return -1;
-    }
-
-    if (!(PyCObject_Check(c_api_object))) {
-        Py_DECREF(c_api_object);
-        Py_DECREF(module);
-        return -1;
-    }
-
-    if ((api = PyCObject_AsVoidPtr(c_api_object)) == NULL) {
-        Py_DECREF(c_api_object);
-        Py_DECREF(module);
+    if ((api = PyCapsule_Import(PACKAGE_NAME "." NSS_SSL_MODULE_NAME "._C_API", 0)) == NULL) {
         return -1;
     }
 
     memcpy(&nss_ssl_c_api, api, sizeof(nss_ssl_c_api));
-    Py_DECREF(c_api_object);
-    Py_DECREF(module);
+
     return 0;
 }
 
 #endif /* NSS_SSL_MODULE */
+#endif /* NSS_SSL_MODULE_H */

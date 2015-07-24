@@ -7,9 +7,9 @@
 #include "py_2_3_compat.h"
 #include "structmember.h"
 
+#include "py_nspr_common.h"
 #define NSS_ERROR_MODULE
 #include "py_nspr_error.h"
-#include "py_nspr_common.h"
 
 #include "nspr.h"
 #include "nss.h"
@@ -810,8 +810,6 @@ static PyNSPR_ERROR_C_API_Type nspr_error_c_api =
 
 /* ============================== Module Construction ============================= */
 
-#define MOD_NAME "nss.error"
-
 PyDoc_STRVAR(module_doc,
 "This module defines the NSPR errors and provides functions to\n\
 manipulate them.\n\
@@ -821,7 +819,7 @@ manipulate them.\n\
 
 static struct PyModuleDef module_def = {
     PyModuleDef_HEAD_INIT,
-    MOD_NAME,                   /* m_name */
+    NSS_ERROR_MODULE_NAME,      /* m_name */
     doc,                        /* m_doc */
     -1,                         /* m_size */
     methods                     /* m_methods */
@@ -843,7 +841,7 @@ MOD_INIT(error)
 #if PY_MAJOR_VERSION >= 3
     m = PyModule_Create(&module_def);
 #else
-    m = Py_InitModule3(MOD_NAME, module_methods, module_doc);
+    m = Py_InitModule3(NSS_ERROR_MODULE_NAME, module_methods, module_doc);
 #endif
 
     if (m == NULL) {
@@ -871,7 +869,9 @@ MOD_INIT(error)
 
     /* Export C API */
     nspr_error_c_api.nspr_exception = (PyObject *)&NSPRErrorType;
-    if (PyModule_AddObject(m, "_C_API", PyCObject_FromVoidPtr((void *)&nspr_error_c_api, NULL)) != 0)
+    if (PyModule_AddObject(m, "_C_API",
+                           PyCapsule_New((void *)&nspr_error_c_api,
+                                         PACKAGE_NAME "." NSS_ERROR_MODULE_NAME "._C_API", NULL)) != 0)
         return MOD_ERROR_VAL;
 
     return MOD_SUCCESS_VAL(m);
