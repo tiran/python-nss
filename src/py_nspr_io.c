@@ -82,7 +82,7 @@ err_closed(void)
 }
 
 static const char*
-pr_family_str(value)
+pr_family_str(int value)
 {
     static char buf[80];
 
@@ -98,7 +98,7 @@ pr_family_str(value)
 }
 
 static const char*
-pr_file_desc_type_str(value)
+pr_file_desc_type_str(PRDescType value)
 {
     static char buf[80];
 
