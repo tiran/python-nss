@@ -3405,7 +3405,7 @@ UTF8OrNoneConvert(PyObject *obj, PyObject **param)
 }
 
 static const char *
-pk11_disabled_reason_str(reason)
+pk11_disabled_reason_str(PK11DisableReasons reason)
 {
     static char buf[80];
 
@@ -3427,7 +3427,7 @@ pk11_disabled_reason_str(reason)
 }
 
 static const char *
-pk11_disabled_reason_name(reason)
+pk11_disabled_reason_name(PK11DisableReasons reason)
 {
     static char buf[80];
 
