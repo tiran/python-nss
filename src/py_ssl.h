@@ -65,14 +65,33 @@ static PyNSS_SSL_C_API_Type nss_ssl_c_api;
 static int
 import_nss_ssl_c_api(void)
 {
+    PyObject *module = NULL;
+    PyObject *c_api_object = NULL;
     void *api = NULL;
 
-    if ((api = PyCapsule_Import(PACKAGE_NAME "." NSS_SSL_MODULE_NAME "._C_API", 0)) == NULL) {
+    if ((module = PyImport_ImportModule("nss.ssl")) == NULL)
+        return -1;
+
+    if ((c_api_object = PyObject_GetAttrString(module, "_C_API")) == NULL) {
+        Py_DECREF(module);
+        return -1;
+    }
+
+    if (!(PyCapsule_CheckExact(c_api_object))) {
+        Py_DECREF(c_api_object);
+        Py_DECREF(module);
+        return -1;
+    }
+
+    if ((api = PyCapsule_GetPointer(c_api_object, "_C_API")) == NULL) {
+        Py_DECREF(c_api_object);
+        Py_DECREF(module);
         return -1;
     }
 
     memcpy(&nss_ssl_c_api, api, sizeof(nss_ssl_c_api));
-
+    Py_DECREF(c_api_object);
+    Py_DECREF(module);
     return 0;
 }
 

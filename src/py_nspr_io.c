@@ -3862,8 +3862,7 @@ MOD_INIT(io)
 
     /* Export C API */
     if (PyModule_AddObject(m, "_C_API",
-                           PyCapsule_New((void *)&nspr_io_c_api,
-                                         PACKAGE_NAME "." NSS_IO_MODULE_NAME "._C_API", NULL)) != 0)
+                           PyCapsule_New((void *)&nspr_io_c_api, "_C_API", NULL)) != 0)
         return MOD_ERROR_VAL;
 
     /* Socket types */
