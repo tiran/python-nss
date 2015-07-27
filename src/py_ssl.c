@@ -4402,8 +4402,7 @@ MOD_INIT(ssl)
 
     /* Export C API */
     if (PyModule_AddObject(m, "_C_API",
-                           PyCapsule_New((void *)&nss_ssl_c_api,
-                                         PACKAGE_NAME "." NSS_SSL_MODULE_NAME "._C_API", NULL)) != 0)
+                           PyCapsule_New((void *)&nss_ssl_c_api, "_C_API", NULL)) != 0)
         return MOD_ERROR_VAL;
 
     /* SSL_ImplementedCiphers */

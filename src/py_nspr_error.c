@@ -870,8 +870,7 @@ MOD_INIT(error)
     /* Export C API */
     nspr_error_c_api.nspr_exception = (PyObject *)&NSPRErrorType;
     if (PyModule_AddObject(m, "_C_API",
-                           PyCapsule_New((void *)&nspr_error_c_api,
-                                         PACKAGE_NAME "." NSS_ERROR_MODULE_NAME "._C_API", NULL)) != 0)
+                           PyCapsule_New((void *)&nspr_error_c_api, "_C_API", NULL)) != 0)
         return MOD_ERROR_VAL;
 
     return MOD_SUCCESS_VAL(m);

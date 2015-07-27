@@ -481,14 +481,33 @@ static PyNSPR_NSS_C_API_Type nspr_nss_c_api;
 static int
 import_nspr_nss_c_api(void)
 {
+    PyObject *module = NULL;
+    PyObject *c_api_object = NULL;
     void *api = NULL;
 
-    if ((api = PyCapsule_Import(PACKAGE_NAME "." NSS_NSS_MODULE_NAME "._C_API", 0)) == NULL) {
+    if ((module = PyImport_ImportModule("nss.nss")) == NULL)
+        return -1;
+
+    if ((c_api_object = PyObject_GetAttrString(module, "_C_API")) == NULL) {
+        Py_DECREF(module);
+        return -1;
+    }
+
+    if (!(PyCapsule_CheckExact(c_api_object))) {
+        Py_DECREF(c_api_object);
+        Py_DECREF(module);
+        return -1;
+    }
+
+    if ((api = PyCapsule_GetPointer(c_api_object, "_C_API")) == NULL) {
+        Py_DECREF(c_api_object);
+        Py_DECREF(module);
         return -1;
     }
 
     memcpy(&nspr_nss_c_api, api, sizeof(nspr_nss_c_api));
-
+    Py_DECREF(c_api_object);
+    Py_DECREF(module);
     return 0;
 }
 
