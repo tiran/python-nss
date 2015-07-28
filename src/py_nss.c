@@ -3973,7 +3973,6 @@ der_boolean_secitem_to_pystr(SECItem *item)
 
 /*
  * Decodes ASN1 integer. Properly handles large magnitude.
- * PyInt object returned if value fits, PyLong object otherwise.
  *
  * item is a decoded ASN1 integer, if the integer is a DER encoded
  * integer with a tag and length then call encoded_integer_secitem_to_pylong
@@ -3990,7 +3989,7 @@ integer_secitem_to_pylong(SECItem *item)
     bool negative;
 
     if (!item || !item->len || !item->data) {
-        return PyInt_FromLong(0);
+        return PyLong_FromLong(0);
     }
 
     len = item->len;
@@ -3999,21 +3998,21 @@ integer_secitem_to_pylong(SECItem *item)
     negative = octet & 0x80;
 
     if (negative) {
-        if ((l = PyInt_FromLong(-1)) == NULL) {
+        if ((l = PyLong_FromLong(-1)) == NULL) {
             goto error;
         }
     } else {
-        if ((l = PyInt_FromLong(0)) == NULL) {
+        if ((l = PyLong_FromLong(0)) == NULL) {
             goto error;
         }
     }
 
-    if ((eight = PyInt_FromLong(8)) == NULL) {
+    if ((eight = PyLong_FromLong(8)) == NULL) {
         return NULL;
     }
 
     while (1) {
-        if ((new_bits = PyInt_FromLong(octet)) == NULL) {
+        if ((new_bits = PyLong_FromLong(octet)) == NULL) {
             goto error;
         }
 
