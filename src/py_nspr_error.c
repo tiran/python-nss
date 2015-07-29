@@ -60,10 +60,10 @@ cmp_error(const void *p1, const void *p2)
 const int nspr_error_count = sizeof(nspr_errors) / sizeof(NSPRErrorDesc);
 
 static int
-IntOrNoneConvert(PyObject *obj, int *param)
+LongOrNoneConvert(PyObject *obj, long *param)
 {
-    if (PyInt_Check(obj)) {
-        *param = PyInt_AsLong(obj);
+    if (PyInteger_Check(obj)) {
+        *param = PyLong_AsLong(obj);
         return 1;
     }
 
@@ -132,7 +132,7 @@ lookup_nspr_error(PRErrorCode num) {
 }
 
 static PyObject *
-get_error_desc(PRErrorCode *p_error_code)
+get_error_desc(long *p_error_code)
 {
     PRErrorCode error_code = 0;
     NSPRErrorDesc const *error_desc = NULL;
@@ -212,7 +212,7 @@ set_nspr_error(const char *format, ...)
 }
 
 static PyObject *
-set_cert_verify_error(unsigned int usages, PyObject *log, const char *format, ...)
+set_cert_verify_error(unsigned long usages, PyObject *log, const char *format, ...)
 {
     va_list vargs;
     PyObject *error_message = NULL;
@@ -239,7 +239,7 @@ set_cert_verify_error(unsigned int usages, PyObject *log, const char *format, ..
         }
     }
 
-    if (PyDict_SetItemString(kwds, "usages", PyInt_FromLong(usages)) != 0) {
+    if (PyDict_SetItemString(kwds, "usages", PyLong_FromLong(usages)) != 0) {
         return NULL;
     }
 
@@ -505,7 +505,7 @@ NSPRError_init(NSPRError *self, PyObject *args, PyObject *kwds)
 {
     static char *kwlist[] = {"error_message", "error_code", NULL};
     const char *error_message = NULL;
-    int error_code = -1;
+    long error_code = -1;
     PyObject *error_desc = NULL;
     PyObject *str_value = NULL;
 
@@ -515,7 +515,7 @@ NSPRError_init(NSPRError *self, PyObject *args, PyObject *kwds)
 
     if (!PyArg_ParseTupleAndKeywords(args, kwds, "|zO&:NSPRError", kwlist,
                                      &error_message,
-                                     IntOrNoneConvert, &error_code))
+                                     LongOrNoneConvert, &error_code))
         return -1;
 
     error_desc = get_error_desc(&error_code);
@@ -709,7 +709,7 @@ CertVerifyError_init(CertVerifyError *self, PyObject *args, PyObject *kwds)
 {
     static char *kwlist[] = {"error_message", "error_code", "usages", "log", NULL};
     const char *error_message = NULL;
-    int error_code = -1;
+    long error_code = -1;
     unsigned int usages = 0;
     PyObject *log = NULL;
     PyObject *super_kwds = NULL;
@@ -719,7 +719,7 @@ CertVerifyError_init(CertVerifyError *self, PyObject *args, PyObject *kwds)
 
     if (!PyArg_ParseTupleAndKeywords(args, kwds, "|zO&IO:CertVerifyError", kwlist,
                                      &error_message,
-                                     IntOrNoneConvert, &error_code,
+                                     LongOrNoneConvert, &error_code,
                                      &usages,
                                      &log))
         return -1;
@@ -734,7 +734,7 @@ CertVerifyError_init(CertVerifyError *self, PyObject *args, PyObject *kwds)
         }
     }
     if (error_code != -1) {
-        if (PyDict_SetItemString(super_kwds, "error_code", PyInt_FromLong(error_code)) != 0) {
+        if (PyDict_SetItemString(super_kwds, "error_code", PyLong_FromLong(error_code)) != 0) {
             Py_DECREF(super_kwds);
             return -1;
         }

@@ -23,7 +23,7 @@ typedef struct {
 typedef struct {
     PyObject     *nspr_exception;
     PyObject     *(*set_nspr_error)(const char *format, ...) __attribute__ ((format (printf, 1, 2)));
-    PyObject     *(*set_cert_verify_error)(unsigned int usages, PyObject * log, const char *format, ...)  __attribute__ ((format (printf, 3, 4)));
+    PyObject     *(*set_cert_verify_error)(unsigned long usages, PyObject * log, const char *format, ...)  __attribute__ ((format (printf, 3, 4)));
     PyObject     *(*tuple_str)(PyObject *tuple);
     const NSPRErrorDesc *(*lookup_nspr_error)(PRErrorCode num);
 } PyNSPR_ERROR_C_API_Type;
