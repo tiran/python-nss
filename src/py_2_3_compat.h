@@ -1,6 +1,12 @@
 #ifndef PY_2_3_COMPAT_H
 #define PY_2_3_COMPAT_H
 
+#if PY_VERSION_HEX <  0x02070000
+// As part of the Python 2 to Python 3 conversion we need at least
+// version 2.7 because 2.7 shares API's with 3.x
+#error "Python version must be at least 2.7"
+#endif
+
 #if PY_MAJOR_VERSION >= 3
 
 #define IS_PY3K
