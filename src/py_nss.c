@@ -452,7 +452,7 @@ print_cert(CERTCertificate *cert, const char *format, ...)
         flags &= ~enum;                                                 \
         switch(repr_kind) {                                             \
         case AsEnum:                                                    \
-            py_flag = PyInt_FromLong(enum);                             \
+            py_flag = PyLong_FromLong(enum);                            \
             break;                                                      \
         case AsEnumName:                                                \
             py_flag = PyString_FromString(#enum);                       \
@@ -587,7 +587,7 @@ line_fmt_tuple(int level, const char *label, PyObject *py_value)
     }
 
     i = 0;
-    PyTuple_SetItem(fmt_tuple, i++, PyInt_FromLong(level));
+    PyTuple_SetItem(fmt_tuple, i++, PyLong_FromLong(level));
 
     if (py_label) {
         PyTuple_SetItem(fmt_tuple, i++, py_label);
@@ -902,12 +902,12 @@ py_indented_format(PyObject *self, PyObject *args, PyObject *kwds)
             py_value = PyTuple_GetItem(py_line_fmt_tuple, 2);
         }
 
-        if (!PyInt_Check(py_level)) {
+        if (!PyInteger_Check(py_level)) {
             PyErr_Format(PyExc_TypeError, "item[0] in the tuple at line_fmt_tuples[%zd] list must be an integer, not %.200s",
                          i, Py_TYPE(py_level)->tp_name);
             goto fail;
         }
-        line_level = PyInt_AsLong(py_level);
+        line_level = PyLong_AsLong(py_level);
         if (line_level < 0) {
             PyErr_Format(PyExc_TypeError, "item[0] in the tuple at line_fmt_tuples[%zd] list must be a non-negative integer, not %ld",
                          i, line_level);
@@ -2202,7 +2202,7 @@ bitstr_table_to_tuple(SECItem *bitstr, BitStringTable *table,
             if (table[i].enum_description) { /* only if defined in table */
                 switch(repr_kind) {
                 case AsEnum:
-                    PyTuple_SetItem(tuple, j++, PyInt_FromLong(table[i].enum_value));
+                    PyTuple_SetItem(tuple, j++, PyLong_FromLong(table[i].enum_value));
                     break;
                 case AsEnumName:
                     PyTuple_SetItem(tuple, j++, PyString_FromString(table[i].enum_name));
@@ -2211,7 +2211,7 @@ bitstr_table_to_tuple(SECItem *bitstr, BitStringTable *table,
                     PyTuple_SetItem(tuple, j++, PyString_FromString(table[i].enum_description));
                     break;
                 case AsIndex:
-                    PyTuple_SetItem(tuple, j++, PyInt_FromLong(i));
+                    PyTuple_SetItem(tuple, j++, PyLong_FromLong(i));
                     break;
                 default:
                     PyErr_Format(PyExc_ValueError, "Unsupported representation kind (%d)", repr_kind);
@@ -2575,7 +2575,7 @@ CERTGeneralName_list_to_tuple(CERTGeneralName *head, RepresentationKind repr_kin
             name = CERTGeneralName_type_string_to_pystr(cur);
             break;
         case AsTypeEnum:
-            name = PyInt_FromLong(cur->type);
+            name = PyLong_FromLong(cur->type);
             break;
         case AsLabeledString:
             name = CERTGeneralName_to_pystr_with_label(cur);
@@ -2857,7 +2857,7 @@ oid_tag_from_name(const char *name)
         return -1;
     }
 
-    oid_tag = PyInt_AsLong(py_value);
+    oid_tag = PyLong_AsLong(py_value);
 
     Py_DECREF(py_name);
     Py_DECREF(py_lower_name);
@@ -2871,7 +2871,7 @@ oid_tag_name_from_tag(int oid_tag)
     PyObject *py_value;
     PyObject *py_name;
 
-    if ((py_value = PyInt_FromLong(oid_tag)) == NULL) {
+    if ((py_value = PyLong_FromLong(oid_tag)) == NULL) {
         return NULL;
     }
 
@@ -2940,8 +2940,8 @@ get_oid_tag_from_object(PyObject *obj)
             }
         }
 	Py_DECREF(py_obj_string_utf8);
-    } else if (PyInt_Check(obj)) {
-        oid_tag = PyInt_AsLong(obj);
+    } else if (PyInteger_Check(obj)) {
+        oid_tag = PyLong_AsLong(obj);
     } else if (PySecItem_Check(obj)) {
         oid_tag = SECOID_FindOIDTag(&((SecItem *)obj)->item);
     } else {
@@ -3051,7 +3051,7 @@ _AddIntConstantWithLookup(PyObject *module, const char *name, long value, const 
         return -1;
     }
 
-    if ((py_value = PyInt_FromLong(value)) == NULL) {
+    if ((py_value = PyLong_FromLong(value)) == NULL) {
         Py_DECREF(py_name);
         Py_DECREF(py_lower_name);
         return -1;
@@ -3134,7 +3134,7 @@ _AddIntConstantAlias(const char *name, long value, PyObject *name_to_value)
         return -1;
     }
 
-    if ((py_value = PyInt_FromLong(value)) == NULL) {
+    if ((py_value = PyLong_FromLong(value)) == NULL) {
         Py_DECREF(py_name);
         Py_DECREF(py_lower_name);
         return -1;
@@ -3264,8 +3264,8 @@ PRTimeConvert(PyObject *obj, PRTime *param)
         return 1;
     }
 
-    if (PyInt_Check(obj)) {
-        LL_I2L(time, PyInt_AsLong(obj)); /* FIXME: should be PyLong_AsLongLong? */
+    if (PyInteger_Check(obj)) {
+        LL_I2L(time, PyLong_AsLong(obj));
         *param = time;
         return 1;
     }
@@ -4129,7 +4129,7 @@ oid_secitem_to_pyint_tag(SECItem *oid)
     SECOidTag oid_tag;
 
     oid_tag = SECOID_FindOIDTag(oid);
-    return PyInt_FromLong(oid_tag);
+    return PyLong_FromLong(oid_tag);
 }
 
 static PyObject *
@@ -5009,7 +5009,7 @@ SecItem_get_type(SecItem *self, void *closure)
 {
     TraceMethodEnter(self);
 
-    return PyInt_FromLong(self->item.type);
+    return PyLong_FromLong(self->item.type);
 }
 
 static PyObject *
@@ -5017,7 +5017,7 @@ SecItem_get_len(SecItem *self, void *closure)
 {
     TraceMethodEnter(self);
 
-    return PyInt_FromLong(self->item.len);
+    return PyLong_FromLong(self->item.len);
 }
 
 static PyObject *
@@ -6222,7 +6222,7 @@ AlgorithmID_get_pbe_crypto_mechanism(AlgorithmID *self, PyObject *args, PyObject
         return NULL;
     }
 
-    PyTuple_SetItem(tuple, 0, PyInt_FromLong(mechanism));
+    PyTuple_SetItem(tuple, 0, PyLong_FromLong(mechanism));
     PyTuple_SetItem(tuple, 1, py_params);
 
     return tuple;
@@ -6427,7 +6427,7 @@ RSAGenParams_get_key_size(RSAGenParams *self, void *closure)
 {
     TraceMethodEnter(self);
 
-    return PyInt_FromLong(self->params.keySizeInBits);
+    return PyLong_FromLong(self->params.keySizeInBits);
 
 }
 
@@ -6441,13 +6441,13 @@ RSAGenParams_set_key_size(RSAGenParams *self, PyObject *value, void *closure)
         return -1;
     }
 
-    if (!PyInt_Check(value)) {
+    if (!PyInteger_Check(value)) {
         PyErr_Format(PyExc_TypeError, "key_size must be a integer, not %.200s",
                      Py_TYPE(value)->tp_name);
         return -1;
     }
 
-    self->params.keySizeInBits = PyInt_AsLong(value);
+    self->params.keySizeInBits = PyLong_AsLong(value);
 
     return 0;
 }
@@ -6457,7 +6457,7 @@ RSAGenParams_get_public_exponent(RSAGenParams *self, void *closure)
 {
     TraceMethodEnter(self);
 
-    return PyInt_FromLong(self->params.keySizeInBits);
+    return PyLong_FromLong(self->params.keySizeInBits);
 
 }
 
@@ -6471,13 +6471,13 @@ RSAGenParams_set_public_exponent(RSAGenParams *self, PyObject *value, void *clos
         return -1;
     }
 
-    if (!PyInt_Check(value)) {
+    if (!PyInteger_Check(value)) {
         PyErr_Format(PyExc_TypeError, "public_exponent must be a integer, not %.200s",
                      Py_TYPE(value)->tp_name);
         return -1;
     }
 
-    self->params.pe = PyInt_AsLong(value);
+    self->params.pe = PyLong_AsLong(value);
 
     return 0;
 }
@@ -7689,7 +7689,7 @@ PublicKey_get_key_type(PublicKey *self, void *closure)
 {
     TraceMethodEnter(self);
 
-    return PyInt_FromLong(self->pk->keyType);
+    return PyLong_FromLong(self->pk->keyType);
 }
 
 static PyObject *
@@ -9058,7 +9058,7 @@ Certificate_get_ssl_trust_flags(Certificate *self, void *closure)
     TraceMethodEnter(self);
 
     if (self->cert->trust)
-        return PyInt_FromLong(self->cert->trust->sslFlags);
+        return PyLong_FromLong(self->cert->trust->sslFlags);
     else
         Py_RETURN_NONE;
 }
@@ -9069,7 +9069,7 @@ Certificate_get_email_trust_flags(Certificate *self, void *closure)
     TraceMethodEnter(self);
 
     if (self->cert->trust)
-        return PyInt_FromLong(self->cert->trust->emailFlags);
+        return PyLong_FromLong(self->cert->trust->emailFlags);
     else
         Py_RETURN_NONE;
 }
@@ -9080,7 +9080,7 @@ Certificate_get_signing_trust_flags(Certificate *self, void *closure)
     TraceMethodEnter(self);
 
     if (self->cert->trust)
-        return PyInt_FromLong(self->cert->trust->objectSigningFlags);
+        return PyLong_FromLong(self->cert->trust->objectSigningFlags);
     else
         Py_RETURN_NONE;
 }
@@ -9105,7 +9105,7 @@ Certificate_get_cert_type(Certificate *self, void *closure)
 {
     TraceMethodEnter(self);
 
-    return PyInt_FromLong(self->cert->nsCertType);
+    return PyLong_FromLong(self->cert->nsCertType);
 }
 
 static
@@ -9343,7 +9343,7 @@ Certificate_find_kea_type(Certificate *self, PyObject *args)
 {
     TraceMethodEnter(self);
 
-    return PyInt_FromLong(NSS_FindCertKEAType(self->cert));
+    return PyLong_FromLong(NSS_FindCertKEAType(self->cert));
 }
 
 
@@ -9532,7 +9532,7 @@ Certificate_check_valid_times(Certificate *self, PyObject *args, PyObject *kwds)
 
     validity = CERT_CheckCertValidTimes(self->cert, pr_time, allow_override);
 
-    return PyInt_FromLong(validity);
+    return PyLong_FromLong(validity);
 }
 
 PyDoc_STRVAR(Certificate_is_ca_cert_doc,
@@ -9666,7 +9666,7 @@ Certificate_verify_now(Certificate *self, PyObject *args)
     Py_END_ALLOW_THREADS
     Py_DECREF(pin_args);
 
-    return PyInt_FromLong(returned_usages);
+    return PyLong_FromLong(returned_usages);
 }
 
 PyDoc_STRVAR(Certificate_verify_doc,
@@ -9778,7 +9778,7 @@ Certificate_verify(Certificate *self, PyObject *args)
     Py_END_ALLOW_THREADS
     Py_DECREF(pin_args);
 
-    return PyInt_FromLong(returned_usages);
+    return PyLong_FromLong(returned_usages);
 }
 
 PyDoc_STRVAR(Certificate_verify_with_log_doc,
@@ -10201,7 +10201,7 @@ Certificate_format_lines(Certificate *self, PyObject *args, PyObject *kwds)
     if ((obj = Certificate_get_version(self, NULL)) == NULL) {
         goto fail;
     }
-    if ((obj1 = PyInt_FromLong(1)) == NULL) {
+    if ((obj1 = PyLong_FromLong(1)) == NULL) {
         goto fail;
     }
     if ((obj2 = PyNumber_Add(obj, obj1)) == NULL) {
@@ -10927,7 +10927,7 @@ AVA_get_oid_tag(AVA *self, void *closure)
 {
     TraceMethodEnter(self);
 
-    return PyInt_FromLong(CERT_GetAVATag(self->ava));
+    return PyLong_FromLong(CERT_GetAVATag(self->ava));
 }
 
 static PyObject *
@@ -12618,7 +12618,7 @@ GeneralName_get_type_enum(GeneralName *self, void *closure)
     if (!self->name) {
         return PyErr_Format(PyExc_ValueError, "%s is uninitialized", Py_TYPE(self)->tp_name);
     }
-    return PyInt_FromLong(self->name->type);
+    return PyLong_FromLong(self->name->type);
 }
 
 static PyObject *
@@ -12718,7 +12718,7 @@ GeneralName_get_name(GeneralName *self, PyObject *args, PyObject *kwds)
         name = CERTGeneralName_type_string_to_pystr(self->name);
         break;
     case AsTypeEnum:
-        name = PyInt_FromLong(self->name->type);
+        name = PyLong_FromLong(self->name->type);
         break;
     case AsLabeledString:
         name = CERTGeneralName_to_pystr_with_label(self->name);
@@ -13519,7 +13519,7 @@ PK11Slot_get_disabled_reason(PK11Slot *self, PyObject *args)
 {
     TraceMethodEnter(self);
 
-    return PyInt_FromLong(PK11_GetDisabledReason(self->slot));
+    return PyLong_FromLong(PK11_GetDisabledReason(self->slot));
 }
 
 PyDoc_STRVAR(PK11Slot_user_disable_doc,
@@ -13687,7 +13687,7 @@ PK11Slot_get_best_wrap_mechanism(PK11Slot *self, PyObject *args)
     TraceMethodEnter(self);
 
     mechanism = PK11_GetBestWrapMechanism(self->slot);
-    return PyInt_FromLong(mechanism);
+    return PyLong_FromLong(mechanism);
 }
 
 
@@ -13715,7 +13715,7 @@ PK11Slot_get_best_key_length(PK11Slot *self, PyObject *args)
         return NULL;
 
     length = PK11_GetBestKeyLength(self->slot, mechanism);
-    return PyInt_FromLong(length);
+    return PyLong_FromLong(length);
 }
 
 PyDoc_STRVAR(PK11Slot_key_gen_doc,
@@ -14135,7 +14135,7 @@ PK11Slot_format_lines(PK11Slot *self, PyObject *args, PyObject *kwds)
     if ((obj1 = PyObject_CallMethod((PyObject *)self, "get_best_wrap_mechanism", NULL)) == NULL) {
         goto fail;
     }
-    obj2 = key_mechanism_type_to_pystr(PyInt_AsLong(obj1));
+    obj2 = key_mechanism_type_to_pystr(PyLong_AsLong(obj1));
     if ((obj3 = obj_sprintf("%s (%#x)", obj2, obj1)) == NULL) {
         goto fail;
     }
@@ -14321,7 +14321,7 @@ PK11SymKey_get_mechanism(PyPK11SymKey *self, void *closure)
 {
     TraceMethodEnter(self);
 
-    return PyInt_FromLong(PK11_GetMechanism(self->pk11_sym_key));
+    return PyLong_FromLong(PK11_GetMechanism(self->pk11_sym_key));
 }
 
 static PyObject *
@@ -14347,7 +14347,7 @@ PK11SymKey_get_key_length(PyPK11SymKey *self, void *closure)
 {
     TraceMethodEnter(self);
 
-    return PyInt_FromLong(PK11_GetKeyLength(self->pk11_sym_key));
+    return PyLong_FromLong(PK11_GetKeyLength(self->pk11_sym_key));
 }
 
 static PyObject *
@@ -14402,7 +14402,7 @@ PK11SymKey_format_lines(PyPK11SymKey *self, PyObject *args, PyObject *kwds)
     }
 
     obj1 = PK11SymKey_get_mechanism(self, NULL);
-    obj2 = key_mechanism_type_to_pystr(PyInt_AsLong(obj1));
+    obj2 = key_mechanism_type_to_pystr(PyLong_AsLong(obj1));
     if ((obj3 = obj_sprintf("%s (%#x)", obj2, obj1)) == NULL) {
         goto fail;
     }
@@ -16879,7 +16879,7 @@ BasicConstraints_get_path_len(BasicConstraints *self, void *closure)
 {
     TraceMethodEnter(self);
 
-    return PyInt_FromLong(self->bc.pathLenConstraint);
+    return PyLong_FromLong(self->bc.pathLenConstraint);
 
     return NULL;
 }
@@ -17907,7 +17907,7 @@ InitParameters_get_min_password_len(InitParameters *self, void *closure)
 {
     TraceMethodEnter(self);
 
-    return PyInt_FromLong(self->params.minPWLen);
+    return PyLong_FromLong(self->params.minPWLen);
 }
 
 static int
@@ -17920,12 +17920,12 @@ InitParameters_set_min_password_len(InitParameters *self, PyObject *value, void 
         return -1;
     }
 
-    if (!PyInt_Check(value)) {
+    if (!PyInteger_Check(value)) {
         PyErr_SetString(PyExc_TypeError, "The min_password_len attribute value must be an integer");
         return -1;
     }
 
-    self->params.minPWLen = PyInt_AsLong(value);
+    self->params.minPWLen = PyLong_AsLong(value);
 
     return 0;
 }
@@ -18939,7 +18939,7 @@ PKCS12DecodeItem_get_type(PKCS12DecodeItem *self, void *closure)
 {
     TraceMethodEnter(self);
 
-    return PyInt_FromLong(self->type);
+    return PyLong_FromLong(self->type);
 }
 
 static PyObject *
@@ -19903,7 +19903,7 @@ CertVerifyLogNode_get_error(CertVerifyLogNode *self, void *closure)
 {
     TraceMethodEnter(self);
 
-    return PyInt_FromLong(self->node.error);
+    return PyLong_FromLong(self->node.error);
 }
 
 static PyObject *
@@ -19911,7 +19911,7 @@ CertVerifyLogNode_get_depth(CertVerifyLogNode *self, void *closure)
 {
     TraceMethodEnter(self);
 
-    return PyInt_FromLong(self->node.depth);
+    return PyLong_FromLong(self->node.depth);
 }
 
 static
@@ -20045,7 +20045,7 @@ CertVerifyLogNode_format_lines(CertVerifyLogNode *self, PyObject *args, PyObject
     }
     Py_CLEAR(py_cert);
 
-    if ((obj = PyInt_FromLong(node->depth)) == NULL){
+    if ((obj = PyLong_FromLong(node->depth)) == NULL){
         goto fail;
     }
     FMT_OBJ_AND_APPEND(lines, _("Depth"), obj, level, fail);
@@ -20204,7 +20204,7 @@ CertVerifyLog_get_count(CertVerifyLog *self, void *closure)
 {
     TraceMethodEnter(self);
 
-    return PyInt_FromLong(self->log.count);
+    return PyLong_FromLong(self->log.count);
 }
 
 static
@@ -20241,7 +20241,7 @@ CertVerifyLog_format_lines(CertVerifyLog *self, PyObject *args, PyObject *kwds)
         return NULL;
     }
 
-    if ((obj = PyInt_FromLong(self->log.count)) == NULL) {
+    if ((obj = PyLong_FromLong(self->log.count)) == NULL) {
         goto fail;
     }
     FMT_OBJ_AND_APPEND(lines, _("Validation Errors"), obj, level, fail);
@@ -21987,7 +21987,7 @@ cert_oid_tag(PyObject *self, PyObject *args)
         return NULL;
     }
 
-    result = PyInt_FromLong(oid_tag);
+    result = PyLong_FromLong(oid_tag);
     return result;
 }
 
@@ -22041,7 +22041,7 @@ key_mechanism_type_to_pystr(CK_MECHANISM_TYPE mechanism)
     PyObject *py_value;
     PyObject *py_name;
 
-    if ((py_value = PyInt_FromLong(mechanism)) == NULL) {
+    if ((py_value = PyLong_FromLong(mechanism)) == NULL) {
         PyErr_SetString(PyExc_MemoryError, "unable to create object");
         return NULL;
     }
@@ -22127,7 +22127,7 @@ pk11_attribute_type_to_pystr(CK_ATTRIBUTE_TYPE type)
     PyObject *py_value;
     PyObject *py_name;
 
-    if ((py_value = PyInt_FromLong(type)) == NULL) {
+    if ((py_value = PyLong_FromLong(type)) == NULL) {
         PyErr_SetString(PyExc_MemoryError, "unable to create object");
         return NULL;
     }
@@ -22741,7 +22741,7 @@ pk11_algtag_to_mechanism(PyObject *self, PyObject *args)
         return NULL;
     }
 
-    return PyInt_FromLong(mechanism);
+    return PyLong_FromLong(mechanism);
 }
 
 PyDoc_STRVAR(pk11_mechanism_to_algtag_doc,
@@ -22770,7 +22770,7 @@ pk11_mechanism_to_algtag(PyObject *self, PyObject *args)
         return NULL;
     }
 
-    return PyInt_FromLong(algtag);
+    return PyLong_FromLong(algtag);
 }
 PyDoc_STRVAR(pk11_get_iv_length_doc,
 "get_iv_length(mechanism) -> algtag\n\
@@ -22794,7 +22794,7 @@ pk11_get_iv_length(PyObject *self, PyObject *args)
 
     iv_length = PK11_GetIVLength(mechanism);
 
-    return PyInt_FromLong(iv_length);
+    return PyLong_FromLong(iv_length);
 }
 
 PyDoc_STRVAR(pk11_get_block_size_doc,
@@ -22824,7 +22824,7 @@ pk11_get_block_size(PyObject *self, PyObject *args, PyObject *kwds)
 
     block_size = PK11_GetBlockSize(mechanism, py_sec_param ? &py_sec_param->item : NULL);
 
-    return PyInt_FromLong(block_size);
+    return PyLong_FromLong(block_size);
 }
 
 PyDoc_STRVAR(pk11_get_pad_mechanism_doc,
@@ -22850,7 +22850,7 @@ pk11_get_pad_mechanism(PyObject *self, PyObject *args)
 
     pad_mechanism = PK11_GetPadMechanism(mechanism);
 
-    return PyInt_FromLong(pad_mechanism);
+    return PyLong_FromLong(pad_mechanism);
 }
 
 PyDoc_STRVAR(pk11_import_crl_doc,
@@ -23394,7 +23394,7 @@ crl_reason_to_pystr(CERTCRLEntryReasonCode reason)
     PyObject *py_value;
     PyObject *py_name;
 
-    if ((py_value = PyInt_FromLong(reason)) == NULL) {
+    if ((py_value = PyLong_FromLong(reason)) == NULL) {
         PyErr_SetString(PyExc_MemoryError, "unable to create object");
         return NULL;
     }
@@ -23480,7 +23480,7 @@ pkcs12_cipher_to_pystr(long cipher)
     PyObject *py_value;
     PyObject *py_name;
 
-    if ((py_value = PyInt_FromLong(cipher)) == NULL) {
+    if ((py_value = PyLong_FromLong(cipher)) == NULL) {
         PyErr_SetString(PyExc_MemoryError, "unable to create object");
         return NULL;
     }
@@ -23616,7 +23616,7 @@ pkcs12_map_cipher(PyObject *self, PyObject *args, PyObject *kwds)
         cipher_tag = tag;
     }
 
-    return PyInt_FromLong(cipher_tag);
+    return PyLong_FromLong(cipher_tag);
 }
 
 static PyObject *
@@ -23625,7 +23625,7 @@ general_name_type_to_pystr(CERTGeneralNameType type)
     PyObject *py_value;
     PyObject *py_name;
 
-    if ((py_value = PyInt_FromLong(type)) == NULL) {
+    if ((py_value = PyLong_FromLong(type)) == NULL) {
         PyErr_SetString(PyExc_MemoryError, "unable to create object");
         return NULL;
     }

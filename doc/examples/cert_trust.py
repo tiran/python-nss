@@ -20,15 +20,15 @@ def illustrate_ssl_trust(cert):
 
     # Get list of trusts as friendly description
     trust_list = nss.Certificate.trust_flags(trust_flags, nss.AsEnumDescription)
-    print "trust flags: %#x = %s" % (trust_flags, trust_list)
+    print "trust flags (asString): %#x = %s" % (trust_flags, trust_list)
 
     # Get list of trusts as the names of the enumerated constants
     trust_list = nss.Certificate.trust_flags(trust_flags, nss.AsEnumName)
-    print "trust flags: %#x = %s" % (trust_flags, trust_list)
+    print "trust flags (asEnumName): %#x = %s" % (trust_flags, trust_list)
 
     # Get list of trusts as enumeration constants
     trust_list = nss.Certificate.trust_flags(trust_flags, nss.AsEnum)
-    print "trust flags: %#x = %s" % (trust_flags, trust_list)
+    print "trust flags (asEnum): %#x = %s" % (trust_flags, trust_list)
 
     # test for membership in list of enumeration constants
     if nss.CERTDB_TRUSTED_CA in trust_list:

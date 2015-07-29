@@ -312,7 +312,7 @@ NetworkAddress_get_family(NetworkAddress *self, void *closure)
 {
     TraceMethodEnter(self);
 
-    return PyInt_FromLong(PR_NetAddrFamily(&self->pr_netaddr));
+    return PyLong_FromLong(PR_NetAddrFamily(&self->pr_netaddr));
 }
 
 static PyObject *
@@ -320,7 +320,7 @@ NetworkAddress_get_port(NetworkAddress *self, void *closure)
 {
     TraceMethodEnter(self);
 
-    return PyInt_FromLong(PRNetAddr_port(&self->pr_netaddr));
+    return PyLong_FromLong(PRNetAddr_port(&self->pr_netaddr));
 }
 
 static int
@@ -335,12 +335,12 @@ NetworkAddress_set_port(NetworkAddress *self, PyObject *value, void *closure)
         return -1;
     }
 
-    if (!PyInt_Check(value)) {
+    if (!PyInteger_Check(value)) {
         PyErr_SetString(PyExc_TypeError, "The port attribute value must be an integer");
         return -1;
     }
 
-    port = PyInt_AsLong(value);
+    port = PyLong_AsLong(value);
     if (PR_SetNetAddr(PR_IpAddrNull, PR_NetAddrFamily(&self->pr_netaddr),
                       port, &self->pr_netaddr) != PR_SUCCESS) {
         set_nspr_error(NULL);
@@ -571,13 +571,13 @@ NetworkAddress_init(NetworkAddress *self, PyObject *args, PyObject *kwds)
                                      &addr, &port, &family))
         return -1;
 
-    if (addr && !(PyInt_Check(addr) || PyString_Check(addr) || PyUnicode_Check(addr))) {
+    if (addr && !(PyInteger_Check(addr) || PyString_Check(addr) || PyUnicode_Check(addr))) {
         PyErr_SetString(PyExc_ValueError, "addr must be an int or a string");
         return -1;
     }
 
-    if (addr && PyInt_Check(addr)) {
-        addr_int = PyInt_AsLong(addr);
+    if (addr && PyInteger_Check(addr)) {
+        addr_int = PyLong_AsLong(addr);
         switch(addr_int) {
         case PR_IpAddrNull:
         case PR_IpAddrAny:
@@ -1095,7 +1095,7 @@ HostEntry_get_family(HostEntry *self, void *closure)
 {
     TraceMethodEnter(self);
 
-    return PyInt_FromLong(self->entry.h_addrtype);
+    return PyLong_FromLong(self->entry.h_addrtype);
 }
 
 static PyObject *
@@ -1610,7 +1610,7 @@ Socket_get_desc_type(Socket *self, void *closure)
     }
 
     desc_type = PR_GetDescType(self->pr_socket);
-    return PyInt_FromLong(desc_type);
+    return PyLong_FromLong(desc_type);
 }
 
 static PyGetSetDef
@@ -1740,12 +1740,12 @@ Socket_set_socket_option(Socket *self, PyObject *args)
         return NULL;
     }
 
-    if (!PyInt_Check(py_option)) {
+    if (!PyInteger_Check(py_option)) {
         PyErr_SetString(PyExc_TypeError, "set_socket_option: option must be an int");
         return NULL;
     }
 
-    option = PyInt_AsLong(py_option);
+    option = PyLong_AsLong(py_option);
     data.option = option;
 
     switch(option) {
@@ -2876,7 +2876,7 @@ Socket_send(Socket *self, PyObject *args, PyObject *kwds)
         return set_nspr_error(NULL);
     }
 
-    return PyInt_FromLong(amount);
+    return PyLong_FromLong(amount);
 }
 
 PyDoc_STRVAR(Socket_sendall_doc,
@@ -2918,7 +2918,7 @@ Socket_sendall(Socket *self, PyObject *args, PyObject *kwds)
         return set_nspr_error(NULL);
     }
 
-    return PyInt_FromLong(amount);
+    return PyLong_FromLong(amount);
 }
 
 PyDoc_STRVAR(Socket_send_to_doc,
@@ -2969,7 +2969,7 @@ Socket_send_to(Socket *self, PyObject *args, PyObject *kwds)
         return set_nspr_error(NULL);
     }
 
-    return PyInt_FromLong(amount);
+    return PyLong_FromLong(amount);
 }
 
 PyDoc_STRVAR(Socket_get_sock_name_doc,
@@ -3035,7 +3035,7 @@ Socket_fileno(Socket *self)
     }
 
 #if SIZEOF_SOCKET_T <= SIZEOF_LONG
-    return PyInt_FromLong((long)sock_fd);
+    return PyLong_FromLong((long)sock_fd);
 #else
     return PyLong_FromLongLong((PY_LONG_LONG)sock_fd);
 #endif
@@ -3188,7 +3188,7 @@ Socket_poll(Socket *self, PyObject *args)
 	if (obj == NULL) {
 	    goto err_descs;
         }
-	flags = PyInt_AsLong(obj);
+	flags = PyLong_AsLong(obj);
 	if (flags == -1 && PyErr_Occurred())
 	    goto err_descs;
 	Py_CLEAR(obj);
@@ -3212,7 +3212,7 @@ Socket_poll(Socket *self, PyObject *args)
 	goto err_descs;
     }
     for (i = 0; i < num_descs; i++) {
-	PyTuple_SetItem(return_value, i, PyInt_FromLong(descs[i].out_flags));
+	PyTuple_SetItem(return_value, i, PyLong_FromLong(descs[i].out_flags));
     }
 
     PyMem_Del(descs);
@@ -3383,12 +3383,18 @@ Socket_init(Socket *self, PyObject *args, PyObject *kwds)
 
     TraceMethodEnter(self);
 
-    if (!PyArg_ParseTupleAndKeywords(args, kwds, "|O!i", kwlist,
-                                     &PyInt_Type, &py_family, &desc_type))
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "|Oi", kwlist,
+                                     &py_family, &desc_type))
         return -1;
 
     if (py_family) {
-        family = PyInt_AsLong(py_family);
+        if (PyInteger_Check(py_family)) {
+            family = PyLong_AsLong(py_family);
+        } else {
+            PyErr_Format(PyExc_TypeError, "family must be int, not %.50s",
+                         Py_TYPE(py_family)->tp_name);
+            return -1;
+        }
     } else {
         if (PyErr_WarnEx(PyExc_DeprecationWarning,
                          "Socket initialization will require family parameter in future, default family parameter of PR_AF_INET is deprecated. Suggest using the family property of the NetworkAddress object associated with the socket, e.g. Socket(net_addr.family)", 1) < 0)
@@ -3517,7 +3523,7 @@ io_ntohs(PyObject *self, PyObject *args)
         return NULL;
     }
     host = PR_ntohs(net);
-    return PyInt_FromLong(host);
+    return PyLong_FromLong(host);
 }
 
 PyDoc_STRVAR(io_ntohl_doc, "32 bit conversion from network to host");
@@ -3530,7 +3536,7 @@ io_ntohl(PyObject *self, PyObject *args)
         return NULL;
     }
     host = PR_ntohl(net);
-    return PyInt_FromLong(host);
+    return PyLong_FromLong(host);
 }
 
 PyDoc_STRVAR(io_htons_doc, "16 bit conversion from host to network");
@@ -3543,7 +3549,7 @@ io_htons(PyObject *self, PyObject *args)
         return NULL;
     }
     net = PR_htons(host);
-    return PyInt_FromLong(net);
+    return PyLong_FromLong(net);
 }
 
 PyDoc_STRVAR(io_htonl_doc, "32 bit conversion from host to network");
@@ -3556,7 +3562,7 @@ io_htonl(PyObject *self, PyObject *args)
         return NULL;
     }
     net = PR_htonl(host);
-    return PyInt_FromLong(net);
+    return PyLong_FromLong(net);
 }
 
 // FIXME: the PR_GetProto* functions return success even if they fail
@@ -3582,7 +3588,7 @@ io_get_proto_by_name(PyObject *self, PyObject *args)
     }
     Py_END_ALLOW_THREADS
 
-    return PyInt_FromLong(proto_ent.p_num);
+    return PyLong_FromLong(proto_ent.p_num);
 }
 
 
@@ -3645,7 +3651,7 @@ io_interval_now(PyObject *self, PyObject *args)
     PRIntervalTime interval;
 
     interval = PR_IntervalNow();
-    return PyInt_FromLong(interval);
+    return PyLong_FromLong(interval);
 }
 
 PyDoc_STRVAR(io_ticks_per_second_doc,
@@ -3661,7 +3667,7 @@ io_ticks_per_second(PyObject *self, PyObject *args)
     PRUint32 ticks_per_second;
 
     ticks_per_second = PR_TicksPerSecond();
-    return PyInt_FromLong(ticks_per_second);
+    return PyLong_FromLong(ticks_per_second);
 }
 
 PyDoc_STRVAR(io_seconds_to_interval_doc,
@@ -3677,7 +3683,7 @@ io_seconds_to_interval(PyObject *self, PyObject *args)
     }
 
     interval = PR_SecondsToInterval(seconds);
-    return PyInt_FromLong(interval);
+    return PyLong_FromLong(interval);
 }
 
 PyDoc_STRVAR(io_milliseconds_to_interval_doc,
@@ -3693,7 +3699,7 @@ io_milliseconds_to_interval(PyObject *self, PyObject *args)
     }
 
     interval = PR_MillisecondsToInterval(milliseconds);
-    return PyInt_FromLong(interval);
+    return PyLong_FromLong(interval);
 }
 
 
@@ -3710,7 +3716,7 @@ io_microseconds_to_interval(PyObject *self, PyObject *args)
     }
 
     interval = PR_MicrosecondsToInterval(microseconds);
-    return PyInt_FromLong(interval);
+    return PyLong_FromLong(interval);
 }
 
 PyDoc_STRVAR(io_interval_to_seconds_doc,
@@ -3726,7 +3732,7 @@ io_interval_to_seconds(PyObject *self, PyObject *args)
     }
 
     seconds = PR_IntervalToSeconds(interval);
-    return PyInt_FromLong(seconds);
+    return PyLong_FromLong(seconds);
 }
 
 PyDoc_STRVAR(io_interval_to_milliseconds_doc,
@@ -3742,7 +3748,7 @@ io_interval_to_milliseconds(PyObject *self, PyObject *args)
     }
 
     milliseconds = PR_IntervalToMilliseconds(interval);
-    return PyInt_FromLong(milliseconds);
+    return PyLong_FromLong(milliseconds);
 }
 
 PyDoc_STRVAR(io_interval_to_microseconds_doc,
@@ -3758,7 +3764,7 @@ io_interval_to_microseconds(PyObject *self, PyObject *args)
     }
 
     microseconds = PR_IntervalToMicroseconds(interval);
-    return PyInt_FromLong(microseconds);
+    return PyLong_FromLong(microseconds);
 }
 
 PyDoc_STRVAR(io_addr_family_name_doc,

@@ -64,7 +64,7 @@ cipher_suite_to_name(unsigned long cipher_suite)
     PyObject *py_value;
     PyObject *py_name;
 
-    if ((py_value = PyInt_FromLong(cipher_suite)) == NULL) {
+    if ((py_value = PyLong_FromLong(cipher_suite)) == NULL) {
         PyErr_SetString(PyExc_MemoryError, "unable to create object");
         return NULL;
     }
@@ -108,7 +108,7 @@ cipher_suite_from_name(PyObject *py_name, unsigned long *suite)
 
     Py_DECREF(py_lower_name);
 
-    *suite = PyInt_AsLong(py_value);
+    *suite = PyLong_AsUnsignedLong(py_value);
 
     return SECSuccess;
 }
@@ -213,7 +213,7 @@ ssl_version_to_repr_kind(unsigned int major, unsigned int minor,
 
     switch(repr_kind) {
     case AsEnum:
-        return PyInt_FromLong(version_enum);
+        return PyLong_FromLong(version_enum);
     case AsEnumName: {
         return ssl_library_version_to_py_enum_name(version_enum);
     } break;
@@ -232,7 +232,7 @@ ssl_library_version_to_repr_kind(unsigned long version_enum,
 {
     switch(repr_kind) {
     case AsEnum:
-        return PyInt_FromLong(version_enum);
+        return PyLong_FromLong(version_enum);
     case AsEnumName: {
         return ssl_library_version_to_py_enum_name(version_enum);
     } break;
@@ -518,7 +518,7 @@ SSLSocket_get_ssl_option(SSLSocket *self, PyObject *args)
         return set_nspr_error(NULL);
     }
 
-    return PyInt_FromLong(value);
+    return PyLong_FromLong(value);
 }
 
 PyDoc_STRVAR(SSLSocket_accept_doc,
@@ -1317,7 +1317,7 @@ SSLSocket_data_pending(SSLSocket *self, PyObject *args)
     TraceMethodEnter(self);
 
     data_pending = SSL_DataPending(self->pr_socket);
-    return PyInt_FromLong(data_pending);
+    return PyLong_FromLong(data_pending);
 }
 
 PyDoc_STRVAR(SSLSocket_get_security_status_doc,
@@ -2374,7 +2374,7 @@ SSLCipherSuiteInformation_get_cipher_suite(SSLCipherSuiteInformation *self, void
 {
     TraceMethodEnter(self);
 
-    return PyInt_FromLong(self->info.cipherSuite);
+    return PyLong_FromLong(self->info.cipherSuite);
 }
 
 static PyObject *
@@ -2390,7 +2390,7 @@ SSLCipherSuiteInformation_get_auth_algorithm(SSLCipherSuiteInformation *self, vo
 {
     TraceMethodEnter(self);
 
-    return PyInt_FromLong(self->info.authAlgorithm);
+    return PyLong_FromLong(self->info.authAlgorithm);
 }
 
 static PyObject *
@@ -2406,7 +2406,7 @@ SSLCipherSuiteInformation_get_kea_type(SSLCipherSuiteInformation *self, void *cl
 {
     TraceMethodEnter(self);
 
-    return PyInt_FromLong(self->info.keaType);
+    return PyLong_FromLong(self->info.keaType);
 }
 
 static PyObject *
@@ -2422,7 +2422,7 @@ SSLCipherSuiteInformation_get_symmetric_cipher(SSLCipherSuiteInformation *self, 
 {
     TraceMethodEnter(self);
 
-    return PyInt_FromLong(self->info.symCipher);
+    return PyLong_FromLong(self->info.symCipher);
 }
 
 static PyObject *
@@ -2438,7 +2438,7 @@ SSLCipherSuiteInformation_get_symmetric_key_bits(SSLCipherSuiteInformation *self
 {
     TraceMethodEnter(self);
 
-    return PyInt_FromLong(self->info.symKeyBits);
+    return PyLong_FromLong(self->info.symKeyBits);
 }
 
 static PyObject *
@@ -2446,7 +2446,7 @@ SSLCipherSuiteInformation_get_symmetric_key_space(SSLCipherSuiteInformation *sel
 {
     TraceMethodEnter(self);
 
-    return PyInt_FromLong(self->info.symKeySpace);
+    return PyLong_FromLong(self->info.symKeySpace);
 }
 
 static PyObject *
@@ -2454,7 +2454,7 @@ SSLCipherSuiteInformation_get_effective_key_bits(SSLCipherSuiteInformation *self
 {
     TraceMethodEnter(self);
 
-    return PyInt_FromLong(self->info.effectiveKeyBits);
+    return PyLong_FromLong(self->info.effectiveKeyBits);
 }
 
 static PyObject *
@@ -2462,7 +2462,7 @@ SSLCipherSuiteInformation_get_mac_algorithm(SSLCipherSuiteInformation *self, voi
 {
     TraceMethodEnter(self);
 
-    return PyInt_FromLong(self->info.macAlgorithm);
+    return PyLong_FromLong(self->info.macAlgorithm);
 }
 
 static PyObject *
@@ -2478,7 +2478,7 @@ SSLCipherSuiteInformation_get_mac_bits(SSLCipherSuiteInformation *self, void *cl
 {
     TraceMethodEnter(self);
 
-    return PyInt_FromLong(self->info.macBits);
+    return PyLong_FromLong(self->info.macBits);
 }
 
 static PyObject *
@@ -2595,15 +2595,15 @@ SSLCipherSuiteInformation_format_lines(SSLCipherSuiteInformation *self, PyObject
     FMT_OBJ_AND_APPEND(lines, _("Symmetric Cipher"), obj1, level+1, fail);
     Py_CLEAR(obj1);
 
-    obj1 = PyInt_FromLong(self->info.symKeyBits);
+    obj1 = PyLong_FromLong(self->info.symKeyBits);
     FMT_OBJ_AND_APPEND(lines, _("Symmetric Key Bits"), obj1, level+1, fail);
     Py_CLEAR(obj1);
 
-    obj1 = PyInt_FromLong(self->info.effectiveKeyBits);
+    obj1 = PyLong_FromLong(self->info.effectiveKeyBits);
     FMT_OBJ_AND_APPEND(lines, _("Effective Symmetric Key Bits"), obj1, level+1, fail);
     Py_CLEAR(obj1);
 
-    obj1 = PyInt_FromLong(self->info.symKeySpace);
+    obj1 = PyLong_FromLong(self->info.symKeySpace);
     FMT_OBJ_AND_APPEND(lines, _("Symmetric Key Space"), obj1, level+1, fail);
     Py_CLEAR(obj1);
 
@@ -2615,7 +2615,7 @@ SSLCipherSuiteInformation_format_lines(SSLCipherSuiteInformation *self, PyObject
     FMT_OBJ_AND_APPEND(lines, _("MAC Algorithm"), obj1, level+1, fail);
     Py_CLEAR(obj1);
 
-    obj1 = PyInt_FromLong(self->info.macBits);
+    obj1 = PyLong_FromLong(self->info.macBits);
     FMT_OBJ_AND_APPEND(lines, _("MAC Bits"), obj1, level+1, fail);
     Py_CLEAR(obj1);
 
@@ -2782,7 +2782,7 @@ SSLChannelInformation_get_protocol_version(SSLChannelInformation *self, void *cl
 {
     TraceMethodEnter(self);
 
-    return PyInt_FromLong(self->info.protocolVersion);
+    return PyLong_FromLong(self->info.protocolVersion);
 }
 
 static PyObject *
@@ -2814,7 +2814,7 @@ SSLChannelInformation_get_major_protocol_version(SSLChannelInformation *self, vo
 {
     TraceMethodEnter(self);
 
-    return PyInt_FromLong(self->info.protocolVersion >> 8);
+    return PyLong_FromLong(self->info.protocolVersion >> 8);
 }
 
 static PyObject *
@@ -2822,7 +2822,7 @@ SSLChannelInformation_get_minor_protocol_version(SSLChannelInformation *self, vo
 {
     TraceMethodEnter(self);
 
-    return PyInt_FromLong(self->info.protocolVersion & 0xff);
+    return PyLong_FromLong(self->info.protocolVersion & 0xff);
 }
 
 static PyObject *
@@ -2830,7 +2830,7 @@ SSLChannelInformation_get_cipher_suite(SSLChannelInformation *self, void *closur
 {
     TraceMethodEnter(self);
 
-    return PyInt_FromLong(self->info.cipherSuite);
+    return PyLong_FromLong(self->info.cipherSuite);
 }
 
 static PyObject *
@@ -2838,7 +2838,7 @@ SSLChannelInformation_get_auth_key_bits(SSLChannelInformation *self, void *closu
 {
     TraceMethodEnter(self);
 
-    return PyInt_FromLong(self->info.authKeyBits);
+    return PyLong_FromLong(self->info.authKeyBits);
 }
 
 static PyObject *
@@ -2846,7 +2846,7 @@ SSLChannelInformation_get_kea_key_bits(SSLChannelInformation *self, void *closur
 {
     TraceMethodEnter(self);
 
-    return PyInt_FromLong(self->info.keaKeyBits);
+    return PyLong_FromLong(self->info.keaKeyBits);
 }
 
 static PyObject *
@@ -2902,7 +2902,7 @@ SSLChannelInformation_get_compression_method(SSLChannelInformation *self, void *
 {
     TraceMethodEnter(self);
 
-    return PyInt_FromLong(self->info.compressionMethod);
+    return PyLong_FromLong(self->info.compressionMethod);
 }
 
 static PyObject *
@@ -3000,11 +3000,11 @@ SSLChannelInformation_format_lines(SSLChannelInformation *self, PyObject *args, 
     Py_CLEAR(obj1);
     Py_CLEAR(obj2);
 
-    obj1 = PyInt_FromLong(self->info.authKeyBits);
+    obj1 = PyLong_FromLong(self->info.authKeyBits);
     FMT_OBJ_AND_APPEND(lines, _("Auth Key Bits"), obj1, level, fail);
     Py_CLEAR(obj1);
 
-    obj1 = PyInt_FromLong(self->info.keaKeyBits);
+    obj1 = PyLong_FromLong(self->info.keaKeyBits);
     FMT_OBJ_AND_APPEND(lines, _("Key Exchange Key Bits"), obj1, level, fail);
     Py_CLEAR(obj1);
 
@@ -3244,7 +3244,7 @@ SSL_get_ssl_default_option(PyObject *self, PyObject *args)
     if (SSL_OptionGetDefault(option, &value) != SECSuccess) {
         return set_nspr_error(NULL);
     }
-    return PyInt_FromLong(value);
+    return PyLong_FromLong(value);
 }
 
 PyDoc_STRVAR(SSL_set_default_cipher_pref_doc,
@@ -3667,7 +3667,7 @@ SSL_get_max_server_cache_locks(PyObject *self, PyObject *args)
 {
     TraceMethodEnter(self);
 
-    return PyInt_FromLong(SSL_GetMaxServerCacheLocks());
+    return PyLong_FromLong(SSL_GetMaxServerCacheLocks());
 }
 
 PyDoc_STRVAR(SSL_set_max_server_cache_locks_doc,
@@ -3805,7 +3805,7 @@ ssl_library_version_to_py_enum_name(unsigned long ssl_library_version)
     PyObject *py_value;
     PyObject *py_name;
 
-    if ((py_value = PyInt_FromLong(ssl_library_version)) == NULL) {
+    if ((py_value = PyLong_FromLong(ssl_library_version)) == NULL) {
         PyErr_SetString(PyExc_MemoryError, "unable to create object");
         return NULL;
     }
@@ -3828,7 +3828,7 @@ ssl_library_version_to_py_string(unsigned long ssl_library_version)
     PyObject *py_value;
     PyObject *py_name;
 
-    if ((py_value = PyInt_FromLong(ssl_library_version)) == NULL) {
+    if ((py_value = PyLong_FromLong(ssl_library_version)) == NULL) {
         PyErr_SetString(PyExc_MemoryError, "unable to create object");
         return NULL;
     }
@@ -3873,7 +3873,7 @@ ssl_library_version_from_name(PyObject *py_name, unsigned long *version_enum)
 
     Py_DECREF(py_lower_name);
 
-    *version_enum = PyInt_AsLong(py_value);
+    *version_enum = PyLong_AsUnsignedLong(py_value);
 
     return SECSuccess;
 }
@@ -3881,8 +3881,8 @@ ssl_library_version_from_name(PyObject *py_name, unsigned long *version_enum)
 static SECStatus
 ssl_library_version_from_pyobject(PyObject *py_value, const char *bound, unsigned long *version_enum)
 {
-    if (PyInt_Check(py_value)) {
-        *version_enum = PyInt_AsLong(py_value);
+    if (PyInteger_Check(py_value)) {
+        *version_enum = PyLong_AsUnsignedLong(py_value);
         return SECSuccess;
     }
 
@@ -4018,7 +4018,7 @@ SSL_ssl_library_version_from_name(PyObject *self, PyObject *args)
         return NULL;
     }
 
-    return PyInt_FromLong(version_enum);
+    return PyLong_FromLong(version_enum);
 }
 
 PyDoc_STRVAR(SSL_get_supported_ssl_version_range_doc,
@@ -4250,7 +4250,7 @@ SSL_ssl_cipher_suite_from_name(PyObject *self, PyObject *args)
         return set_nspr_error(NULL);
     }
 
-    return PyInt_FromLong(suite);
+    return PyLong_FromLong(suite);
 }
 
 
@@ -4411,7 +4411,7 @@ MOD_INIT(ssl)
     }
 
     for (i = 0; i < SSL_NumImplementedCiphers; i++) {
-        PyTuple_SetItem(py_ssl_implemented_ciphers, i, PyInt_FromLong(SSL_ImplementedCiphers[i]));
+        PyTuple_SetItem(py_ssl_implemented_ciphers, i, PyLong_FromLong(SSL_ImplementedCiphers[i]));
     }
 
     PyModule_AddObject(m, "ssl_implemented_ciphers", py_ssl_implemented_ciphers);

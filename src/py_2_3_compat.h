@@ -9,13 +9,15 @@
 #define MOD_SUCCESS_VAL(val) val
 #define MOD_INIT(name) PyMODINIT_FUNC PyInit_##name(void)
 
-#else  /* PY_MAJOR_VERSION < 3 */
+#define PyInteger_Check(v)  PyLong_Check(v)
 
-#define GETSTATE(m) (&_state)
+#else  /* PY_MAJOR_VERSION < 3 */
 
 #define MOD_ERROR_VAL
 #define MOD_SUCCESS_VAL(val)
 #define MOD_INIT(name) void init##name(void)
+
+#define PyInteger_Check(v)  (PyInt_Check(v) || PyLong_Check(v))
 
 #endif  /* PY_MAJOR_VERSION */
 
