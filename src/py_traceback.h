@@ -33,10 +33,18 @@ print_traceback()
 
     printf("Traceback (most recent frame first)\n");
     while (frame && depth) {
-        printf("  File \"%.500s\", line %d, in %.500s\n",
-                   PyString_AsString(frame->f_code->co_filename),
-               frame->f_lineno,
-               PyString_AsString(frame->f_code->co_name));
+        PyObject *msg_unicode = NULL;
+        PyOjbect *msg_utf8 = NULL;
+
+        msg_unicode = PyUnicode_FromFormat("  File \"%S\", line %d, in %S\n",
+                                           frame->f_code->co_filename,
+                                           frame->f_lineno,
+                                           frame->f_code->co_name);
+        msg_utf8 = PyUnicode_AsUTF8String(msg_unicode);
+        printf("%s", PyBytes_AS_STRING(msg_utf8));
+        Py_DECREF(msg_unicode);
+        Py_DECREF(msg_utf8);
+
         frame = frame->f_back;
         depth--;
     }

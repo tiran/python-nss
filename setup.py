@@ -16,7 +16,7 @@ from distutils.util import subst_vars, change_root
 from distutils.command.build_py import build_py as _build_py
 from distutils.command.sdist import sdist as _sdist
 
-version = "0.17.0"
+version = "1.0.0"
 
 doc_manifest = [
     [['include README LICENSE* doc/ChangeLog',
@@ -364,8 +364,8 @@ def main(argv):
                   extra_compile_args = extra_compile_args,
                   )
 
-          #bug_enter       = 'https://bugzilla.redhat.com/buglist.cgi?submit&component=python-nss&product=Fedora&classification=Fedora'
-          #bug_tracker     = 'https://bugzilla.redhat.com/enter_bug.cgi?component=python-nss&product=Fedora&classification=Fedora',
+          #bug_tracker       = 'https://bugzilla.redhat.com/buglist.cgi?submit&component=python-nss&product=Fedora&classification=Fedora'
+          #bug_enter     = 'https://bugzilla.redhat.com/enter_bug.cgi?component=python-nss&product=Fedora&classification=Fedora',
     setup(name             = 'python-nss',
           version          = version,
           description      = 'Python bindings for Network Security Services (NSS) and Netscape Portable Runtime (NSPR)',

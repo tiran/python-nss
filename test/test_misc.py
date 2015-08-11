@@ -1,5 +1,6 @@
 #!/usr/bin/python
 
+from __future__ import print_function
 import sys
 import os
 import unittest
@@ -16,7 +17,7 @@ class TestVersion(unittest.TestCase):
 class TestShutdownCallback(unittest.TestCase):
     def test_shutdown_callback(self):
         int_value = 43
-        str_value = "foobar"
+        str_value = u"foobar"
         count = 0
         dict_value = {'count': count}
 
@@ -26,7 +27,10 @@ class TestShutdownCallback(unittest.TestCase):
             self.assertEqual(isinstance(i, int), True)
             self.assertEqual(i, int_value)
 
-            self.assertEqual(isinstance(s, basestring), True)
+            if sys.version_info.major <= 2:
+                self.assertEqual(isinstance(s, basestring), True)
+            else:
+                self.assertEqual(isinstance(s, str), True)
             self.assertEqual(s, str_value)
 
             self.assertEqual(isinstance(d, dict), True)

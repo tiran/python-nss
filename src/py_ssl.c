@@ -88,21 +88,22 @@ cipher_suite_from_name(PyObject *py_name, unsigned long *suite)
     PyObject *py_lower_name;
     PyObject *py_value;
 
-
-    if (!PyString_Check(py_name)) {
+    if (!PyBaseString_Check(py_name)) {
         PyErr_Format(PyExc_TypeError, "cipher suite name must be a string, not %.200s",
                      Py_TYPE(py_name)->tp_name);
 
         return SECFailure;
     }
 
-    if ((py_lower_name = PyObject_CallMethod(py_name, "lower", NULL)) == NULL) {
+    if ((py_lower_name = PyUnicode_Lower(py_name)) == NULL) {
         return SECFailure;
     }
 
     if ((py_value = PyDict_GetItem(cipher_suite_name_to_value, py_lower_name)) == NULL) {
-        PyErr_Format(PyExc_KeyError, "cipher suite name not found: %s", PyString_AsString(py_name));
+        PyObject *py_name_utf8 = PyBaseString_UTF8(py_name, "name");
+        PyErr_Format(PyExc_KeyError, "cipher suite name not found: %s", PyBytes_AsString(py_name_utf8));
         Py_DECREF(py_lower_name);
+        Py_XDECREF(py_name_utf8);
         return SECFailure;
     }
 
@@ -1587,13 +1588,16 @@ SSLSocket_set_hostname(SSLSocket *self, PyObject *args)
 
     TraceMethodEnter(self);
 
-    if (!PyArg_ParseTuple(args, "s:set_hostname", &url))
+    if (!PyArg_ParseTuple(args, "et:set_hostname",
+                          "idna", &url))
         return NULL;
 
     if (SSL_SetURL(self->pr_socket, url) != SECSuccess) {
+        PyMem_Free(url);
         return set_nspr_error(NULL);
     }
 
+    PyMem_Free(url);
     Py_RETURN_NONE;
 }
 
@@ -1618,7 +1622,7 @@ SSLSocket_get_hostname(SSLSocket *self, PyObject *args)
         return set_nspr_error(NULL);
     }
 
-    py_hostname = PyString_FromString(url);
+    py_hostname = PyUnicode_Decode(url, strlen(url), "idna", NULL);
     PR_Free(url);
     return py_hostname;
 }
@@ -2048,8 +2052,8 @@ SSLSocket_get_negotiated_host(SSLSocket *self, PyObject *args)
     }
 
     size = host->len;
-    if ((py_host = PyString_FromStringAndSize((const char *)host->data,
-                                              size)) == NULL) {
+
+    if ((py_host = PyUnicode_Decode((const char *)host->data, size, "idna", NULL)) == NULL) {
         SECITEM_FreeItem(host, PR_TRUE);
         return NULL;
     }
@@ -2070,6 +2074,7 @@ SSLSocket_connection_info_format_lines(SSLSocket *self, PyObject *args, PyObject
     unsigned int major, minor;
     PyObject *obj1 = NULL;
     PyObject *obj2 = NULL;
+    PyObject *obj3 = NULL;
 
     TraceMethodEnter(self);
 
@@ -2095,49 +2100,53 @@ SSLSocket_connection_info_format_lines(SSLSocket *self, PyObject *args, PyObject
     if ((obj2 = ssl_version_to_repr_kind(major, minor, AsString)) == NULL) {
         goto fail;
     }
-    if ((obj1 = PyString_FromFormat("%d.%d (%s)",
-                                    channel.protocolVersion >> 8,
-                                    channel.protocolVersion & 0xff,
-                                    PyString_AsString(obj2))) == NULL) {
+    if ((obj3 = PyBaseString_UTF8(obj2, "ssl_version_to_repr_kind")) == NULL) {
+        goto fail;
+    }
+    if ((obj1 = PyUnicode_FromFormat("%d.%d (%s)",
+                                     channel.protocolVersion >> 8,
+                                     channel.protocolVersion & 0xff,
+                                     PyBytes_AsString(obj3))) == NULL) {
         goto fail;
     }
     FMT_OBJ_AND_APPEND(lines, _("SSL Protocol Version"), obj1, level, fail);
     Py_CLEAR(obj1);
     Py_CLEAR(obj2);
+    Py_CLEAR(obj3);
 
-    if ((obj1 = PyString_FromFormat("%d-bit %s",
-                                    suite.effectiveKeyBits,
-                                    suite.symCipherName)) == NULL) {
+    if ((obj1 = PyUnicode_FromFormat("%d-bit %s",
+                                     suite.effectiveKeyBits,
+                                     suite.symCipherName)) == NULL) {
         goto fail;
     }
     FMT_OBJ_AND_APPEND(lines, _("Cipher"), obj1, level, fail);
     Py_CLEAR(obj1);
 
-    if ((obj1 = PyString_FromFormat("%d-bit %s",
-                                    suite.macBits,
-                                    suite.macAlgorithmName)) == NULL) {
+    if ((obj1 = PyUnicode_FromFormat("%d-bit %s",
+                                     suite.macBits,
+                                     suite.macAlgorithmName)) == NULL) {
         goto fail;
     }
     FMT_OBJ_AND_APPEND(lines, _("MAC"), obj1, level, fail);
     Py_CLEAR(obj1);
 
-    if ((obj1 = PyString_FromFormat("%d-bit %s",
-                                    channel.authKeyBits,
-                                    suite.authAlgorithmName)) == NULL) {
+    if ((obj1 = PyUnicode_FromFormat("%d-bit %s",
+                                     channel.authKeyBits,
+                                     suite.authAlgorithmName)) == NULL) {
         goto fail;
     }
     FMT_OBJ_AND_APPEND(lines, _("Auth"), obj1, level, fail);
     Py_CLEAR(obj1);
 
-    if ((obj1 = PyString_FromFormat("%d-bit %s",
-                                    channel.keaKeyBits,
-                                    suite.keaTypeName)) == NULL) {
+    if ((obj1 = PyUnicode_FromFormat("%d-bit %s",
+                                     channel.keaKeyBits,
+                                     suite.keaTypeName)) == NULL) {
         goto fail;
     }
     FMT_OBJ_AND_APPEND(lines, _("Key Exchange"), obj1, level, fail);
     Py_CLEAR(obj1);
 
-    obj1 = PyString_FromString(channel.compressionMethodName);
+    obj1 = PyUnicode_FromString(channel.compressionMethodName);
     FMT_OBJ_AND_APPEND(lines, _("Compression"), obj1, level, fail);
     Py_CLEAR(obj1);
 
@@ -2146,6 +2155,7 @@ SSLSocket_connection_info_format_lines(SSLSocket *self, PyObject *args, PyObject
  fail:
     Py_XDECREF(obj1);
     Py_XDECREF(obj2);
+    Py_XDECREF(obj3);
     Py_XDECREF(lines);
     return NULL;
 }
@@ -2322,8 +2332,7 @@ SSLSocket_init(SSLSocket *self, PyObject *args, PyObject *kwds)
 }
 
 static PyTypeObject SSLSocketType = {
-    PyObject_HEAD_INIT(NULL)
-    0,						/* ob_size */
+    PyVarObject_HEAD_INIT(NULL, 0)
     "nss.ssl.SSLSocket",			/* tp_name */
     sizeof(SSLSocket),				/* tp_basicsize */
     0,						/* tp_itemsize */
@@ -2382,7 +2391,7 @@ SSLCipherSuiteInformation_get_cipher_suite_name(SSLCipherSuiteInformation *self,
 {
     TraceMethodEnter(self);
 
-    return PyString_FromString(self->info.cipherSuiteName);
+    return PyUnicode_FromString(self->info.cipherSuiteName);
 }
 
 static PyObject *
@@ -2398,7 +2407,7 @@ SSLCipherSuiteInformation_get_auth_algorithm_name(SSLCipherSuiteInformation *sel
 {
     TraceMethodEnter(self);
 
-    return PyString_FromString(self->info.authAlgorithmName);
+    return PyUnicode_FromString(self->info.authAlgorithmName);
 }
 
 static PyObject *
@@ -2414,7 +2423,7 @@ SSLCipherSuiteInformation_get_kea_type_name(SSLCipherSuiteInformation *self, voi
 {
     TraceMethodEnter(self);
 
-    return PyString_FromString(self->info.keaTypeName);
+    return PyUnicode_FromString(self->info.keaTypeName);
 }
 
 static PyObject *
@@ -2430,7 +2439,7 @@ SSLCipherSuiteInformation_get_symmetric_cipher_name(SSLCipherSuiteInformation *s
 {
     TraceMethodEnter(self);
 
-    return PyString_FromString(self->info.symCipherName);
+    return PyUnicode_FromString(self->info.symCipherName);
 }
 
 static PyObject *
@@ -2470,7 +2479,7 @@ SSLCipherSuiteInformation_get_mac_algorithm_name(SSLCipherSuiteInformation *self
 {
     TraceMethodEnter(self);
 
-    return PyString_FromString(self->info.macAlgorithmName);
+    return PyUnicode_FromString(self->info.macAlgorithmName);
 }
 
 static PyObject *
@@ -2563,33 +2572,33 @@ SSLCipherSuiteInformation_format_lines(SSLCipherSuiteInformation *self, PyObject
     }
 
 
-    if ((obj1 = PyString_FromFormat("%s (0x%x)",
-                                    self->info.cipherSuiteName,
-                                    self->info.cipherSuite)) == NULL) {
+    if ((obj1 = PyUnicode_FromFormat("%s (0x%x)",
+                                     self->info.cipherSuiteName,
+                                     self->info.cipherSuite)) == NULL) {
         goto fail;
     }
     FMT_OBJ_AND_APPEND(lines, _("Cipher Suite"), obj1, level, fail);
     Py_CLEAR(obj1);
 
-    if ((obj1 = PyString_FromFormat("%s (0x%x)",
-                                    self->info.authAlgorithmName,
-                                    self->info.authAlgorithm)) == NULL) {
+    if ((obj1 = PyUnicode_FromFormat("%s (0x%x)",
+                                     self->info.authAlgorithmName,
+                                     self->info.authAlgorithm)) == NULL) {
         goto fail;
     }
     FMT_OBJ_AND_APPEND(lines, _("Auth Algorithm"), obj1, level+1, fail);
     Py_CLEAR(obj1);
 
-    if ((obj1 = PyString_FromFormat("%s (0x%x)",
-                                    self->info.keaTypeName,
-                                    self->info.keaType)) == NULL) {
+    if ((obj1 = PyUnicode_FromFormat("%s (0x%x)",
+                                     self->info.keaTypeName,
+                                     self->info.keaType)) == NULL) {
         goto fail;
     }
     FMT_OBJ_AND_APPEND(lines, _("Key Exchange Type"), obj1, level+1, fail);
     Py_CLEAR(obj1);
 
-    if ((obj1 = PyString_FromFormat("%s (0x%x)",
-                                    self->info.symCipherName,
-                                    self->info.symCipher)) == NULL) {
+    if ((obj1 = PyUnicode_FromFormat("%s (0x%x)",
+                                     self->info.symCipherName,
+                                     self->info.symCipher)) == NULL) {
         goto fail;
     }
     FMT_OBJ_AND_APPEND(lines, _("Symmetric Cipher"), obj1, level+1, fail);
@@ -2607,9 +2616,9 @@ SSLCipherSuiteInformation_format_lines(SSLCipherSuiteInformation *self, PyObject
     FMT_OBJ_AND_APPEND(lines, _("Symmetric Key Space"), obj1, level+1, fail);
     Py_CLEAR(obj1);
 
-    if ((obj1 = PyString_FromFormat("%s (0x%x)",
-                                    self->info.macAlgorithmName,
-                                    self->info.macAlgorithm)) == NULL) {
+    if ((obj1 = PyUnicode_FromFormat("%s (0x%x)",
+                                     self->info.macAlgorithmName,
+                                     self->info.macAlgorithm)) == NULL) {
         goto fail;
     }
     FMT_OBJ_AND_APPEND(lines, _("MAC Algorithm"), obj1, level+1, fail);
@@ -2619,15 +2628,15 @@ SSLCipherSuiteInformation_format_lines(SSLCipherSuiteInformation *self, PyObject
     FMT_OBJ_AND_APPEND(lines, _("MAC Bits"), obj1, level+1, fail);
     Py_CLEAR(obj1);
 
-    obj1 = PyString_FromString(self->info.isFIPS ? "True" : "False");
+    obj1 = PyUnicode_FromString(self->info.isFIPS ? "True" : "False");
     FMT_OBJ_AND_APPEND(lines, _("FIPS"), obj1, level+1, fail);
     Py_CLEAR(obj1);
 
-    obj1 = PyString_FromString(self->info.isExportable ? "True" : "False");
+    obj1 = PyUnicode_FromString(self->info.isExportable ? "True" : "False");
     FMT_OBJ_AND_APPEND(lines, _("Exportable"), obj1, level+1, fail);
     Py_CLEAR(obj1);
 
-    obj1 = PyString_FromString(self->info.nonStandard ? "True" : "False");
+    obj1 = PyUnicode_FromString(self->info.nonStandard ? "True" : "False");
     FMT_OBJ_AND_APPEND(lines, _("Nonstandard"), obj1, level+1, fail);
     Py_CLEAR(obj1);
 
@@ -2688,7 +2697,7 @@ SSLCipherSuiteInformation_dealloc(SSLCipherSuiteInformation* self)
 {
     TraceMethodEnter(self);
 
-    self->ob_type->tp_free((PyObject*)self);
+    Py_TYPE(self)->tp_free((PyObject*)self);
 }
 
 PyDoc_STRVAR(SSLCipherSuiteInformation_doc,
@@ -2713,8 +2722,7 @@ SSLCipherSuiteInformation_init(SSLCipherSuiteInformation *self, PyObject *args, 
 }
 
 static PyTypeObject SSLCipherSuiteInformationType = {
-    PyObject_HEAD_INIT(NULL)
-    0,						/* ob_size */
+    PyVarObject_HEAD_INIT(NULL, 0)
     "nss.ssl.SSLCipherSuiteInfo",		/* tp_name */
     sizeof(SSLCipherSuiteInformation),		/* tp_basicsize */
     0,						/* tp_itemsize */
@@ -2910,7 +2918,7 @@ SSLChannelInformation_get_compression_method_name(SSLChannelInformation *self, v
 {
     TraceMethodEnter(self);
 
-    return PyString_FromString(self->info.compressionMethodName);
+    return PyUnicode_FromString(self->info.compressionMethodName);
 }
 
 static PyObject *
@@ -2960,6 +2968,7 @@ SSLChannelInformation_format_lines(SSLChannelInformation *self, PyObject *args, 
     PyObject *lines = NULL;
     PyObject *obj1 = NULL;
     PyObject *obj2 = NULL;
+    PyObject *obj3 = NULL;
     unsigned int major, minor;
 
     TraceMethodEnter(self);
@@ -2978,27 +2987,35 @@ SSLChannelInformation_format_lines(SSLChannelInformation *self, PyObject *args, 
     if ((obj2 = ssl_version_to_repr_kind(major, minor, AsString)) == NULL) {
         goto fail;
     }
-    if ((obj1 = PyString_FromFormat("%d.%d (%s)",
-                                    self->info.protocolVersion >> 8,
-                                    self->info.protocolVersion & 0xff,
-                                    PyString_AsString(obj2))) == NULL) {
+    if ((obj3 = PyBaseString_UTF8(obj2, "ssl_version_to_repr_kind")) == NULL) {
+        goto fail;
+    }
+    if ((obj1 = PyUnicode_FromFormat("%d.%d (%s)",
+                                     self->info.protocolVersion >> 8,
+                                     self->info.protocolVersion & 0xff,
+                                     PyBytes_AsString(obj3))) == NULL) {
         goto fail;
     }
     FMT_OBJ_AND_APPEND(lines, _("Protocol Version"), obj1, level, fail);
     Py_CLEAR(obj1);
     Py_CLEAR(obj2);
+    Py_CLEAR(obj3);
 
     if ((obj2 = cipher_suite_to_name(self->info.cipherSuite)) == NULL) {
         goto fail;
     }
-    if ((obj1 = PyString_FromFormat("%s (0x%x)",
-                                    PyString_AsString(obj2),
-                                    self->info.cipherSuite)) == NULL) {
+    if ((obj3 = PyBaseString_UTF8(obj2, "cipher_suite_to_name")) == NULL) {
+        goto fail;
+    }
+    if ((obj1 = PyUnicode_FromFormat("%s (0x%x)",
+                                     PyBytes_AsString(obj3),
+                                     self->info.cipherSuite)) == NULL) {
         goto fail;
     }
     FMT_OBJ_AND_APPEND(lines, _("Cipher Suite"), obj1, level, fail);
     Py_CLEAR(obj1);
     Py_CLEAR(obj2);
+    Py_CLEAR(obj3);
 
     obj1 = PyLong_FromLong(self->info.authKeyBits);
     FMT_OBJ_AND_APPEND(lines, _("Auth Key Bits"), obj1, level, fail);
@@ -3026,9 +3043,9 @@ SSLChannelInformation_format_lines(SSLChannelInformation *self, PyObject *args, 
     FMT_OBJ_AND_APPEND(lines, _("Expiration Time"), obj1, level, fail);
     Py_CLEAR(obj1);
 
-    if ((obj1 = PyString_FromFormat("%s (0x%x)",
-                                    self->info.compressionMethodName,
-                                    self->info.compressionMethod)) == NULL) {
+    if ((obj1 = PyUnicode_FromFormat("%s (0x%x)",
+                                     self->info.compressionMethodName,
+                                     self->info.compressionMethod)) == NULL) {
         goto fail;
     }
     FMT_OBJ_AND_APPEND(lines, _("Compression Method"), obj1, level, fail);
@@ -3049,6 +3066,7 @@ SSLChannelInformation_format_lines(SSLChannelInformation *self, PyObject *args, 
  fail:
     Py_XDECREF(obj1);
     Py_XDECREF(obj2);
+    Py_XDECREF(obj3);
     Py_XDECREF(lines);
     return NULL;
 }
@@ -3103,7 +3121,7 @@ SSLChannelInformation_dealloc(SSLChannelInformation* self)
 {
     TraceMethodEnter(self);
 
-    self->ob_type->tp_free((PyObject*)self);
+    Py_TYPE(self)->tp_free((PyObject*)self);
 }
 
 PyDoc_STRVAR(SSLChannelInformation_doc,
@@ -3128,8 +3146,7 @@ SSLChannelInformation_init(SSLChannelInformation *self, PyObject *args, PyObject
 }
 
 static PyTypeObject SSLChannelInformationType = {
-    PyObject_HEAD_INIT(NULL)
-    0,						/* ob_size */
+    PyVarObject_HEAD_INIT(NULL, 0)
     "nss.ssl.SSLChannelInfo",			/* tp_name */
     sizeof(SSLChannelInformation),		/* tp_basicsize */
     0,						/* tp_itemsize */
@@ -3443,7 +3460,7 @@ SSL_config_server_session_id_cache(PyObject *self, PyObject *args, PyObject *kwd
     PRUint32 ssl2_timeout = 0;
     PRUint32 ssl3_timeout = 0;
     PyObject *py_directory = Py_None;
-    PyObject *py_directory_utf8 = NULL;
+    PyObject *py_directory_fs_encoded = NULL;
     char *directory = NULL;
 
     TraceMethodEnter(self);
@@ -3452,29 +3469,21 @@ SSL_config_server_session_id_cache(PyObject *self, PyObject *args, PyObject *kwd
                                      &max_cache_entries, &ssl2_timeout, &ssl3_timeout, &py_directory))
         return NULL;
 
-    if (PyString_Check(py_directory) || PyUnicode_Check(py_directory)) {
-        if (PyString_Check(py_directory)) {
-            py_directory_utf8 = py_directory;
-            Py_INCREF(py_directory_utf8);
-        } else {
-            py_directory_utf8 = PyUnicode_AsUTF8String(py_directory);
+    if (py_directory ) {
+        if (PyNone_Check(py_directory)) { /* None implies default */
+            directory = NULL;
+        } else if (!PyUnicode_FSConverter(py_directory, &py_directory_fs_encoded)) {
+            return NULL;
         }
-        directory = PyString_AsString(py_directory_utf8);
-    } else if (PyNone_Check(py_directory)) {
-        directory = NULL;
-    } else {
-        PyErr_Format(PyExc_TypeError, "directory must be string or None, not %.200s",
-                     Py_TYPE(py_directory)->tp_name);
-        return NULL;
     }
 
     if (SSL_ConfigServerSessionIDCache(max_cache_entries, ssl2_timeout,
                                        ssl3_timeout, directory) != SECSuccess) {
-        Py_XDECREF(py_directory_utf8);
+        Py_XDECREF(py_directory_fs_encoded);
         return set_nspr_error(NULL);
     }
 
-    Py_XDECREF(py_directory_utf8);
+    Py_XDECREF(py_directory_fs_encoded);
     Py_RETURN_NONE;
 }
 
@@ -3532,7 +3541,7 @@ SSL_config_server_session_id_cache_with_opt(PyObject *self, PyObject *args, PyOb
     PRUint32 ssl2_timeout = 0;
     PRUint32 ssl3_timeout = 0;
     PyObject *py_directory = Py_None;
-    PyObject *py_directory_utf8 = NULL;
+    PyObject *py_directory_fs_encoded = NULL;
     char *directory = NULL;
     PyObject * py_enable_mp_cache = NULL;
     PRBool enable_mp_cache = PR_FALSE;
@@ -3544,20 +3553,12 @@ SSL_config_server_session_id_cache_with_opt(PyObject *self, PyObject *args, PyOb
                                      &ssl2_timeout, &ssl3_timeout, &py_directory, &py_enable_mp_cache))
         return NULL;
 
-    if (PyString_Check(py_directory) || PyUnicode_Check(py_directory)) {
-        if (PyString_Check(py_directory)) {
-            py_directory_utf8 = py_directory;
-            Py_INCREF(py_directory_utf8);
-        } else {
-            py_directory_utf8 = PyUnicode_AsUTF8String(py_directory);
+    if (py_directory ) {
+        if (PyNone_Check(py_directory)) { /* None implies default */
+            directory = NULL;
+        } else if (!PyUnicode_FSConverter(py_directory, &py_directory_fs_encoded)) {
+            return NULL;
         }
-        directory = PyString_AsString(py_directory_utf8);
-    } else if (PyNone_Check(py_directory)) {
-        directory = NULL;
-    } else {
-        PyErr_Format(PyExc_TypeError, "directory must be string or None, not %.200s",
-                     Py_TYPE(py_directory)->tp_name);
-        return NULL;
     }
 
     if (py_enable_mp_cache) {
@@ -3568,11 +3569,11 @@ SSL_config_server_session_id_cache_with_opt(PyObject *self, PyObject *args, PyOb
                                               max_cache_entries, max_cert_cache_entries,
                                               max_server_name_cache_entries,
                                               enable_mp_cache) != SECSuccess) {
-        Py_XDECREF(py_directory_utf8);
+        Py_XDECREF(py_directory_fs_encoded);
         return set_nspr_error(NULL);
     }
 
-    Py_XDECREF(py_directory_utf8);
+    Py_XDECREF(py_directory_fs_encoded);
     Py_RETURN_NONE;
 }
 
@@ -3619,7 +3620,7 @@ SSL_config_mp_server_sid_cache(PyObject *self, PyObject *args, PyObject *kwds)
     PRUint32 ssl2_timeout = 0;
     PRUint32 ssl3_timeout = 0;
     PyObject *py_directory = Py_None;
-    PyObject *py_directory_utf8 = NULL;
+    PyObject *py_directory_fs_encoded = NULL;
     char *directory = NULL;
 
     TraceMethodEnter(self);
@@ -3628,29 +3629,21 @@ SSL_config_mp_server_sid_cache(PyObject *self, PyObject *args, PyObject *kwds)
                                      &max_cache_entries, &ssl2_timeout, &ssl3_timeout, &py_directory))
         return NULL;
 
-    if (PyString_Check(py_directory) || PyUnicode_Check(py_directory)) {
-        if (PyString_Check(py_directory)) {
-            py_directory_utf8 = py_directory;
-            Py_INCREF(py_directory_utf8);
-        } else {
-            py_directory_utf8 = PyUnicode_AsUTF8String(py_directory);
+    if (py_directory ) {
+        if (PyNone_Check(py_directory)) { /* None implies default */
+            directory = NULL;
+        } else if (!PyUnicode_FSConverter(py_directory, &py_directory_fs_encoded)) {
+            return NULL;
         }
-        directory = PyString_AsString(py_directory_utf8);
-    } else if (PyNone_Check(py_directory)) {
-        directory = NULL;
-    } else {
-        PyErr_Format(PyExc_TypeError, "directory must be string or None, not %.200s",
-                     Py_TYPE(py_directory)->tp_name);
-        return NULL;
     }
 
     if (SSL_ConfigMPServerSIDCache(max_cache_entries, ssl2_timeout,
                                    ssl3_timeout, directory) != SECSuccess) {
-        Py_XDECREF(py_directory_utf8);
+        Py_XDECREF(py_directory_fs_encoded);
         return set_nspr_error(NULL);
     }
 
-    Py_XDECREF(py_directory_utf8);
+    Py_XDECREF(py_directory_fs_encoded);
     Py_RETURN_NONE;
 }
 
@@ -3852,21 +3845,23 @@ ssl_library_version_from_name(PyObject *py_name, unsigned long *version_enum)
     PyObject *py_value;
 
 
-    if (!PyString_Check(py_name)) {
+    if (!PyBaseString_Check(py_name)) {
         PyErr_Format(PyExc_TypeError, "ssl library version name must be a string, not %.200s",
                      Py_TYPE(py_name)->tp_name);
 
         return SECFailure;
     }
 
-    if ((py_lower_name = PyObject_CallMethod(py_name, "lower", NULL)) == NULL) {
+    if ((py_lower_name = PyUnicode_Lower(py_name)) == NULL) {
         return SECFailure;
     }
 
     if ((py_value = PyDict_GetItem(ssl_library_version_name_to_value, py_lower_name)) == NULL) {
         if ((py_value = PyDict_GetItem(ssl_library_version_alias_to_value, py_lower_name)) == NULL) {
-            PyErr_Format(PyExc_KeyError, "ssl_library_version name not found: %s", PyString_AsString(py_name));
+            PyObject *py_name_utf8 = PyBaseString_UTF8(py_name, "name");
+            PyErr_Format(PyExc_KeyError, "ssl_library_version name not found: %s", PyBytes_AsString(py_name_utf8));
             Py_DECREF(py_lower_name);
+            Py_XDECREF(py_name_utf8);
             return SECFailure;
         }
     }
@@ -3886,7 +3881,7 @@ ssl_library_version_from_pyobject(PyObject *py_value, const char *bound, unsigne
         return SECSuccess;
     }
 
-    if (PyString_Check(py_value)) {
+    if (PyBaseString_Check(py_value)) {
         return ssl_library_version_from_name(py_value, version_enum);
     }
 
@@ -4011,7 +4006,7 @@ SSL_ssl_library_version_from_name(PyObject *self, PyObject *args)
 
     TraceMethodEnter(self);
 
-    if (!PyArg_ParseTuple(args, "S:ssl_library_version_from_name", &py_name))
+    if (!PyArg_ParseTuple(args, "O:ssl_library_version_from_name", &py_name))
         return NULL;
 
     if (ssl_library_version_from_name(py_name, &version_enum) != SECSuccess) {
@@ -4242,12 +4237,12 @@ SSL_ssl_cipher_suite_from_name(PyObject *self, PyObject *args)
 
     TraceMethodEnter(self);
 
-    if (!PyArg_ParseTuple(args, "S:ssl_cipher_suite_from_name",
+    if (!PyArg_ParseTuple(args, "O:ssl_cipher_suite_from_name",
                           &py_name))
         return NULL;
 
     if (cipher_suite_from_name(py_name, &suite) != SECSuccess) {
-        return set_nspr_error(NULL);
+        return NULL;
     }
 
     return PyLong_FromLong(suite);
@@ -4352,9 +4347,9 @@ to keep the set of enabled versions contiguous.\n\
 static struct PyModuleDef module_def = {
     PyModuleDef_HEAD_INIT,
     NSS_SSL_MODULE_NAME,        /* m_name */
-    doc,                        /* m_doc */
+    module_doc,                 /* m_doc */
     -1,                         /* m_size */
-    methods                     /* m_methods */
+    module_methods,             /* m_methods */
     NULL,                       /* m_reload */
     NULL,                       /* m_traverse */
     NULL,                       /* m_clear */

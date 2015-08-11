@@ -1,5 +1,6 @@
 #!/usr/bin/python
 
+from __future__ import print_function
 import unittest
 
 from nss.error import NSPRError
@@ -43,7 +44,7 @@ def assertRaisesErrno(exception, errno, callback, *args, **kw):
     try:
         callback(*args, **kw)
         raise ExceptionNotRaised(exception)
-    except exception, e:
+    except exception as e:
         if e.errno != errno:
             raise ExceptionWrongErrno(exception, errno, e.errno)
 
@@ -66,18 +67,18 @@ class TestCertName(unittest.TestCase):
     def test_ava_from_name(self):
         ava = nss.AVA('cn', self.cn_name)
         self.assertEqual(str(ava), "CN=%s" % self.cn_name)
-        
+
     def test_ava_from_oid_tag(self):
         ava = nss.AVA(nss.SEC_OID_AVA_COMMON_NAME, self.cn_name)
         self.assertEqual(str(ava), "CN=%s" % self.cn_name)
         self.assertRaises(ValueError, nss.AVA, nss.SEC_OID_UNKNOWN, self.cn_name)
-        
+
     def test_ava_from_oid_string(self):
         ava = nss.AVA('2.5.4.3', self.cn_name)
         self.assertEqual(str(ava), "CN=%s" % self.cn_name)
         self.assertRaises(ValueError, nss.oid_tag, 'OID.99.99.99.99')
         self.assertRaises(KeyError, nss.AVA, 'foo', self.cn_name)
-        
+
     def test_oid_dotted_decimal(self):
         self.assertEqual(nss.oid_dotted_decimal(nss.SEC_OID_AVA_COMMON_NAME),
                          'OID.2.5.4.3')
@@ -89,16 +90,16 @@ class TestCertName(unittest.TestCase):
 
     def test_ava_from_bad_type(self):
         self.assertRaises(TypeError, nss.AVA, (), self.cn_name)
-        
+
     def test_ava_compare(self):
         cn_ava1 = nss.AVA('cn', self.cn_name)
         cn_ava2 = nss.AVA('cn', self.cn_name)
         cn_ava3 = nss.AVA('cn', self.cn_name+'A')
         ou_ava = nss.AVA('ou', self.ou_name)
 
-        self.assertEqual(cmp(cn_ava1, cn_ava2), 0)
-        self.assertEqual(cmp(cn_ava1, ou_ava), -1)
-        self.assertEqual(cmp(cn_ava1, cn_ava3), -1)
+        self.assertTrue(cn_ava1 == cn_ava2)
+        self.assertTrue(cn_ava1 < ou_ava)
+        self.assertTrue(cn_ava1 < cn_ava3)
 
     def test_rdn_compare(self):
         cn_rdn1 = nss.RDN(nss.AVA('cn', self.cn_name))
@@ -106,9 +107,9 @@ class TestCertName(unittest.TestCase):
         cn_rdn3 = nss.RDN(nss.AVA('cn', self.cn_name+'A'))
         ou_rdn  = nss.RDN(nss.AVA('ou', self.ou_name))
 
-        self.assertEqual(cmp(cn_rdn1, cn_rdn2), 0)
-        self.assertEqual(cmp(cn_rdn1, ou_rdn), -1)
-        self.assertEqual(cmp(cn_rdn1, cn_rdn3), -1)
+        self.assertTrue(cn_rdn1 == cn_rdn2)
+        self.assertTrue(cn_rdn1 < ou_rdn)
+        self.assertTrue(cn_rdn1 < cn_rdn3)
 
     def test_rdn_create(self):
         cn_ava = nss.AVA('cn', self.cn_name)
@@ -203,8 +204,8 @@ class TestCertName(unittest.TestCase):
             else: self.fail("excess rdn's")
             i += 1
 
-        self.assertEqual(list(name), [c_rdn, st_rdn, l_rdn, o_rdn, ou_rdn, cn_rdn])        
-        self.assertEqual(name[:],    [c_rdn, st_rdn, l_rdn, o_rdn, ou_rdn, cn_rdn])        
+        self.assertEqual(list(name), [c_rdn, st_rdn, l_rdn, o_rdn, ou_rdn, cn_rdn])
+        self.assertEqual(name[:],    [c_rdn, st_rdn, l_rdn, o_rdn, ou_rdn, cn_rdn])
 
         self.assertEqual(name['c'],  [c_rdn])
         self.assertEqual(name['st'], [st_rdn])

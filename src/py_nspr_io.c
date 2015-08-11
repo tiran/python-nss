@@ -20,8 +20,6 @@
 
 static char *unset_string = "<unset>";
 
-#define Py_RETURN_BOOL(condition) {if (condition) Py_RETURN_TRUE; else Py_RETURN_FALSE;}
-
 /* ========================================================================== */
 /* ============================= Type Declarations ========================== */
 /* ========================================================================== */
@@ -236,12 +234,15 @@ NetworkAddress_init_from_address_string(NetworkAddress *self, const char *addr_s
     }
 
     if ((canonical_name = PR_GetCanonNameFromAddrInfo(pr_addrinfo)) != NULL) {
-        if ((self->py_hostname = PyString_FromString(canonical_name)) == NULL) {
+        if ((self->py_hostname = PyUnicode_Decode(canonical_name,
+                                                  strlen(canonical_name),
+                                                  "idna", NULL)) == NULL) {
             PR_FreeAddrInfo(pr_addrinfo);
             return NULL;
         }
     } else {
-        if ((self->py_hostname = PyString_FromString(addr_str)) == NULL) {
+        if ((self->py_hostname = PyUnicode_Decode(addr_str, strlen(addr_str),
+                                                  "idna", NULL)) == NULL) {
             PR_FreeAddrInfo(pr_addrinfo);
             return NULL;
         }
@@ -297,14 +298,14 @@ NetworkAddress_get_address(NetworkAddress *self, void *closure)
     TraceMethodEnter(self);
 
     if (PR_NetAddrFamily(&self->pr_netaddr) == PR_AF_UNSPEC) {
-        return PyString_FromString(unset_string);
+        return PyUnicode_FromString(unset_string);
     }
 
     if (PR_NetAddrToString(&self->pr_netaddr, buf, sizeof(buf)) != PR_SUCCESS) {
         return set_nspr_error(NULL);
     }
 
-    return PyString_FromString(buf);
+    return PyUnicode_Decode(buf, strlen(buf), "idna", NULL);
 }
 
 static PyObject *
@@ -391,44 +392,22 @@ static PyObject *
 NetworkAddress_set_from_string(NetworkAddress *self, PyObject *args, PyObject *kwds)
 {
     static char *kwlist[] = {"addr", "family",  NULL};
-    PyObject *addr = NULL;
+    char *addr = NULL;
     int family = PR_AF_INET;
     PyObject *result = NULL;
 
-    if (!PyArg_ParseTupleAndKeywords(args, kwds, "O:set_from_string", kwlist,
-                                     &addr, &family))
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "et|i:set_from_string", kwlist,
+                                     "idna", &addr, &family))
         return NULL;
 
     if (PyErr_WarnEx(PyExc_DeprecationWarning,
                      "NetworkAddress initialization from a string parameter only works for IPv4, use AddrInfo instead.", 1) < 0)
         return NULL;
 
-    if (addr && (PyString_Check(addr) || PyUnicode_Check(addr))) {
-        PyObject *ascii_str = NULL;
-        char *addr_str = NULL;
-
-        if (PyUnicode_Check(addr)) {
-            if ((ascii_str = PyUnicode_AsASCIIString(addr)) == NULL) {
-                return NULL;
-            }
-        } else {
-            ascii_str = addr;
-            Py_INCREF(ascii_str);
-        }
-
-        if ((addr_str = PyString_AsString(ascii_str)) == NULL) {
-            Py_DECREF(ascii_str);
-            return NULL;
-        }
-
-        result = NetworkAddress_init_from_address_string(self, addr_str,
-                                                         PRNetAddr_port(&self->pr_netaddr),
-                                                         family);
-        Py_DECREF(ascii_str);
-    } else {
-        PyErr_SetString(PyExc_TypeError, "addr must be string or unicode object");
-    }
-
+    result = NetworkAddress_init_from_address_string(self, addr,
+                                                     PRNetAddr_port(&self->pr_netaddr),
+                                                     family);
+    PyMem_Free(addr);
     return result;
 }
 
@@ -499,7 +478,7 @@ NetworkAddress_dealloc(NetworkAddress* self)
     TraceMethodEnter(self);
 
     NetworkAddress_clear(self);
-    self->ob_type->tp_free((PyObject*)self);
+    Py_TYPE(self)->tp_free((PyObject*)self);
 }
 
 PyDoc_STRVAR(NetworkAddress_doc,
@@ -571,7 +550,7 @@ NetworkAddress_init(NetworkAddress *self, PyObject *args, PyObject *kwds)
                                      &addr, &port, &family))
         return -1;
 
-    if (addr && !(PyInteger_Check(addr) || PyString_Check(addr) || PyUnicode_Check(addr))) {
+    if (addr && !(PyInteger_Check(addr) || PyBaseString_Check(addr))) {
         PyErr_SetString(PyExc_ValueError, "addr must be an int or a string");
         return -1;
     }
@@ -607,34 +586,24 @@ NetworkAddress_init(NetworkAddress *self, PyObject *args, PyObject *kwds)
         return -1;
     }
 
-    if (addr && (PyString_Check(addr) || PyUnicode_Check(addr))) {
-        PyObject *ascii_str = NULL;
-        char *addr_str = NULL;
+    if (addr && (PyBaseString_Check(addr))) {
+        PyObject *encoded_addr = NULL;
         PyObject *result = NULL;
 
         if (PyErr_WarnEx(PyExc_DeprecationWarning,
                          "NetworkAddress initialization from a string parameter only works for IPv4, use AddrInfo instead.", 1) < 0)
             return -1;
 
-        if (PyUnicode_Check(addr)) {
-            if ((ascii_str = PyUnicode_AsASCIIString(addr)) == NULL) {
-                return -1;
-            }
-        } else {
-            ascii_str = addr;
-            Py_INCREF(ascii_str);
-        }
-
-        if ((addr_str = PyString_AsString(ascii_str)) == NULL) {
-            Py_DECREF(ascii_str);
+        if ((encoded_addr = PyBytes_From_BaseString(addr, "idna")) == NULL) {
             return -1;
         }
 
-        if ((result = NetworkAddress_init_from_address_string(self, addr_str, port, family)) == NULL) {
-            Py_DECREF(ascii_str);
+        if ((result = NetworkAddress_init_from_address_string(self,
+                      PyBytes_AS_STRING(encoded_addr), port, family)) == NULL) {
+            Py_DECREF(encoded_addr);
             return -1;
         }
-        Py_DECREF(ascii_str);
+        Py_DECREF(encoded_addr);
         Py_DECREF(result);
     }
 
@@ -645,29 +614,38 @@ static PyObject *
 NetworkAddress_str(NetworkAddress *self)
 {
     char buf[1024];
+    PyObject *unicode_addr = NULL;
+    PyObject *result = NULL;
 
     if (PR_NetAddrFamily(&self->pr_netaddr) == PR_AF_UNSPEC) {
-        return PyString_FromString(unset_string);
+        return PyUnicode_FromString(unset_string);
     }
 
     if (PR_NetAddrToString(&self->pr_netaddr, buf, sizeof(buf)) != PR_SUCCESS) {
         return set_nspr_error(NULL);
     }
 
+    if ((unicode_addr = PyUnicode_Decode(buf, strlen(buf), "idna", NULL)) == NULL) {
+        return NULL;
+    }
+
     switch(PR_NetAddrFamily(&self->pr_netaddr)) {
     case PR_AF_INET:
-        return PyString_FromFormat("%s:%d", buf, PR_ntohs(self->pr_netaddr.inet.port));
+        result = PyUnicode_FromFormat("%U:%d", unicode_addr, PR_ntohs(self->pr_netaddr.inet.port));
     case PR_AF_INET6:
-        return PyString_FromFormat("[%s]:%d", buf, PR_ntohs(self->pr_netaddr.ipv6.port));
+        result = PyUnicode_FromFormat("[%U]:%d", unicode_addr, PR_ntohs(self->pr_netaddr.ipv6.port));
     default:
-        return PyString_FromString(buf);
+        result = unicode_addr;
+        Py_INCREF(unicode_addr);
     }
+
+    Py_DECREF(unicode_addr);
+    return result;
 }
 
 static PyTypeObject
 NetworkAddressType = {
-    PyObject_HEAD_INIT(NULL)
-    0,						/* ob_size */
+    PyVarObject_HEAD_INIT(NULL, 0)
     "nss.io.NetworkAddress",			/* tp_name */
     sizeof(NetworkAddress),			/* tp_basicsize */
     0,						/* tp_itemsize */
@@ -802,7 +780,7 @@ AddrInfo_dealloc(AddrInfo* self)
         self->pr_addrinfo = NULL;
     }
     AddrInfo_clear(self);
-    self->ob_type->tp_free((PyObject*)self);
+    Py_TYPE(self)->tp_free((PyObject*)self);
 }
 
 PyDoc_STRVAR(AddrInfo_doc,
@@ -873,11 +851,12 @@ AddrInfo_init(AddrInfo *self, PyObject *args, PyObject *kwds)
 
     TraceMethodEnter(self);
 
-    if (!PyArg_ParseTupleAndKeywords(args, kwds, "s|ii:AddrInfo", kwlist,
-                                     &hostname, &family, &flags))
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "et|ii:AddrInfo", kwlist,
+                                     "idna", &hostname, &family, &flags))
         return -1;
 
-    if ((self->py_hostname = PyString_FromString(hostname)) == NULL) {
+    if ((self->py_hostname = PyUnicode_Decode(hostname, strlen(hostname),
+                                              "idna", NULL)) == NULL) {
         return -1;
     }
 
@@ -914,19 +893,14 @@ AddrInfo_init(AddrInfo *self, PyObject *args, PyObject *kwds)
         self->py_canonical_name = Py_None;
         Py_INCREF(self->py_canonical_name);
     } else {
-        if ((self->py_canonical_name = PyString_FromString(canonical_name)) == NULL) {
+        if ((self->py_canonical_name = PyUnicode_Decode(canonical_name,
+                                                        strlen(canonical_name),
+                                                        "idna", NULL)) == NULL) {
             return -1;
         }
     }
 
     return 0;
-}
-
-static PyObject *
-AddrInfo_repr(AddrInfo *self)
-{
-    return PyString_FromFormat("<%s object at %p>",
-                               Py_TYPE(self)->tp_name, self);
 }
 
 static PyObject *
@@ -953,18 +927,18 @@ AddrInfo_str(AddrInfo *self)
         goto fail;
     }
 
-    if ((format = PyString_FromString("host=%s canonical=%s (%d addrs)")) == NULL) {
+    if ((format = PyUnicode_FromString("host=%s canonical=%s (%d addrs)")) == NULL) {
         goto fail;
     }
 
-    if ((text = PyString_Format(format, args)) == NULL) {
+    if ((text = PyUnicode_Format(format, args)) == NULL) {
         goto fail;
     }
 
     Py_CLEAR(format);
     Py_CLEAR(args);
 
-    if ((format = PyString_FromString(" addr[%d]=%s")) == NULL) {
+    if ((format = PyUnicode_FromString(" addr[%d]=%s")) == NULL) {
         goto fail;
     }
 
@@ -974,11 +948,11 @@ AddrInfo_str(AddrInfo *self)
             goto fail;
         }
 
-        if ((addr_str = PyString_Format(format, args)) == NULL) {
+        if ((addr_str = PyUnicode_Format(format, args)) == NULL) {
             goto fail;
         }
 
-        PyString_ConcatAndDel(&text, addr_str);
+        PyUnicode_ConcatAndDel(&text, addr_str);
         if (text == NULL) {
             goto fail;
         }
@@ -1035,8 +1009,7 @@ static PySequenceMethods AddrInfo_as_sequence = {
 };
 
 static PyTypeObject AddrInfoType = {
-    PyObject_HEAD_INIT(NULL)
-    0,						/* ob_size */
+    PyVarObject_HEAD_INIT(NULL, 0)
     "nss.io.AddrInfo",				/* tp_name */
     sizeof(AddrInfo),				/* tp_basicsize */
     0,						/* tp_itemsize */
@@ -1045,7 +1018,7 @@ static PyTypeObject AddrInfoType = {
     0,						/* tp_getattr */
     0,						/* tp_setattr */
     0,						/* tp_compare */
-    (reprfunc)AddrInfo_repr,			/* tp_repr */
+    0,						/* tp_repr */
     0,						/* tp_as_number */
     &AddrInfo_as_sequence,			/* tp_as_sequence */
     0,						/* tp_as_mapping */
@@ -1087,7 +1060,8 @@ HostEntry_get_hostname(HostEntry *self, void *closure)
 {
     TraceMethodEnter(self);
 
-    return PyString_FromString(self->entry.h_name);
+    return PyUnicode_Decode(self->entry.h_name, strlen(self->entry.h_name),
+                            "idna", NULL);
 }
 
 static PyObject *
@@ -1238,7 +1212,7 @@ HostEntry_dealloc(HostEntry* self)
     TraceMethodEnter(self);
 
     HostEntry_clear(self);
-    self->ob_type->tp_free((PyObject*)self);
+    Py_TYPE(self)->tp_free((PyObject*)self);
 }
 
 PyDoc_STRVAR(HostEntry_doc,
@@ -1289,37 +1263,27 @@ HostEntry_init(HostEntry *self, PyObject *args, PyObject *kwds)
 
     TraceMethodEnter(self);
 
-    if (!PyArg_ParseTupleAndKeywords(args, kwds, "O|i", kwlist,
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "O", kwlist,
                                      &addr))
         return -1;
 
-    if (PyString_Check(addr) || PyUnicode_Check(addr)) {
-        PyObject *ascii_str = NULL;
-        char *addr_str = NULL;
+    if (PyBaseString_Check(addr)) {
+        PyObject *encoded_addr = NULL;
 
-        if (PyUnicode_Check(addr)) {
-            if ((ascii_str = PyUnicode_AsASCIIString(addr)) == NULL) {
-                return -1;
-            }
-        } else {
-            ascii_str = addr;
-            Py_INCREF(ascii_str);
-        }
-
-        if ((addr_str = PyString_AsString(ascii_str)) == NULL) {
-            Py_DECREF(ascii_str);
+        if ((encoded_addr = PyBytes_From_BaseString(addr, "idna")) == NULL) {
             return -1;
         }
 
         Py_BEGIN_ALLOW_THREADS
-        if (PR_GetHostByName(addr_str, self->buffer,
+        if (PR_GetHostByName(PyBytes_AS_STRING(encoded_addr), self->buffer,
                              sizeof(self->buffer), &self->entry) != PR_SUCCESS) {
             Py_BLOCK_THREADS
             set_nspr_error(NULL);
-            Py_DECREF(ascii_str);
+            Py_DECREF(encoded_addr);
             return -1;
         }
         Py_END_ALLOW_THREADS
+        Py_DECREF(encoded_addr);
 
     } else if (PyNetworkAddress_Check(addr)) {
 
@@ -1348,7 +1312,9 @@ HostEntry_init(HostEntry *self, PyObject *args, PyObject *kwds)
     }
 
     for (i = 0; i < len; i++) {
-        if ((py_alias = PyString_FromString(self->entry.h_aliases[i])) == NULL) {
+        if ((py_alias = PyUnicode_Decode(self->entry.h_aliases[i],
+                                         strlen(self->entry.h_aliases[i]),
+                                         "idna", NULL)) == NULL) {
             Py_CLEAR(self->py_aliases);
             return -1;
         }
@@ -1412,11 +1378,11 @@ HostEntry_str(HostEntry *self)
         goto exit;
     }
 
-    if ((format = PyString_FromString("name=%s family=%s aliases=%s addresses=%s")) == NULL) {
+    if ((format = PyUnicode_FromString("name=%s family=%s aliases=%s addresses=%s")) == NULL) {
         goto exit;
     }
 
-    text = PyString_Format(format, args);
+    text = PyUnicode_Format(format, args);
 
  exit:
     Py_XDECREF(aliases);
@@ -1467,8 +1433,7 @@ static PySequenceMethods HostEntry_as_sequence = {
 
 static PyTypeObject
 HostEntryType = {
-    PyObject_HEAD_INIT(NULL)
-    0,						/* ob_size */
+    PyVarObject_HEAD_INIT(NULL, 0)
     "nss.io.HostEntry",				/* tp_name */
     sizeof(HostEntry),				/* tp_basicsize */
     0,						/* tp_itemsize */
@@ -2203,13 +2168,13 @@ Socket_accept_read(Socket *self, PyObject *args, PyObject *kwds)
                                      &requested_amount, &timeout))
         return NULL;
 
-    if ((py_buf = PyString_FromStringAndSize(NULL, requested_amount)) == NULL) {
+    if ((py_buf = PyBytes_FromStringAndSize(NULL, requested_amount)) == NULL) {
         return NULL;
     }
 
     Py_BEGIN_ALLOW_THREADS
     amount_read = PR_AcceptRead(self->pr_socket, &pr_socket, &pr_netaddr,
-                                PyString_AS_STRING(py_buf), requested_amount,
+                                PyBytes_AS_STRING(py_buf), requested_amount,
                                 timeout);
     Py_END_ALLOW_THREADS
 
@@ -2219,7 +2184,7 @@ Socket_accept_read(Socket *self, PyObject *args, PyObject *kwds)
     }
 
     if (amount_read != requested_amount) {
-        if (_PyString_Resize(&py_buf, amount_read) < 0) {
+        if (_PyBytes_Resize(&py_buf, amount_read) < 0) {
             goto error;
 	}
     }
@@ -2503,10 +2468,10 @@ _readline(Socket *self, long size)
     }
     assert(0);                  /* should never reach here */
  return_line:
-    if ((line = PyString_FromStringAndSize(self->readahead.buf, line_len)) == NULL) {
+    if ((line = PyBytes_FromStringAndSize(self->readahead.buf, line_len)) == NULL) {
         return NULL;
     }
-    memmove(PyString_AsString(line), self->readahead.buf, line_len);
+    memmove(PyBytes_AsString(line), self->readahead.buf, line_len);
     /* Subtract the data being returned from the cached readahead buffer */
     tail_len = self->readahead.len - line_len;
     memmove(self->readahead.buf, self->readahead.buf + line_len, tail_len);
@@ -2558,7 +2523,7 @@ Socket_readlines(Socket *self, PyObject *args, PyObject *kwds)
             return NULL;
         }
         Py_DECREF(line);
-        line_len = PyString_Size(line);
+        line_len = PyBytes_Size(line);
         amount_read += line_len;
         if (sizehint > 0 && amount_read >= sizehint) break; /* read at least requested amount */
         if (line_len == 0) break; /* EOF */
@@ -2585,7 +2550,7 @@ Socket_iternext(Socket *self)
         return NULL;
     }
 
-    if (PyString_Size(line) == 0) {
+    if (PyBytes_Size(line) == 0) {
         Py_DECREF(line);
         return NULL;
     }
@@ -2636,11 +2601,11 @@ _recv(Socket *self, long requested_amount, unsigned int timeout)
 
     result_len = 0;
     read_len = requested_amount;
-    if ((py_buf = PyString_FromStringAndSize(NULL, requested_amount)) == NULL) {
+    if ((py_buf = PyBytes_FromStringAndSize(NULL, requested_amount)) == NULL) {
         return NULL;
     }
 
-    dst = PyString_AsString(py_buf);
+    dst = PyBytes_AsString(py_buf);
 
     /* Is the read request already buffered? */
     if (self->readahead.len) {
@@ -2687,7 +2652,7 @@ _recv(Socket *self, long requested_amount, unsigned int timeout)
     result_len += amount_read;
 
     if (result_len != requested_amount) {
-        if (_PyString_Resize(&py_buf, result_len) < 0) {
+        if (_PyBytes_Resize(&py_buf, result_len) < 0) {
             return NULL;
 	}
     }
@@ -2760,7 +2725,7 @@ Socket_read(Socket *self, PyObject *args, PyObject *kwds)
 
     } while (amount_read != 0);
 
-    if ((py_buf = PyString_FromStringAndSize(self->readahead.buf, self->readahead.len)) == NULL) {
+    if ((py_buf = PyBytes_FromStringAndSize(self->readahead.buf, self->readahead.len)) == NULL) {
         return NULL;
     }
 
@@ -2815,12 +2780,12 @@ Socket_recv_from(Socket *self, PyObject *args, PyObject *kwds)
 
     ASSIGN_REF(self->py_netaddr, py_netaddr);
 
-    if ((py_buf = PyString_FromStringAndSize((char *) 0, requested_amount)) == NULL) {
+    if ((py_buf = PyBytes_FromStringAndSize((char *) 0, requested_amount)) == NULL) {
         return NULL;
     }
 
     Py_BEGIN_ALLOW_THREADS
-    amount_read = PR_RecvFrom(self->pr_socket, PyString_AS_STRING(py_buf),
+    amount_read = PR_RecvFrom(self->pr_socket, PyBytes_AS_STRING(py_buf),
                               requested_amount, 0, &py_netaddr->pr_netaddr, timeout);
     Py_END_ALLOW_THREADS
 
@@ -2830,7 +2795,7 @@ Socket_recv_from(Socket *self, PyObject *args, PyObject *kwds)
     }
 
     if (amount_read != requested_amount) {
-        if (_PyString_Resize(&py_buf, amount_read) < 0) {
+        if (_PyBytes_Resize(&py_buf, amount_read) < 0) {
             return NULL;
 	}
     }
@@ -2864,9 +2829,17 @@ Socket_send(Socket *self, PyObject *args, PyObject *kwds)
 
     TraceMethodEnter(self);
 
+#if PY_MAJOR_VERSION >= 3
+    // Py3 uses y# for bytes parameter
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "y#|I:send", kwlist,
+                                     &buf, &len, &timeout))
+        return NULL;
+#else
+    // Py2 uses s# for string parameter
     if (!PyArg_ParseTupleAndKeywords(args, kwds, "s#|I:send", kwlist,
                                      &buf, &len, &timeout))
         return NULL;
+#endif
 
     Py_BEGIN_ALLOW_THREADS
     amount = PR_Send(self->pr_socket, buf, len, 0, timeout);
@@ -2906,9 +2879,17 @@ Socket_sendall(Socket *self, PyObject *args, PyObject *kwds)
 
     TraceMethodEnter(self);
 
+#if PY_MAJOR_VERSION >= 3
+    // Py3 uses y# for bytes parameter
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "y#|I:sendall", kwlist,
+                                     &buf, &len, &timeout))
+        return NULL;
+#else
+    // Py2 uses s# for string parameter
     if (!PyArg_ParseTupleAndKeywords(args, kwds, "s#|I:sendall", kwlist,
                                      &buf, &len, &timeout))
         return NULL;
+#endif
 
     Py_BEGIN_ALLOW_THREADS
     amount = PR_Send(self->pr_socket, buf, len, 0, timeout);
@@ -2953,9 +2934,17 @@ Socket_send_to(Socket *self, PyObject *args, PyObject *kwds)
 
     TraceMethodEnter(self);
 
+#if PY_MAJOR_VERSION >= 3
+    // Py3 uses y# for bytes parameter
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "y#O!|I:send_to", kwlist,
+                                     &buf, &len, &NetworkAddressType, &py_netaddr, &timeout))
+        return NULL;
+#else
+    // Py2 uses s# for string parameter
     if (!PyArg_ParseTupleAndKeywords(args, kwds, "s#O!|I:send_to", kwlist,
                                      &buf, &len, &NetworkAddressType, &py_netaddr, &timeout))
         return NULL;
+#endif
 
     SOCKET_CHECK_FAMILY(py_netaddr);
 
@@ -3351,7 +3340,7 @@ Socket_dealloc(Socket* self)
 
     Socket_clear(self);
     FREE_READAHEAD(&self->readahead);
-    self->ob_type->tp_free((PyObject*)self);
+    Py_TYPE(self)->tp_free((PyObject*)self);
 }
 
 PyDoc_STRVAR(Socket_doc,
@@ -3441,32 +3430,33 @@ Socket_init(Socket *self, PyObject *args, PyObject *kwds)
 }
 
 static PyObject *
-Socket_repr(Socket *self)
-{
-    return PyString_FromFormat("<%s object at %p PRFileDesc %p>",
-                               self->ob_type->tp_name, self, self->pr_socket);
-}
-
-static PyObject *
 Socket_str(Socket *self)
 {
     PyObject *args = NULL;
     PyObject *text = NULL;
+    PyObject *format = NULL;
 
     if ((args = Py_BuildValue("(ss)",
                               pr_family_str(self->family),
                               pr_file_desc_type_str(PR_GetDescType(self->pr_socket)))) == NULL) {
         return NULL;
     }
-    text = PyString_Format(PyString_FromString("family=%s type=%s"), args);
+
+    if ((format = PyUnicode_FromString("family=%s type=%s")) == NULL) {
+        Py_DECREF(args);
+        return NULL;
+    }
+
+    text = PyUnicode_Format(format, args);
+
     Py_DECREF(args);
+    Py_DECREF(format);
     return text;
 }
 
 static PyTypeObject
 SocketType = {
-    PyObject_HEAD_INIT(NULL)
-    0,						/* ob_size */
+    PyVarObject_HEAD_INIT(NULL, 0)
     "nss.io.Socket",				/* tp_name */
     sizeof(Socket),				/* tp_basicsize */
     0,						/* tp_itemsize */
@@ -3475,7 +3465,7 @@ SocketType = {
     0,						/* tp_getattr */
     0,						/* tp_setattr */
     0,						/* tp_compare */
-    (reprfunc)Socket_repr,			/* tp_repr */
+    0,						/* tp_repr */
     0,						/* tp_as_number */
     0,						/* tp_as_sequence */
     0,						/* tp_as_mapping */
@@ -3626,7 +3616,7 @@ io_get_proto_by_number(PyObject *self, PyObject *args)
     }
 
     for (i = 0; i < len; i++) {
-        if ((alias = PyString_FromString(proto_ent.p_aliases[i])) == NULL) {
+        if ((alias = PyUnicode_FromString(proto_ent.p_aliases[i])) == NULL) {
             Py_DECREF(alias_tuple);
             return NULL;
         }
@@ -3785,7 +3775,7 @@ io_addr_family_name(PyObject *self, PyObject *args)
         return NULL;
     }
 
-    return PyString_FromString(pr_family_str(family));
+    return PyUnicode_FromString(pr_family_str(family));
 }
 
 /* List of functions exported by this module. */
@@ -3832,9 +3822,9 @@ PyDoc_STRVAR(module_doc,
 static struct PyModuleDef module_def = {
     PyModuleDef_HEAD_INIT,
     NSS_IO_MODULE_NAME,         /* m_name */
-    doc,                        /* m_doc */
+    module_doc,                 /* m_doc */
     -1,                         /* m_size */
-    methods                     /* m_methods */
+    module_methods,             /* m_methods */
     NULL,                       /* m_reload */
     NULL,                       /* m_traverse */
     NULL,                       /* m_clear */

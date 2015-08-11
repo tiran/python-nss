@@ -52,6 +52,7 @@ typedef struct {
     PyObject_HEAD
     SECItem item;
     SECItemKind kind;
+    int buffer_exports;
 } SecItem;
 
 #define SecItem_GET_SIZE(op)  (Py_ssize_t)(op->item.len)

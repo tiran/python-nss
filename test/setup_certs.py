@@ -43,7 +43,8 @@ def run_cmd(cmd_args, input=None):
         p = subprocess.Popen(cmd_args,
                              stdin=subprocess.PIPE,
                              stdout=subprocess.PIPE,
-                             stderr=subprocess.PIPE)
+                             stderr=subprocess.PIPE,
+                             universal_newlines=True)
         stdout, stderr = p.communicate(input)
         returncode = p.returncode
         if returncode != 0:
@@ -94,13 +95,13 @@ def init_noise_file(options):
         os.write(fd, random_data)
         os.close(fd)
     else:
-        with open(options.noise_filename, 'w') as f:
+        with open(options.noise_filename, 'wb') as f:
             f.write(random_data)
     return
 
 def create_passwd_file(options):
     fd, options.passwd_filename = tempfile.mkstemp()
-    os.write(fd, options.db_passwd)
+    os.write(fd, options.db_passwd.encode('utf-8'))
     os.close(fd)
 
 
@@ -508,8 +509,12 @@ def setup_certs(args):
             continue
         value = getattr(options, key)
         # Can't substitue on non-string values
-        if not isinstance(value, basestring):
-            continue
+        if sys.version_info.major < 3:
+            if not isinstance(value, basestring):
+                continue
+        else:
+            if not isinstance(value, str):
+                continue
         # Don't bother trying to substitute if $ substitution character isn't present
         if '$' not in value:
             continue

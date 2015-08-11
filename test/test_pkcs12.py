@@ -1,11 +1,12 @@
 #!/usr/bin/python
 
+from __future__ import print_function
 import sys
 import os
 import re
 import subprocess
 import shlex
-import StringIO
+from io import BytesIO
 import unittest
 
 from nss.error import NSPRError
@@ -48,7 +49,8 @@ def run_cmd(cmd_args, input=None):
         p = subprocess.Popen(cmd_args,
                              stdin=subprocess.PIPE,
                              stdout=subprocess.PIPE,
-                             stderr=subprocess.PIPE)
+                             stderr=subprocess.PIPE,
+                             universal_newlines=True)
         stdout, stderr = p.communicate(input)
         returncode = p.returncode
         if returncode != 0:
@@ -148,7 +150,8 @@ class TestPKCS12Decoder(unittest.TestCase):
         nss.nss_shutdown()
 
     def test_read(self):
-        if verbose: print "test_read"
+        if verbose:
+            print("test_read")
         create_pk12(cert_nickname, pk12_filename)
 
         slot = nss.get_internal_key_slot()
@@ -179,7 +182,8 @@ class TestPKCS12Decoder(unittest.TestCase):
         self.assertEqual(cert_bag_count, 2)
 
     def test_import_filename(self):
-        if verbose: print "test_import_filename"
+        if verbose:
+            print("test_import_filename")
         delete_cert_from_db(cert_nickname)
         self.assertEqual(get_cert_der_from_db(cert_nickname), None)
 
@@ -191,31 +195,31 @@ class TestPKCS12Decoder(unittest.TestCase):
         self.assertEqual(cert_der, self.cert_der)
 
     def test_import_fileobj(self):
-        if verbose: print "test_import_fileobj"
+        if verbose:
+            print("test_import_fileobj")
         delete_cert_from_db(cert_nickname)
         self.assertEqual(get_cert_der_from_db(cert_nickname), None)
 
         slot = nss.get_internal_key_slot()
 
-        file_obj = open(pk12_filename)
-
-        pkcs12 = nss.PKCS12Decoder(file_obj, pk12_passwd, slot)
-        file_obj.close()
+        with open(pk12_filename, "rb") as file_obj:
+             pkcs12 = nss.PKCS12Decoder(file_obj, pk12_passwd, slot)
         slot.authenticate()
         pkcs12.database_import()
         cert_der = get_cert_der_from_db(cert_nickname)
         self.assertEqual(cert_der, self.cert_der)
 
     def test_import_filelike(self):
-        if verbose: print "test_import_filelike"
+        if verbose:
+            print("test_import_filelike")
         delete_cert_from_db(cert_nickname)
         self.assertEqual(get_cert_der_from_db(cert_nickname), None)
 
         slot = nss.get_internal_key_slot()
 
-        with open(pk12_filename) as f:
+        with open(pk12_filename, "rb") as f:
             data = f.read()
-        file_obj = StringIO.StringIO(data)
+        file_obj = BytesIO(data)
 
         pkcs12 = nss.PKCS12Decoder(file_obj, pk12_passwd, slot)
         slot.authenticate()
@@ -238,9 +242,10 @@ class TestPKCS12Export(unittest.TestCase):
         nss.nss_shutdown()
 
     def test_export(self):
-        if verbose: print "test_export"
+        if verbose:
+            print("test_export")
         pkcs12_data = nss.pkcs12_export(cert_nickname, pk12_passwd)
-        with open(exported_pk12_filename, 'w') as f:
+        with open(exported_pk12_filename, 'wb') as f:
             f.write(pkcs12_data)
 
         pk12_listing = list_pk12(pk12_filename)
