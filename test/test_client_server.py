@@ -1,5 +1,6 @@
 #!/usr/bin/python
 
+from __future__ import print_function
 import os
 import sys
 import errno
@@ -44,16 +45,17 @@ def password_callback(slot, retry, password):
 
 def handshake_callback(sock):
     if verbose:
-        print "-- handshake complete --"
-        print "peer: %s" % (sock.get_peer_name())
-        print "negotiated host: %s" % (sock.get_negotiated_host())
-        print
-        print sock.connection_info_str()
-        print "-- handshake complete --"
-        print
+        print("-- handshake complete --")
+        print("peer: %s" % (sock.get_peer_name()))
+        print("negotiated host: %s" % (sock.get_negotiated_host()))
+        print()
+        print(sock.connection_info_str())
+        print("-- handshake complete --")
+        print()
 
 def auth_certificate_callback(sock, check_sig, is_server, certdb):
-    if verbose: print "auth_certificate_callback: check_sig=%s is_server=%s" % (check_sig, is_server)
+    if verbose:
+        print("auth_certificate_callback: check_sig=%s is_server=%s" % (check_sig, is_server))
     cert_is_valid = False
 
     cert = sock.get_peer_certificate()
@@ -61,7 +63,8 @@ def auth_certificate_callback(sock, check_sig, is_server, certdb):
     if pin_args is None:
         pin_args = ()
 
-    #if verbose: print "cert:\n%s" % cert
+    #if verbose:
+    #    print("cert:\n%s" % cert)
 
     # Define how the cert is being used based upon the is_server flag.  This may
     # seem backwards, but isn't. If we're a server we're trying to validate a
@@ -76,13 +79,15 @@ def auth_certificate_callback(sock, check_sig, is_server, certdb):
         # will be set to the error code matching the reason why the validation failed
         # and the strerror attribute will contain a string describing the reason.
         approved_usage = cert.verify_now(certdb, check_sig, intended_usage, *pin_args)
-    except Exception, e:
-        print >>sys.stderr, "auth_certificate_callback: %s" % e
+    except Exception as e:
+        print("auth_certificate_callback: %s" % e, file=sys.stderr)
         cert_is_valid = False
-        if verbose: print "Returning cert_is_valid = %s" % cert_is_valid
+        if verbose:
+            print("Returning cert_is_valid = %s" % cert_is_valid)
         return cert_is_valid
 
-    if verbose: print "approved_usage = %s" % ', '.join(nss.cert_usage_flags(approved_usage))
+    if verbose:
+        print("approved_usage = %s" % ', '.join(nss.cert_usage_flags(approved_usage)))
 
     # Is the intended usage a proper subset of the approved usage
     if approved_usage & intended_usage:
@@ -92,7 +97,8 @@ def auth_certificate_callback(sock, check_sig, is_server, certdb):
 
     # If this is a server, we're finished
     if is_server or not cert_is_valid:
-        if verbose: print "Returning cert_is_valid = %s" % cert_is_valid
+        if verbose:
+            print("Returning cert_is_valid = %s" % cert_is_valid)
         return cert_is_valid
 
     # Certificate is OK.  Since this is the client side of an SSL
@@ -101,17 +107,20 @@ def auth_certificate_callback(sock, check_sig, is_server, certdb):
     # man-in-the-middle attacks.
 
     hostname = sock.get_hostname()
-    if verbose: print "verifying socket hostname (%s) matches cert subject (%s)" % (hostname, cert.subject)
+    if verbose:
+        print("verifying socket hostname (%s) matches cert subject (%s)" % (hostname, cert.subject))
     try:
         # If the cert fails validation it will raise an exception
         cert_is_valid = cert.verify_hostname(hostname)
-    except Exception, e:
-        print >>sys.stderr, "auth_certificate_callback: %s" % e
+    except Exception as e:
+        print("auth_certificate_callback: %s" % e, file=sys.stderr)
         cert_is_valid = False
-        if verbose: print "Returning cert_is_valid = %s" % cert_is_valid
+        if verbose:
+            print("Returning cert_is_valid = %s" % cert_is_valid)
         return cert_is_valid
 
-    if verbose: print "Returning cert_is_valid = %s" % cert_is_valid
+    if verbose:
+        print("Returning cert_is_valid = %s" % cert_is_valid)
     return cert_is_valid
 
 def client_auth_data_callback(ca_names, chosen_nickname, password, certdb):
@@ -120,23 +129,25 @@ def client_auth_data_callback(ca_names, chosen_nickname, password, certdb):
         try:
             cert = nss.find_cert_from_nickname(chosen_nickname, password)
             priv_key = nss.find_key_by_any_cert(cert, password)
-            if verbose: print "client cert:\n%s" % cert
+            if verbose:
+                print("client cert:\n%s" % cert)
             return cert, priv_key
-        except NSPRError, e:
-            print >>sys.stderr, "client_auth_data_callback: %s" % e
+        except NSPRError as e:
+            print("client_auth_data_callback: %s" % e, file=sys.stderr)
             return False
     else:
         nicknames = nss.get_cert_nicknames(certdb, cert.SEC_CERT_NICKNAMES_USER)
         for nickname in nicknames:
             try:
                 cert = nss.find_cert_from_nickname(nickname, password)
-                if verbose: print "client cert:\n%s" % cert
+                if verbose:
+                    print("client cert:\n%s" % cert)
                 if cert.check_valid_times():
                     if cert.has_signer_in_ca_names(ca_names):
                         priv_key = nss.find_key_by_any_cert(cert, password)
                         return cert, priv_key
-            except NSPRError, e:
-                print >>sys.stderr, "client_auth_data_callback: %s" % e
+            except NSPRError as e:
+                print("client_auth_data_callback: %s" % e, file=sys.stderr)
         return False
 
 # -----------------------------------------------------------------------------
@@ -145,14 +156,15 @@ def client_auth_data_callback(ca_names, chosen_nickname, password, certdb):
 
 def client(request):
     if use_ssl:
-        if info: print "client: using SSL"
+        if info:
+            print("client: using SSL")
         ssl.set_domestic_policy()
 
     # Get the IP Address of our server
     try:
         addr_info = io.AddrInfo(hostname)
-    except Exception, e:
-        print >>sys.stderr, "client: could not resolve host address \"%s\"" % hostname
+    except Exception as e:
+        print("client: could not resolve host address \"%s\"" % hostname, file=sys.stderr)
         return
 
     for net_addr in addr_info:
@@ -180,27 +192,33 @@ def client(request):
             sock = io.Socket(net_addr.family)
 
         try:
-            if verbose: print "client trying connection to: %s" % (net_addr)
+            if verbose:
+                print("client trying connection to: %s" % (net_addr))
             sock.connect(net_addr, timeout=io.seconds_to_interval(timeout_secs))
-            if verbose: print "client connected to: %s" % (net_addr)
+            if verbose:
+                print("client connected to: %s" % (net_addr))
             break
-        except Exception, e:
+        except Exception as e:
             sock.close()
-            print >>sys.stderr, "client: connection to: %s failed (%s)" % (net_addr, e)
+            print("client: connection to: %s failed (%s)" % (net_addr, e), file=sys.stderr)
 
     # Talk to the server
     try:
-        if info: print "client: sending \"%s\"" % (request)
-        sock.send(request + '\n') # newline is protocol record separator
+        if info:
+            print("client: sending \"%s\"" % (request))
+        data = request + "\n"; # newline is protocol record separator
+        sock.send(data.encode('utf-8'))
         buf = sock.readline()
         if not buf:
-            print >>sys.stderr, "client: lost connection"
+            print("client: lost connection", file=sys.stderr)
             sock.close()
             return
+        buf = buf.decode('utf-8')
         buf = buf.rstrip()        # remove newline record separator
-        if info: print "client: received \"%s\"" % (buf)
-    except Exception, e:
-        print >>sys.stderr, "client: %s" % e
+        if info:
+            print("client: received \"%s\"" % (buf))
+    except Exception as e:
+        print("client: %s" % e, file=sys.stderr)
         try:
             sock.close()
         except:
@@ -209,15 +227,15 @@ def client(request):
 
     try:
         sock.shutdown()
-    except Exception, e:
-        print >>sys.stderr, "client: %s" % e
+    except Exception as e:
+        print("client: %s" % e, file=sys.stderr)
 
     try:
         sock.close()
         if use_ssl:
             ssl.clear_session_cache()
-    except Exception, e:
-        print >>sys.stderr, "client: %s" % e
+    except Exception as e:
+        print("client: %s" % e, file=sys.stderr)
 
     return buf
 
@@ -226,14 +244,16 @@ def client(request):
 # -----------------------------------------------------------------------------
 
 def server():
-    if verbose: print "starting server:"
+    if verbose:
+        print("starting server:")
 
     # Initialize
     # Setup an IP Address to listen on any of our interfaces
     net_addr = io.NetworkAddress(io.PR_IpAddrAny, port)
 
     if use_ssl:
-        if info: print "server: using SSL"
+        if info:
+            print("server: using SSL")
         ssl.set_domestic_policy()
         nss.set_password_callback(password_callback)
 
@@ -246,7 +266,8 @@ def server():
         priv_key = nss.find_key_by_any_cert(server_cert, password)
         server_cert_kea = server_cert.find_kea_type();
 
-        #if verbose: print "server cert:\n%s" % server_cert
+        #if verbose:
+        #    print("server cert:\n%s" % server_cert)
 
         sock = ssl.SSLSocket(net_addr.family)
 
@@ -270,7 +291,8 @@ def server():
 
     # Bind to our network address and listen for clients
     sock.bind(net_addr)
-    if verbose: print "listening on: %s" % (net_addr)
+    if verbose:
+        print("listening on: %s" % (net_addr))
     sock.listen()
 
     while True:
@@ -279,28 +301,33 @@ def server():
         if use_ssl:
             client_sock.set_handshake_callback(handshake_callback)
 
-        if verbose: print "client connect from: %s" % (client_addr)
+        if verbose:
+            print("client connect from: %s" % (client_addr))
 
         while True:
             try:
                 # Handle the client connection
                 buf = client_sock.readline()   # newline is protocol record separator
                 if not buf:
-                    print >>sys.stderr, "server: lost lost connection to %s" % (client_addr)
+                    print("server: lost lost connection to %s" % (client_addr), file=sys.stderr)
                     break
+                buf = buf.decode('utf-8')
                 buf = buf.rstrip()             # remove newline record separator
 
-                if info: print "server: received \"%s\"" % (buf)
+                if info:
+                    print("server: received \"%s\"" % (buf))
                 reply = "{%s}" % buf           # echo embedded inside braces
-                if info: print "server: sending \"%s\"" % (reply)
-                client_sock.send(reply + '\n') # send echo with record separator
+                if info:
+                    print("server: sending \"%s\"" % (reply))
+                data = reply + "\n" # send echo with record separator
+                client_sock.send(data.encode('utf-8'))
 
                 time.sleep(sleep_time)
                 client_sock.shutdown()
                 client_sock.close()
                 break
-            except Exception, e:
-                print >>sys.stderr, "server: %s" % e
+            except Exception as e:
+                print("server: %s" % e, file=sys.stderr)
                 break
         break
 
@@ -326,16 +353,16 @@ def cleanup_server(pid):
         wait_pid, wait_status = os.waitpid(pid, os.WNOHANG)
         if wait_pid == 0:
             os.kill(pid, signal.SIGKILL)
-    except OSError, e:
+    except OSError as e:
         if e.errno == errno.ECHILD:
             pass                # child already exited
         else:
-            print >>sys.stderr, "cleanup_server: %s" % e
+            print("cleanup_server: %s" % e, file=sys.stderr)
 
 class TestSSL(unittest.TestCase):
 
     def setUp(self):
-        print
+        print()
         self.server_pid = run_server()
 
     def tearDown(self):

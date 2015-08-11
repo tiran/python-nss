@@ -167,7 +167,7 @@ get_error_desc(long *p_error_code)
         final_err_msg = PR_smprintf("error (%d) unknown", error_code);
     }
 
-    result = PyString_FromString(final_err_msg);
+    result = PyUnicode_FromString(final_err_msg);
 
     if (final_err_msg) PR_smprintf_free(final_err_msg);
     if (pr_err_msg) PyMem_Free(pr_err_msg);
@@ -189,7 +189,7 @@ set_nspr_error(const char *format, ...)
 #else
         va_start(vargs);
 #endif
-        error_message = PyString_FromFormatV(format, vargs);
+        error_message = PyUnicode_FromFormatV(format, vargs);
         va_end(vargs);
     }
 
@@ -225,7 +225,7 @@ set_cert_verify_error(unsigned long usages, PyObject *log, const char *format, .
 #else
         va_start(vargs);
 #endif
-        error_message = PyString_FromFormatV(format, vargs);
+        error_message = PyUnicode_FromFormatV(format, vargs);
         va_end(vargs);
     }
 
@@ -277,7 +277,7 @@ io_get_nspr_error_string(PyObject *self, PyObject *args)
     if ((error_desc = lookup_nspr_error(err_num)) == NULL)
         Py_RETURN_NONE;
 
-    return PyString_FromString(error_desc->string);
+    return PyUnicode_FromString(error_desc->string);
 }
 
 /* List of functions exported by this module. */
@@ -300,7 +300,7 @@ init_py_nspr_errors(PyObject *module)
         return NULL;
 
     /* Create a python string to hold the modules error documentation */
-    if ((py_error_doc = PyString_FromString("NSPR Error Constants:\n\n")) == NULL)
+    if ((py_error_doc = PyUnicode_FromString("NSPR Error Constants:\n\n")) == NULL)
         return NULL;
 
     /*
@@ -310,11 +310,11 @@ init_py_nspr_errors(PyObject *module)
      */
     for (i = 0, error_desc = &nspr_errors[0]; i < nspr_error_count; i++, error_desc++) {
 
-        if ((error_str = PyString_FromFormat("%s: %s\n\n", error_desc->name, error_desc->string)) == NULL) {
+        if ((error_str = PyUnicode_FromFormat("%s: %s\n\n", error_desc->name, error_desc->string)) == NULL) {
             Py_DECREF(py_error_doc);
             return NULL;
         }
-        PyString_ConcatAndDel(&py_error_doc, error_str);
+        PyUnicode_ConcatAndDel(&py_error_doc, error_str);
 
         if (PyModule_AddIntConstant(module, error_desc->name, error_desc->num) < 0) {
             Py_DECREF(py_error_doc);
@@ -347,40 +347,42 @@ static PyObject *tuple_str(PyObject *tuple)
     len = PyTuple_GET_SIZE(tuple);
 
     if (len == 0) {
-        return PyString_FromString("()");
+        return PyUnicode_FromString("()");
     }
 
-    if ((text = PyString_FromString("(")) == NULL) {
+    if ((text = PyUnicode_FromString("(")) == NULL) {
         goto exit;
     }
 
     if (len > 1) {
-        if ((separator = PyString_FromString(", ")) == NULL) {
+        if ((separator = PyUnicode_FromString(", ")) == NULL) {
             goto exit;
         }
     }
 
     for (i = 0; i < len; i++) {
         obj = PyTuple_GET_ITEM(tuple, i);
-        tmp_obj = PyObject_Str(obj);
-        PyString_ConcatAndDel(&text, tmp_obj);
+        tmp_obj = PyObject_String(obj);
+        PyUnicode_ConcatAndDel(&text, tmp_obj);
         if (text == NULL) {
             goto exit;
         }
         if (i < len-1) {
-            PyString_Concat(&text, separator);
+            tmp_obj = text;
+            text = PyUnicode_Concat(tmp_obj, separator);
+            Py_DECREF(tmp_obj);
             if (text == NULL) {
                 goto exit;
             }
         }
     }
 
-    if ((tmp_obj = PyString_FromString(")")) == NULL) {
+    if ((tmp_obj = PyUnicode_FromString(")")) == NULL) {
         Py_CLEAR(text);
         goto exit;
     }
 
-    PyString_ConcatAndDel(&text, tmp_obj);
+    PyUnicode_ConcatAndDel(&text, tmp_obj);
     if (text == NULL) {
         goto exit;
     }
@@ -504,7 +506,7 @@ static int
 NSPRError_init(NSPRError *self, PyObject *args, PyObject *kwds)
 {
     static char *kwlist[] = {"error_message", "error_code", NULL};
-    const char *error_message = NULL;
+    PyObject *error_message = NULL;
     long error_code = -1;
     PyObject *error_desc = NULL;
     PyObject *str_value = NULL;
@@ -513,26 +515,19 @@ NSPRError_init(NSPRError *self, PyObject *args, PyObject *kwds)
 
     CALL_BASE(&NSPRErrorType, init, (PyObject *)self, args, NULL);
 
-    if (!PyArg_ParseTupleAndKeywords(args, kwds, "|zO&:NSPRError", kwlist,
-                                     &error_message,
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "|O&O&:NSPRError", kwlist,
+                                     UnicodeOrNoneConvert, &error_message,
                                      LongOrNoneConvert, &error_code))
         return -1;
 
     error_desc = get_error_desc(&error_code);
 
     if (error_message) {
-        str_value = PyString_FromFormat("%s: %s",
-                                        error_message,
-                                        error_desc ? PyString_AsString(error_desc) :
-                                        _("Error description unavailable"));
+        str_value = PyUnicode_FromFormat("%U: %U", error_message, error_desc);
     } else {
         str_value = error_desc;
     }
 
-
-    Py_CLEAR(self->base.message);
-    self->base.message = str_value;
-    Py_XINCREF(self->base.message);
 
     Py_CLEAR(self->str_value);
     self->str_value = str_value;
@@ -544,12 +539,13 @@ NSPRError_init(NSPRError *self, PyObject *args, PyObject *kwds)
 
     self->error_code = error_code;
 
+    Py_XDECREF(error_message);
+
     return 0;
 }
 
 static PyTypeObject NSPRErrorType = {
-    PyObject_HEAD_INIT(NULL)
-    0,						/* ob_size */
+    PyVarObject_HEAD_INIT(NULL, 0)
     "nss.error.NSPRError",			/* tp_name */
     sizeof(NSPRError),				/* tp_basicsize */
     0,						/* tp_itemsize */
@@ -618,7 +614,7 @@ CertVerifyError_str(CertVerifyError *self)
         return NULL;
     }
 
-    str = PyString_FromFormat("%s usages=%#x", PyString_AsString(super_str), self->usages);
+    str = PyUnicode_FromFormat("%U usages=0x%x", super_str, self->usages);
     Py_DECREF(super_str);
     return str;
 }
@@ -708,7 +704,7 @@ static int
 CertVerifyError_init(CertVerifyError *self, PyObject *args, PyObject *kwds)
 {
     static char *kwlist[] = {"error_message", "error_code", "usages", "log", NULL};
-    const char *error_message = NULL;
+    PyObject *error_message = NULL;
     long error_code = -1;
     unsigned int usages = 0;
     PyObject *log = NULL;
@@ -717,29 +713,33 @@ CertVerifyError_init(CertVerifyError *self, PyObject *args, PyObject *kwds)
 
     TraceMethodEnter(self);
 
-    if (!PyArg_ParseTupleAndKeywords(args, kwds, "|zO&IO:CertVerifyError", kwlist,
-                                     &error_message,
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "|O&O&IO:CertVerifyError", kwlist,
+                                     UnicodeOrNoneConvert, &error_message,
                                      LongOrNoneConvert, &error_code,
                                      &usages,
                                      &log))
         return -1;
 
     if ((super_kwds = PyDict_New()) == NULL) {
+        Py_XDECREF(error_message);
         return -1;
     }
     if (error_message) {
-        if (PyDict_SetItemString(super_kwds, "error_message", PyString_FromString(error_message)) != 0) {
+        if (PyDict_SetItemString(super_kwds, "error_message", error_message) != 0) {
+            Py_DECREF(error_message);
             Py_DECREF(super_kwds);
             return -1;
         }
     }
     if (error_code != -1) {
         if (PyDict_SetItemString(super_kwds, "error_code", PyLong_FromLong(error_code)) != 0) {
+            Py_XDECREF(error_message);
             Py_DECREF(super_kwds);
             return -1;
         }
     }
     if ((result = CertVerifyErrorType.tp_base->tp_init((PyObject *)self, empty_tuple, super_kwds)) != 0) {
+        Py_XDECREF(error_message);
         Py_DECREF(super_kwds);
         return result;
     }
@@ -751,12 +751,13 @@ CertVerifyError_init(CertVerifyError *self, PyObject *args, PyObject *kwds)
     self->log = log;
     Py_XINCREF(self->log);
 
+    Py_XDECREF(error_message);
+
     return 0;
 }
 
 static PyTypeObject CertVerifyErrorType = {
-    PyObject_HEAD_INIT(NULL)
-    0,						/* ob_size */
+    PyVarObject_HEAD_INIT(NULL, 0)
     "nss.error.CertVerifyError",		/* tp_name */
     sizeof(CertVerifyError),			/* tp_basicsize */
     0,						/* tp_itemsize */
@@ -820,9 +821,9 @@ manipulate them.\n\
 static struct PyModuleDef module_def = {
     PyModuleDef_HEAD_INIT,
     NSS_ERROR_MODULE_NAME,      /* m_name */
-    doc,                        /* m_doc */
+    module_doc,                 /* m_doc */
     -1,                         /* m_size */
-    methods                     /* m_methods */
+    module_methods,             /* m_methods */
     NULL,                       /* m_reload */
     NULL,                       /* m_traverse */
     NULL,                       /* m_clear */
@@ -856,13 +857,13 @@ MOD_INIT(error)
     if ((py_error_doc = init_py_nspr_errors(m)) == NULL)
         return MOD_ERROR_VAL;
 
-    if ((py_module_doc = PyString_FromString(module_doc)) == NULL)
+    if ((py_module_doc = PyUnicode_FromString(module_doc)) == NULL)
         return MOD_ERROR_VAL;
 
-    PyString_ConcatAndDel(&py_module_doc, py_error_doc);
+    PyUnicode_ConcatAndDel(&py_module_doc, py_error_doc);
     PyModule_AddObject(m, "__doc__", py_module_doc);
 
-    NSPRErrorType.tp_base = (PyTypeObject *)PyExc_StandardError;
+    NSPRErrorType.tp_base = (PyTypeObject *)PyExc_Exception;
 
     TYPE_READY(NSPRErrorType);
     TYPE_READY(CertVerifyErrorType);

@@ -1,5 +1,6 @@
 #!/usr/bin/python
 
+from __future__ import print_function
 import sys
 import os
 import unittest
@@ -10,7 +11,7 @@ import nss.nss as nss
 
 verbose = False
 mechanism = nss.CKM_DES_CBC_PAD
-plain_text = "Encrypt me!"
+plain_text = b"Encrypt me!"
 key = "e8:a7:7c:e2:05:63:6a:31"
 iv = "e4:bb:3b:d3:c3:71:2e:58"
 in_filename = sys.argv[0]
@@ -25,20 +26,20 @@ def setup_contexts(mechanism, key, iv):
     # If key was supplied use it, otherwise generate one
     if key:
         if verbose:
-            print "using supplied key data"
-            print "key:\n%s" % (key)
+            print("using supplied key data")
+            print("key:\n%s" % (key))
         key_si = nss.SecItem(nss.read_hex(key))
         sym_key = nss.import_sym_key(slot, mechanism, nss.PK11_OriginUnwrap,
                                      nss.CKA_ENCRYPT, key_si)
     else:
         if verbose:
-            print "generating key data"
+            print("generating key data")
         sym_key = slot.key_gen(mechanism, None, slot.get_best_key_length(mechanism))
 
     # If initialization vector was supplied use it, otherwise set it to None
     if iv:
         if verbose:
-            print "supplied iv:\n%s" % (iv)
+            print("supplied iv:\n%s" % (iv))
         iv_data = nss.read_hex(iv)
         iv_si = nss.SecItem(iv_data)
         iv_param = nss.param_from_iv(mechanism, iv_si)
@@ -49,8 +50,8 @@ def setup_contexts(mechanism, key, iv):
             iv_si = nss.SecItem(iv_data)
             iv_param = nss.param_from_iv(mechanism, iv_si)
             if verbose:
-                print "generated %d byte initialization vector: %s" % \
-                    (iv_length, nss.data_to_hex(iv_data, separator=":"))
+                print("generated %d byte initialization vector: %s" %
+                      (iv_length, nss.data_to_hex(iv_data, separator=":")))
         else:
             iv_param = None
 
@@ -78,7 +79,7 @@ class TestCipher(unittest.TestCase):
 
     def test_string(self):
         if verbose:
-            print "Plain Text:\n%s" % (plain_text)
+            print("Plain Text:\n%s" % (plain_text))
 
         # Encode the plain text by feeding it to cipher_op getting cipher text back.
         # Append the final bit of cipher text by calling digest_final
@@ -86,7 +87,7 @@ class TestCipher(unittest.TestCase):
         cipher_text += self.encoding_ctx.digest_final()
 
         if verbose:
-            print "Cipher Text:\n%s" % (nss.data_to_hex(cipher_text, separator=":"))
+            print("Cipher Text:\n%s" % (nss.data_to_hex(cipher_text, separator=":")))
 
         # Decode the cipher text by feeding it to cipher_op getting plain text back.
         # Append the final bit of plain text by calling digest_final
@@ -94,7 +95,7 @@ class TestCipher(unittest.TestCase):
         decoded_text += self.decoding_ctx.digest_final()
 
         if verbose:
-            print "Decoded Text:\n%s" % (decoded_text)
+            print("Decoded Text:\n%s" % (decoded_text))
 
         # Validate the encryption/decryption by comparing the decoded text with
         # the original plain text, they should match.
@@ -106,11 +107,11 @@ class TestCipher(unittest.TestCase):
         encrypted_filename = os.path.basename(in_filename) + ".encrypted"
         decrypted_filename = os.path.basename(in_filename) + ".decrypted"
 
-        in_file = open(in_filename, "r")
-        encrypted_file = open(encrypted_filename, "w")
+        in_file = open(in_filename, "rb")
+        encrypted_file = open(encrypted_filename, "wb")
 
         if verbose:
-            print "Encrypting file \"%s\" to \"%s\"" % (in_filename, encrypted_filename)
+            print("Encrypting file \"%s\" to \"%s\"" % (in_filename, encrypted_filename))
 
         # Encode the data read from a file in chunks
         while True:
@@ -128,10 +129,10 @@ class TestCipher(unittest.TestCase):
 
         # Decode the encoded file in a similar fashion
         if verbose:
-            print "Decrypting file \"%s\" to \"%s\"" % (encrypted_filename, decrypted_filename)
+            print("Decrypting file \"%s\" to \"%s\"" % (encrypted_filename, decrypted_filename))
 
-        encrypted_file = open(encrypted_filename, "r")
-        decrypted_file = open(decrypted_filename, "w")
+        encrypted_file = open(encrypted_filename, "rb")
+        decrypted_file = open(decrypted_filename, "wb")
         while True:
             # Read a chunk of data until EOF, encrypt it and write the encrypted data
             in_data = encrypted_file.read(chunk_size)
@@ -147,16 +148,16 @@ class TestCipher(unittest.TestCase):
 
         # Validate the encryption/decryption by comparing the decoded text with
         # the original plain text, they should match.
-        in_data        = open(in_filename).read()
-        encrypted_data = open(encrypted_filename).read()
-        decrypted_data = open(decrypted_filename).read()
+        in_data        = open(in_filename, "rb").read()
+        encrypted_data = open(encrypted_filename, "rb").read()
+        decrypted_data = open(decrypted_filename, "rb").read()
         if decrypted_data != in_data:
             result = 1
-            print "FAILED! decrypted_data != in_data"
+            print("FAILED! decrypted_data != in_data")
 
         if encrypted_data == in_data:
             result = 1
-            print "FAILED! encrypted_data == in_data"
+            print("FAILED! encrypted_data == in_data")
 
         # clean up
         os.unlink(encrypted_filename)

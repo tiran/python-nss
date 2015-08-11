@@ -155,12 +155,126 @@ do {                                            \
 
 /******************************************************************************/
 
+/*
+ * PyBytes_From_BaseString
+ *
+ * param obj: Python string object
+ * param encoding: Encoding to use, if NULL then utf-8
+ *
+ * Return: PyBytes object if successful which must be released with Py_DECREF.
+ *         If unsuccessful NULL is returned and an exception will have been set.
+ *
+ * Convert a Python string to encoded bytes.
+ *
+ * Python2: The string may be either a PyUnicode or a PyString object.
+ * If it's a PyString object it is assumed the value is already encoded
+ * and a copy is returned.
+ *
+ * Python3: The string must be a PyUnicode object.
+ *
+ * Example:
+ *
+ * PyObject *encoded = NULL;
+ *
+ * if ((encoded = PyBytes_From_BaseString(obj, NULL)) == NULL) {
+ *     return NULL;
+ * }
+ * some_c_function(PyBytes_AS_STRING(encoded));
+ * Py_DECREF(encoded);
+ */
+
+static inline PyObject *PyBytes_From_BaseString(PyObject *obj, const char *encoding)
+{
+    if (!PyBaseString_Check(obj)) {
+        PyErr_Format(PyExc_TypeError, "must be string, not %.50s",
+                     Py_TYPE(obj)->tp_name);
+        return NULL;
+    }
+
+#if PY_MAJOR_VERSION < 3
+    if (PyString_Check(obj)) {
+        return PyBytes_FromString(PyString_AS_STRING(obj));
+    }
+#endif
+
+    return PyUnicode_AsEncodedString(obj, encoding ? encoding : "utf-8", NULL);
+}
+
+static inline void PyUnicode_ConcatAndDel(PyObject** left, PyObject* right) {
+    PyObject *tmp;
+
+    tmp = PyUnicode_Concat(*left, right);
+    Py_XDECREF(*left);
+    Py_XDECREF(right);
+    *left = tmp;
+}
+
+static inline PyObject *
+PyUnicode_Lower(PyObject *obj)
+{
+    PyObject *py_unicode = NULL;
+    PyObject *py_lower = NULL;
+
+    if ((py_unicode = PyUnicode_from_basestring(obj)) == NULL) {
+        return NULL;
+    }
+
+    if ((py_lower = PyObject_CallMethod(obj, "lower", NULL)) == NULL) {
+        Py_DECREF(py_unicode);
+        return NULL;
+    }
+
+    Py_DECREF(py_unicode);
+    return py_lower;
+}
+
+
+/******************************************************************************/
+
+#define RETURN_COMPARE_RESULT(op, cmp_result)   \
+{                                               \
+    switch(op) {                                \
+    case Py_LT:                                 \
+        if (cmp_result < 0)                     \
+            Py_RETURN_TRUE;                     \
+        else                                    \
+            Py_RETURN_FALSE;                    \
+    case Py_LE:                                 \
+        if (cmp_result <= 0)                    \
+            Py_RETURN_TRUE;                     \
+        else                                    \
+            Py_RETURN_FALSE;                    \
+    case Py_EQ:                                 \
+        if (cmp_result == 0)                    \
+            Py_RETURN_TRUE;                     \
+        else                                    \
+            Py_RETURN_FALSE;                    \
+    case Py_NE:                                 \
+        if (cmp_result != 0)                    \
+            Py_RETURN_TRUE;                     \
+        else                                    \
+            Py_RETURN_FALSE;                    \
+    case Py_GT:                                 \
+        if (cmp_result > 0)                     \
+            Py_RETURN_TRUE;                     \
+        else                                    \
+            Py_RETURN_FALSE;                    \
+    case Py_GE:                                 \
+        if (cmp_result >= 0)                    \
+            Py_RETURN_TRUE;                     \
+        else                                    \
+            Py_RETURN_FALSE;                    \
+    }                                           \
+                                                \
+    Py_RETURN_FALSE;                            \
+}
+
+#define Py_RETURN_BOOL(condition) {if (condition) Py_RETURN_TRUE; else Py_RETURN_FALSE;}
+
 // Gettext
 #ifndef _
 #define _(s) s
 #endif
-
-#define PyNone_Check(x) ((x) == Py_None)
 
 #define CALL_BASE(type, func, ...) (type)->tp_base->tp_##func(__VA_ARGS__)
 

@@ -1,5 +1,6 @@
 #!/usr/bin/python
 
+from __future__ import print_function
 import subprocess
 import sys
 import unittest
@@ -26,29 +27,36 @@ class TestDigest(unittest.TestCase):
         hash_oid_name = nss.oid_str(hash_oid)
 
         if verbose:
-            print 'running test %s: nss_digest_func=%s hash_oid=%s in_filename=%s' % \
-                (name, nss_digest_func.__name__, hash_oid_name, in_filename)
+            print('running test %s: nss_digest_func=%s hash_oid=%s in_filename=%s' % \
+                (name, nss_digest_func.__name__, hash_oid_name, in_filename))
 
-        # read the data in from the file
-        ref_data = open(in_filename).read()
+        # read binary data in from the file
+        with open(in_filename, "rb") as f:
+            ref_data = f.read()
 
         # Run the system hash function to get a reference result.
         # Since we're testing the python-nss binding we assume
         # the system command is entirely independent and correct.
         #
-        # Because our digest routines return raw data (e.g. a buffer of octets)
-        # and the system hash command returns a hex string which we need to compare agains,
-        # and because we sometimes want to print the result of our digest functions
-        # always convert our results to a hex string via nss.data_to_hex()
-        proc = subprocess.Popen([ref_cmd, in_filename], stdout=subprocess.PIPE)
-        status = proc.wait();
-        reference_digest = proc.stdout.read().split()[0]
+        # Because our digest routines return binary data (e.g. a buffer
+        # of octets) and the system hash command returns a hex string
+        # which we need to compare against, and because we sometimes
+        # want to print the result of our digest functions always
+        # convert our results to a hex string via nss.data_to_hex()
+        #
+        # We want to read the reference result from the subprocess as text
+        # not binary, thus universal_newlines must be True.
+        proc = subprocess.Popen([ref_cmd, in_filename], stdout=subprocess.PIPE,
+                                universal_newlines=True)
+        stdout, stderr = proc.communicate()
+        reference_digest = stdout.split()[0]
         if verbose:
-            print 'reference_digest\n%s' % (reference_digest)
+            print('reference_digest\n%s' % (reference_digest))
 
         # Run the test with convenience digest function (e.g. nss.sha256_digest, etc.).
         test_digest =  nss.data_to_hex(nss_digest_func(ref_data), separator=None)
-        if verbose: print 'nss %s\n%s' % (nss_digest_func.__name__, test_digest)
+        if verbose:
+            print('nss %s\n%s' % (nss_digest_func.__name__, test_digest))
 
         self.assertEqual(test_digest, reference_digest,
                          msg='nss %s test failed reference=%s test=%s' % \
@@ -56,7 +64,8 @@ class TestDigest(unittest.TestCase):
 
         # Run the test using the generic hash_buf function specifying the hash algorithm.
         test_digest =  nss.data_to_hex(nss.hash_buf(hash_oid, ref_data), separator=None)
-        if verbose: print 'nss.hash_buf %s\n%s' % (hash_oid_name, test_digest)
+        if verbose:
+            print('nss.hash_buf %s\n%s' % (hash_oid_name, test_digest))
 
         self.assertEqual(test_digest, reference_digest,
                          msg='nss.hash_buf %s test failed reference=%s test=%s' % \
@@ -68,7 +77,8 @@ class TestDigest(unittest.TestCase):
         context.digest_begin()
         context.digest_op(ref_data)
         test_digest = nss.data_to_hex(context.digest_final(), separator=None)
-        if verbose: print 'nss.digest_context %s\n%s' % (hash_oid_name, test_digest)
+        if verbose:
+            print('nss.digest_context %s\n%s' % (hash_oid_name, test_digest))
 
         self.assertEqual(test_digest, reference_digest,
                          msg='nss.digest_context %s test failed reference=%s test=%s' % \
@@ -76,17 +86,18 @@ class TestDigest(unittest.TestCase):
 
         # Run the test using the lowest level hashing functions by specifying the hash algorithm
         # and feeding 'chunks' of data one at a time to be consumed.
-        in_file = open(in_filename, 'r')
-        context = nss.create_digest_context(hash_oid)
-        context.digest_begin()
-        while True:
-            in_data = in_file.read(chunk_size)
-            if len(in_data) == 0:
-                break
-            context.digest_op(in_data)
+        with open(in_filename, 'rb') as in_file:
+            context = nss.create_digest_context(hash_oid)
+            context.digest_begin()
+            while True:
+                in_data = in_file.read(chunk_size)
+                if len(in_data) == 0:
+                    break
+                context.digest_op(in_data)
 
         test_digest = nss.data_to_hex(context.digest_final(), separator=None)
-        if verbose: print 'chunked nss.digest_context %s\n%s' % (hash_oid_name, test_digest)
+        if verbose:
+            print('chunked nss.digest_context %s\n%s' % (hash_oid_name, test_digest))
 
         self.assertEqual(test_digest, reference_digest,
                          msg='chunked nss.digest_context %s test failed reference=%s test=%s' % \
