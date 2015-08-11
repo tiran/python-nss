@@ -331,7 +331,6 @@ NewType_new_from_NSSType(NSSType *id)
 
 #define PY_SSIZE_T_CLEAN
 #include "Python.h"
-#include "py_2_3_compat.h"
 #include "structmember.h"
 #include "datetime.h"
 
