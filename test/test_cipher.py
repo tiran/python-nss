@@ -1,6 +1,5 @@
-#!/usr/bin/python
-
 from __future__ import print_function
+from __future__ import absolute_import
 import sys
 import os
 import unittest
@@ -148,9 +147,13 @@ class TestCipher(unittest.TestCase):
 
         # Validate the encryption/decryption by comparing the decoded text with
         # the original plain text, they should match.
-        in_data        = open(in_filename, "rb").read()
-        encrypted_data = open(encrypted_filename, "rb").read()
-        decrypted_data = open(decrypted_filename, "rb").read()
+        with open(in_filename, "rb") as f:
+            in_data = f.read()
+        with open(encrypted_filename, "rb") as f:
+            encrypted_data = f.read()
+        with open(decrypted_filename, "rb") as f:
+            decrypted_data = f.read()
+
         if decrypted_data != in_data:
             result = 1
             print("FAILED! decrypted_data != in_data")

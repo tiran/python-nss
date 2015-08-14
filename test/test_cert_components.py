@@ -1,6 +1,5 @@
-#!/usr/bin/python
-
 from __future__ import print_function
+from __future__ import absolute_import
 import unittest
 
 from nss.error import NSPRError
@@ -149,9 +148,15 @@ class TestCertName(unittest.TestCase):
         self.assertEqual(str(rdn[1]), "OU=%s" % self.ou_name)
 
         self.assertEqual(rdn['2.5.4.3'], [cn_ava])
+
         self.assertEqual(rdn.has_key('cn'), True)
+        self.assertEqual('cn' in rdn, True)
+
         self.assertEqual(rdn.has_key('2.5.4.3'), True)
+        self.assertEqual('2.5.4.3' in rdn, True)
+
         self.assertEqual(rdn.has_key('st'), False)
+        self.assertEqual('st' in rdn, False)
 
         self.assertEqual(list(rdn), [cn_ava, ou_ava])
         self.assertEqual(rdn[0:2], [cn_ava, ou_ava])
@@ -258,8 +263,13 @@ class TestCertName(unittest.TestCase):
         self.assertEqual(str(name), 'OU=%s,CN=%s' % (self.ou_name,self.cn_name))
 
         self.assertEqual(name.has_key('cn'), True)
+        self.assertEqual('cn' in name, True)
+
         self.assertEqual(name.has_key('ou'), True)
+        self.assertEqual('ou' in name, True)
+
         self.assertEqual(name.has_key('st'), False)
+        self.assertEqual('st' in name, False)
 
     def test_oid(self):
         self.assertEqual(nss.oid_str('2.5.4.3'),                   'X520 Common Name')

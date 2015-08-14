@@ -206,6 +206,8 @@ Py_TPFLAGS_HAVE_GC
 static int
 NewType_traverse(NewType *self, visitproc visit, void *arg)
 {
+    TraceMethodEnter(self);
+
     Py_VISIT(self->obj);
     return 0;
 }
@@ -1468,6 +1470,10 @@ cert_oid_tag_name(PyObject *self, PyObject *args);
 static PyObject *
 cert_trust_flags(unsigned int flags, RepresentationKind repr_kind);
 
+static int
+SecItem_init_from_data(SecItem *self, const void *data, Py_ssize_t len,
+                       SECItemType type, SECItemKind kind);
+
 static PyObject *
 SecItem_new_from_SECItem(const SECItem *item, SECItemKind kind);
 
@@ -1739,49 +1745,6 @@ base64_to_SECItem(SECItem *der, char *text, size_t text_len)
         }
         p = der_begin = tmp + 1;
         tmp = PL_strnstr(p, "-----END", text_end-p);
-        if (tmp != NULL) {
-            der_end = tmp;
-            *der_end = '\0';
-        } else {
-            PyErr_SetString(PyExc_ValueError, "no PEM END found");
-            return SECFailure;
-        }
-    } else {
-        der_begin = p;
-        der_end = p + strlen(p);
-    }
-
-    /* Convert to binary */
-    if (NSSBase64_DecodeBuffer(NULL, der, der_begin, der_end - der_begin) == NULL) {
-        set_nspr_error("Could not base64 decode");
-        return SECFailure;
-    }
-    return SECSuccess;
-}
-
-SECStatus
-base64_to_SECItemX(SECItem *der, char *text)
-{
-    char *p, *tmp, *der_begin, *der_end;
-
-    der->data = NULL;
-    der->len = 0;
-    der->type = siBuffer;
-
-    p = text;
-    /* check for headers and trailers and remove them */
-    if ((tmp = strstr(p, "-----BEGIN")) != NULL) {
-        p = tmp;
-        tmp = PORT_Strchr(p, '\n');
-        if (!tmp) {
-            tmp = strchr(p, '\r'); /* maybe this is a MAC file */
-        }
-        if (!tmp) {
-            PyErr_SetString(PyExc_ValueError, "no line ending after PEM BEGIN");
-            return SECFailure;
-        }
-        p = der_begin = tmp + 1;
-        tmp = strstr(p, "-----END");
         if (tmp != NULL) {
             der_end = tmp;
             *der_end = '\0';
@@ -5497,20 +5460,25 @@ SecItem_init(SecItem *self, PyObject *args, PyObject *kwds)
         return -1;
 
     if (buffer) {
-        self->kind = SECITEM_buffer;
-        self->item.type = type;
         if (ascii) {
-            if (base64_to_SECItem(&self->item, (char *)buffer, buffer_len) != SECSuccess) {
+            SECItem binary;
+
+            if (base64_to_SECItem(&binary, (char *)buffer, buffer_len) != SECSuccess) {
                 return -1;
             }
+
+            if (SecItem_init_from_data(self, binary.data, binary.len,
+                                       type, SECITEM_buffer) != 0) {
+                SECITEM_FreeItem(&binary, PR_FALSE);
+                return -1;
+            }
+            SECITEM_FreeItem(&binary, PR_FALSE);
+
         } else {
-            self->item.len = buffer_len;
-            if ((self->item.data = PyMem_MALLOC(buffer_len)) == NULL) {
-                PyErr_Format(PyExc_MemoryError, "not enough memory to copy buffer of size %zd into SecItem",
-                             buffer_len);
+            if (SecItem_init_from_data(self, buffer, buffer_len,
+                                       type, SECITEM_buffer) != 0) {
                 return -1;
             }
-            memmove(self->item.data, buffer, buffer_len);
         }
     } else {                    /* empty buffer */
         self->kind = SECITEM_buffer;
@@ -5819,6 +5787,24 @@ static PyTypeObject SecItemType = {
  * allocated.
  */
 
+static int
+SecItem_init_from_data(SecItem *self, const void *data, Py_ssize_t len,
+                       SECItemType type, SECItemKind kind)
+{
+    self->item.type = type;
+    self->item.len = len;
+    if ((self->item.data = PyMem_MALLOC(len)) == NULL) {
+        PyErr_Format(PyExc_MemoryError,
+                     "not enough memory to copy buffer of size %zd into SecItem",
+                     len);
+        return -1;
+    }
+    memmove(self->item.data, data, len);
+    self->kind = kind;
+
+    return 0;
+}
+
 static PyObject *
 SecItem_new_from_SECItem(const SECItem *item, SECItemKind kind)
 {
@@ -5834,15 +5820,11 @@ SecItem_new_from_SECItem(const SECItem *item, SECItemKind kind)
         return NULL;
     }
 
-    self->item.type = item->type;
-    self->item.len = item->len;
-    if ((self->item.data = PyMem_MALLOC(item->len)) == NULL) {
+    if (SecItem_init_from_data(self, item->data, item->len,
+                               item->type, kind) != 0) {
         Py_CLEAR(self);
         return PyErr_NoMemory();
     }
-    memmove(self->item.data, item->data, item->len);
-
-    self->kind = kind;
 
     TraceObjNewLeave(self);
     return (PyObject *) self;
@@ -6450,6 +6432,8 @@ AlgorithmID_new(PyTypeObject *type, PyObject *args, PyObject *kwds)
 static int
 AlgorithmID_traverse(AlgorithmID *self, visitproc visit, void *arg)
 {
+    TraceMethodEnter(self);
+
     Py_VISIT(self->py_id);
     Py_VISIT(self->py_parameters);
     return 0;
@@ -7178,6 +7162,8 @@ RSAPublicKey_new(PyTypeObject *type, PyObject *args, PyObject *kwds)
 static int
 RSAPublicKey_traverse(RSAPublicKey *self, visitproc visit, void *arg)
 {
+    TraceMethodEnter(self);
+
     Py_VISIT(self->py_modulus);
     Py_VISIT(self->py_exponent);
     return 0;
@@ -7401,6 +7387,8 @@ DSAPublicKey_new(PyTypeObject *type, PyObject *args, PyObject *kwds)
 static int
 DSAPublicKey_traverse(DSAPublicKey *self, visitproc visit, void *arg)
 {
+    TraceMethodEnter(self);
+
     Py_VISIT(self->py_pqg_params);
     Py_VISIT(self->py_public_value);
     return 0;
@@ -7657,6 +7645,8 @@ SignedData_new(PyTypeObject *type, PyObject *args, PyObject *kwds)
 static int
 SignedData_traverse(SignedData *self, visitproc visit, void *arg)
 {
+    TraceMethodEnter(self);
+
     Py_VISIT(self->py_der);
     Py_VISIT(self->py_data);
     Py_VISIT(self->py_algorithm);
@@ -7952,6 +7942,8 @@ PublicKey_new(PyTypeObject *type, PyObject *args, PyObject *kwds)
 static int
 PublicKey_traverse(PublicKey *self, visitproc visit, void *arg)
 {
+    TraceMethodEnter(self);
+
     Py_VISIT(self->py_rsa_key);
     Py_VISIT(self->py_dsa_key);
     return 0;
@@ -8192,6 +8184,8 @@ SubjectPublicKeyInfo_new(PyTypeObject *type, PyObject *args, PyObject *kwds)
 static int
 SubjectPublicKeyInfo_traverse(SubjectPublicKeyInfo *self, visitproc visit, void *arg)
 {
+    TraceMethodEnter(self);
+
     Py_VISIT(self->py_algorithm);
     Py_VISIT(self->py_public_key);
     return 0;
@@ -8875,6 +8869,8 @@ CertificateExtension_new(PyTypeObject *type, PyObject *args, PyObject *kwds)
 static int
 CertificateExtension_traverse(CertificateExtension *self, visitproc visit, void *arg)
 {
+    TraceMethodEnter(self);
+
     Py_VISIT(self->py_oid);
     Py_VISIT(self->py_value);
     return 0;
@@ -9301,7 +9297,7 @@ Certificate_trust_flags(PyObject *cls, PyObject *args, PyObject *kwds)
     int flags = 0;
     RepresentationKind repr_kind = AsEnumDescription;
 
-    TraceMethodEnter(self);
+    TraceMethodEnter(cls);
 
     if (!PyArg_ParseTupleAndKeywords(args, kwds, "i|i:trust_flags", kwlist,
                                      &flags, &repr_kind))
@@ -11434,6 +11430,25 @@ RDN_richcompare(RDN *self, RDN *other, int op)
     RETURN_COMPARE_RESULT(op, cmp_result)
 }
 
+static int
+RDN_contains(RDN *self, PyObject *arg)
+{
+    int oid_tag;
+
+    TraceMethodEnter(self);
+
+    oid_tag = get_oid_tag_from_object(arg);
+    if (oid_tag == SEC_OID_UNKNOWN || oid_tag == -1) {
+        return 0;
+    }
+
+    if (CERTRDN_has_tag(self->rdn, oid_tag)) {
+        return 1;
+    } else {
+        return 0;
+    }
+}
+
 PyDoc_STRVAR(RDN_has_key_doc,
 "has_key(arg) -> bool\n\
 \n\
@@ -11449,7 +11464,6 @@ static PyObject *
 RDN_has_key(RDN *self, PyObject *args)
 {
     PyObject *arg;
-    int oid_tag;
 
     TraceMethodEnter(self);
 
@@ -11457,12 +11471,7 @@ RDN_has_key(RDN *self, PyObject *args)
                           &arg))
         return NULL;
 
-    oid_tag = get_oid_tag_from_object(arg);
-    if (oid_tag == SEC_OID_UNKNOWN || oid_tag == -1) {
-        Py_RETURN_FALSE;
-    }
-
-    if (CERTRDN_has_tag(self->rdn, oid_tag)) {
+    if (RDN_contains(self, arg)) {
         Py_RETURN_TRUE;
     } else {
         Py_RETURN_FALSE;
@@ -11820,7 +11829,7 @@ static PySequenceMethods RDN_as_sequence = {
     0,						/* sq_slice */
     0,						/* sq_ass_item */
     0,						/* sq_ass_slice */
-    0,						/* sq_contains */
+    (objobjproc)RDN_contains,			/* sq_contains */
     0,						/* sq_inplace_concat */
     0,						/* sq_inplace_repeat */
 };
@@ -12102,6 +12111,25 @@ DN_subscript(DN *self, PyObject* item)
     return NULL;
 }
 
+static int
+DN_contains(DN *self, PyObject *arg)
+{
+    int oid_tag;
+
+    TraceMethodEnter(self);
+
+    oid_tag = get_oid_tag_from_object(arg);
+    if (oid_tag == SEC_OID_UNKNOWN || oid_tag == -1) {
+        return 0;
+    }
+
+    if (CERTName_has_tag(&self->name, oid_tag)) {
+        return 1;
+    } else {
+        return 0;
+    }
+}
+
 PyDoc_STRVAR(DN_has_key_doc,
 "has_key(arg) -> bool\n\
 \n\
@@ -12117,7 +12145,6 @@ static PyObject *
 DN_has_key(DN *self, PyObject *args)
 {
     PyObject *arg;
-    int oid_tag;
 
     TraceMethodEnter(self);
 
@@ -12125,12 +12152,7 @@ DN_has_key(DN *self, PyObject *args)
                           &arg))
         return NULL;
 
-    oid_tag = get_oid_tag_from_object(arg);
-    if (oid_tag == SEC_OID_UNKNOWN || oid_tag == -1) {
-        Py_RETURN_FALSE;
-    }
-
-    if (CERTName_has_tag(&self->name, oid_tag)) {
+    if (DN_contains(self, arg)) {
         Py_RETURN_TRUE;
     } else {
         Py_RETURN_FALSE;
@@ -12632,7 +12654,7 @@ static PySequenceMethods DN_as_sequence = {
     0,						/* sq_slice */
     0,						/* sq_ass_item */
     0,						/* sq_ass_slice */
-    0,						/* sq_contains */
+    (objobjproc)DN_contains,			/* sq_contains */
     0,						/* sq_inplace_concat */
     0,						/* sq_inplace_repeat */
 };
@@ -15889,6 +15911,8 @@ CRLDistributionPts_new(PyTypeObject *type, PyObject *args, PyObject *kwds)
 static int
 CRLDistributionPts_traverse(CRLDistributionPts *self, visitproc visit, void *arg)
 {
+    TraceMethodEnter(self);
+
     Py_VISIT(self->py_pts);
     return 0;
 }
@@ -16425,6 +16449,8 @@ AuthorityInfoAccesses_new(PyTypeObject *type, PyObject *args, PyObject *kwds)
 static int
 AuthorityInfoAccesses_traverse(AuthorityInfoAccesses *self, visitproc visit, void *arg)
 {
+    TraceMethodEnter(self);
+
     Py_VISIT(self->py_aias);
     return 0;
 }
@@ -19203,6 +19229,8 @@ PKCS12DecodeItem_new(PyTypeObject *type, PyObject *args, PyObject *kwds)
 static int
 PKCS12DecodeItem_traverse(PKCS12DecodeItem *self, visitproc visit, void *arg)
 {
+    TraceMethodEnter(self);
+
     Py_VISIT(self->py_signed_cert_der);
     Py_VISIT(self->py_cert);
     Py_VISIT(self->py_friendly_name);
@@ -19717,6 +19745,8 @@ PKCS12Decoder_new(PyTypeObject *type, PyObject *args, PyObject *kwds)
 static int
 PKCS12Decoder_traverse(PKCS12Decoder *self, visitproc visit, void *arg)
 {
+    TraceMethodEnter(self);
+
     Py_VISIT(self->py_decode_items);
     return 0;
 }
@@ -21262,6 +21292,7 @@ NSS_Shutdown_Callback(void *app_data, void *nss_data)
         goto exit;
     }
 
+    Py_INCREF(py_nss_data);
     PyTuple_SetItem(new_args, 0, py_nss_data);
 
     for (i = n_base_args, j = 0; i < argc; i++, j++) {
@@ -21354,10 +21385,13 @@ nss_set_shutdown_callback(PyObject *self, PyObject *args)
 
     new_callback_args = PyTuple_GetSlice(args, n_base_args, argc);
 
+    /*
+     * PyDict_GetItem() and get_thread_local() return a borrowed
+     * reference, do not DECREF prev_callback_args.
+     */
     if (PyNone_Check(callback)) {
         if ((prev_callback_args = get_thread_local("shutdown_callback_args")) != NULL) {
             NSS_UnregisterShutdown(NSS_Shutdown_Callback, prev_callback_args);
-            Py_CLEAR(prev_callback_args);
         }
 
         del_thread_local("shutdown_callback");
@@ -21371,7 +21405,6 @@ nss_set_shutdown_callback(PyObject *self, PyObject *args)
 
         if ((prev_callback_args = get_thread_local("shutdown_callback_args")) != NULL) {
             NSS_UnregisterShutdown(NSS_Shutdown_Callback, prev_callback_args);
-            Py_CLEAR(prev_callback_args);
         }
 
         if (set_thread_local("shutdown_callback", callback) < 0) {

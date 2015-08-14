@@ -1,4 +1,5 @@
-#!/usr/bin/python
+from __future__ import absolute_import
+from __future__ import print_function
 
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -27,16 +28,16 @@ GET /index.html HTTP/1.0
 # -----------------------------------------------------------------------------
 
 def handshake_callback(sock):
-    print "-- handshake complete --"
-    print "peer: %s" % (sock.get_peer_name())
-    print "negotiated host: %s" % (sock.get_negotiated_host())
-    print
-    print sock.connection_info_str()
-    print "-- handshake complete --"
-    print
+    print("-- handshake complete --")
+    print("peer: %s" % (sock.get_peer_name()))
+    print("negotiated host: %s" % (sock.get_negotiated_host()))
+    print()
+    print(sock.connection_info_str())
+    print("-- handshake complete --")
+    print()
 
 def auth_certificate_callback(sock, check_sig, is_server, certdb):
-    print "auth_certificate_callback: check_sig=%s is_server=%s" % (check_sig, is_server)
+    print("auth_certificate_callback: check_sig=%s is_server=%s" % (check_sig, is_server))
     cert_is_valid = False
 
     cert = sock.get_peer_certificate()
@@ -44,7 +45,7 @@ def auth_certificate_callback(sock, check_sig, is_server, certdb):
     if pin_args is None:
         pin_args = ()
 
-    print "cert:\n%s" % cert
+    print("cert:\n%s" % cert)
 
     # Define how the cert is being used based upon the is_server flag.  This may
     # seem backwards, but isn't. If we're a server we're trying to validate a
@@ -59,13 +60,13 @@ def auth_certificate_callback(sock, check_sig, is_server, certdb):
         # will be set to the error code matching the reason why the validation failed
         # and the strerror attribute will contain a string describing the reason.
         approved_usage = cert.verify_now(certdb, check_sig, intended_usage, *pin_args)
-    except Exception, e:
-        print e.strerror
+    except Exception as e:
+        print(e)
         cert_is_valid = False
-        print "Returning cert_is_valid = %s" % cert_is_valid
+        print("Returning cert_is_valid = %s" % cert_is_valid)
         return cert_is_valid
 
-    print "approved_usage = %s" % nss.cert_usage_flags(approved_usage)
+    print("approved_usage = %s" % nss.cert_usage_flags(approved_usage))
 
     # Is the intended usage a proper subset of the approved usage
     if approved_usage & intended_usage:
@@ -75,7 +76,7 @@ def auth_certificate_callback(sock, check_sig, is_server, certdb):
 
     # If this is a server, we're finished
     if is_server or not cert_is_valid:
-        print "Returning cert_is_valid = %s" % cert_is_valid
+        print("Returning cert_is_valid = %s" % cert_is_valid)
         return cert_is_valid
 
     # Certificate is OK.  Since this is the client side of an SSL
@@ -84,17 +85,17 @@ def auth_certificate_callback(sock, check_sig, is_server, certdb):
     # man-in-the-middle attacks.
 
     hostname = sock.get_hostname()
-    print "verifying socket hostname (%s) matches cert subject (%s)" % (hostname, cert.subject)
+    print("verifying socket hostname (%s) matches cert subject (%s)" % (hostname, cert.subject))
     try:
         # If the cert fails validation it will raise an exception
         cert_is_valid = cert.verify_hostname(hostname)
-    except Exception, e:
-        print e.strerror
+    except Exception as e:
+        print(e)
         cert_is_valid = False
-        print "Returning cert_is_valid = %s" % cert_is_valid
+        print("Returning cert_is_valid = %s" % cert_is_valid)
         return cert_is_valid
 
-    print "Returning cert_is_valid = %s" % cert_is_valid
+    print("Returning cert_is_valid = %s" % cert_is_valid)
     return cert_is_valid
 
 # -----------------------------------------------------------------------------
@@ -107,7 +108,7 @@ def client():
     try:
         addr_info = io.AddrInfo(options.hostname)
     except:
-        print "ERROR: could not resolve hostname \"%s\"" % options.hostname
+        print("ERROR: could not resolve hostname \"%s\"" % options.hostname)
         return
 
     for net_addr in addr_info:
@@ -127,30 +128,30 @@ def client():
                                            nss.get_default_certdb())
 
         try:
-            print "try connecting to: %s" % (net_addr)
+            print("try connecting to: %s" % (net_addr))
             sock.connect(net_addr, timeout=io.seconds_to_interval(timeout_secs))
-            print "connected to: %s" % (net_addr)
+            print("connected to: %s" % (net_addr))
             valid_addr = True
             break
         except:
             continue
 
     if not valid_addr:
-        print "ERROR: could not connect to \"%s\"" % options.hostname
+        print("ERROR: could not connect to \"%s\"" % options.hostname)
         return
 
     try:
         # Talk to the server
         n_received = 0
-        sock.send(request)
+        sock.send(request.encode('utf-8'))
         while True:
             buf = sock.recv(1024)
             n_received += len(buf)
             if not buf:
-                print "\nclient lost connection, received %d bytes" % (n_received)
+                print("\nclient lost connection, received %d bytes" % (n_received))
                 break
-    except Exception, e:
-        print e.strerror
+    except Exception as e:
+        print(e)
         sock.shutdown()
         return
 
@@ -191,13 +192,13 @@ try:
 
     min_ssl_version, max_ssl_version = \
         ssl.get_supported_ssl_version_range(repr_kind=nss.AsString)
-    print "Supported SSL version range: min=%s, max=%s" % \
-        (min_ssl_version, max_ssl_version)
+    print("Supported SSL version range: min=%s, max=%s" % \
+        (min_ssl_version, max_ssl_version))
 
     min_ssl_version, max_ssl_version = \
         ssl.get_default_ssl_version_range(repr_kind=nss.AsString)
-    print "Default SSL version range: min=%s, max=%s" % \
-        (min_ssl_version, max_ssl_version)
+    print("Default SSL version range: min=%s, max=%s" % \
+        (min_ssl_version, max_ssl_version))
 
     if options.min_ssl_version is not None or \
        options.max_ssl_version is not None:
@@ -207,17 +208,17 @@ try:
         if options.max_ssl_version is not None:
             max_ssl_version  = options.max_ssl_version
 
-        print "Setting default SSL version range: min=%s, max=%s" % \
-            (min_ssl_version, max_ssl_version)
+        print("Setting default SSL version range: min=%s, max=%s" % \
+            (min_ssl_version, max_ssl_version))
         ssl.set_default_ssl_version_range(min_ssl_version, max_ssl_version)
 
         min_ssl_version, max_ssl_version = \
             ssl.get_default_ssl_version_range(repr_kind=nss.AsString)
-        print "Default SSL version range now: min=%s, max=%s" % \
-            (min_ssl_version, max_ssl_version)
+        print("Default SSL version range now: min=%s, max=%s" % \
+            (min_ssl_version, max_ssl_version))
 
-except Exception, e:
-    print >>sys.stderr, str(e)
+except Exception as e:
+    print(str(e), file=sys.stderr)
     sys.exit(1)
 
 client()

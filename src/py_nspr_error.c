@@ -431,6 +431,8 @@ NSPRError_str(NSPRError *self)
 static int
 NSPRError_traverse(NSPRError *self, visitproc visit, void *arg)
 {
+    TraceMethodEnter(self);
+
     Py_VISIT(self->error_desc);
     Py_VISIT(self->error_message);
     Py_VISIT(self->str_value);
@@ -623,6 +625,8 @@ CertVerifyError_str(CertVerifyError *self)
 static int
 CertVerifyError_traverse(CertVerifyError *self, visitproc visit, void *arg)
 {
+    TraceMethodEnter(self);
+
     Py_VISIT(self->log);
     CALL_BASE(&CertVerifyErrorType, traverse, (PyObject *)self, visit, arg);
 

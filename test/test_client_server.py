@@ -1,6 +1,5 @@
-#!/usr/bin/python
-
 from __future__ import print_function
+from __future__ import absolute_import
 import os
 import sys
 import errno
@@ -21,8 +20,8 @@ REQUIRE_CLIENT_CERT_ONCE   = 2
 REQUEST_CLIENT_CERT_ALWAYS = 3
 REQUIRE_CLIENT_CERT_ALWAYS = 4
 
-verbose = False
-info = False
+verbose = True
+info = True
 password = 'DB_passwd'
 use_ssl = True
 client_cert_action = NO_CLIENT_CERT

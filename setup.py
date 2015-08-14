@@ -42,20 +42,21 @@ def update_version():
     version_re = re.compile("^\s*__version__\s*=\s*['\"]([^'\"]*)['\"]")
     need_to_update = False
     version_found = False
-    f = open(tmp_file, "w")
-    for line in open(version_file):
-        match = version_re.search(line)
-        if match:
-            version_found = True
-            file_version = match.group(1)
-            if file_version != version:
-                need_to_update = True
-                f.write("__version__ = '%s'\n" % version)
-        else:
-            f.write(line)
-    if not version_found:
-        need_to_update = True
-        f.write("__version__ = '%s'\n" % version)
+    with open(tmp_file, "w") as t:
+        with open(version_file) as v:
+            for line in v.readlines():
+                match = version_re.search(line)
+                if match:
+                    version_found = True
+                    file_version = match.group(1)
+                    if file_version != version:
+                        need_to_update = True
+                        t.write("__version__ = '%s'\n" % version)
+                else:
+                    t.write(line)
+        if not version_found:
+            need_to_update = True
+            t.write("__version__ = '%s'\n" % version)
 
     if need_to_update:
         print("Updating version in \"%s\" to \"%s\"" % (version_file, version))

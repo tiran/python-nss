@@ -1,5 +1,4 @@
-#!/usr/bin/python
-
+from __future__ import print_function
 import argparse
 import os
 import sys
@@ -58,13 +57,13 @@ def main():
 
         build_dir = get_build_dir()
         if build_dir and os.path.exists(build_dir):
-            print "Using local libraries from tree, located here:\n%s\n" % build_dir
+            print("Using local libraries from tree, located here:\n%s\n" % build_dir)
             sys.path.insert(0, build_dir)
         else:
-            print >>sys.stderr, "ERROR: Unable to locate in tree libraries"
+            print("ERROR: Unable to locate in tree libraries", file=sys.stderr)
             return 2
     else:
-        print "Using installed libraries"
+        print("Using installed libraries")
 
     num_failures = run_tests()
 
