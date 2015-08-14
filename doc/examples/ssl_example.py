@@ -1,4 +1,5 @@
-#!/usr/bin/python
+from __future__ import absolute_import
+from __future__ import print_function
 
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -40,16 +41,16 @@ def password_callback(slot, retry, password):
     return getpass.getpass("Enter password: ");
 
 def handshake_callback(sock):
-    print "-- handshake complete --"
-    print "peer: %s" % (sock.get_peer_name())
-    print "negotiated host: %s" % (sock.get_negotiated_host())
-    print
-    print sock.connection_info_str()
-    print "-- handshake complete --"
-    print
+    print("-- handshake complete --")
+    print("peer: %s" % (sock.get_peer_name()))
+    print("negotiated host: %s" % (sock.get_negotiated_host()))
+    print()
+    print(sock.connection_info_str())
+    print("-- handshake complete --")
+    print()
 
 def auth_certificate_callback(sock, check_sig, is_server, certdb):
-    print "auth_certificate_callback: check_sig=%s is_server=%s" % (check_sig, is_server)
+    print("auth_certificate_callback: check_sig=%s is_server=%s" % (check_sig, is_server))
     cert_is_valid = False
 
     cert = sock.get_peer_certificate()
@@ -57,7 +58,7 @@ def auth_certificate_callback(sock, check_sig, is_server, certdb):
     if pin_args is None:
         pin_args = ()
 
-    print "peer cert:\n%s" % cert
+    print("peer cert:\n%s" % cert)
 
     # Define how the cert is being used based upon the is_server flag.  This may
     # seem backwards, but isn't. If we're a server we're trying to validate a
@@ -72,13 +73,13 @@ def auth_certificate_callback(sock, check_sig, is_server, certdb):
         # will be set to the error code matching the reason why the validation failed
         # and the strerror attribute will contain a string describing the reason.
         approved_usage = cert.verify_now(certdb, check_sig, intended_usage, *pin_args)
-    except Exception, e:
-        print e.strerror
+    except Exception as e:
+        print(e)
         cert_is_valid = False
-        print "Returning cert_is_valid = %s" % cert_is_valid
+        print("Returning cert_is_valid = %s" % cert_is_valid)
         return cert_is_valid
 
-    print "approved_usage = %s" % ', '.join(nss.cert_usage_flags(approved_usage))
+    print("approved_usage = %s" % ', '.join(nss.cert_usage_flags(approved_usage)))
 
     # Is the intended usage a proper subset of the approved usage
     if approved_usage & intended_usage:
@@ -88,7 +89,7 @@ def auth_certificate_callback(sock, check_sig, is_server, certdb):
 
     # If this is a server, we're finished
     if is_server or not cert_is_valid:
-        print "Returning cert_is_valid = %s" % cert_is_valid
+        print("Returning cert_is_valid = %s" % cert_is_valid)
         return cert_is_valid
 
     # Certificate is OK.  Since this is the client side of an SSL
@@ -97,17 +98,17 @@ def auth_certificate_callback(sock, check_sig, is_server, certdb):
     # man-in-the-middle attacks.
 
     hostname = sock.get_hostname()
-    print "verifying socket hostname (%s) matches cert subject (%s)" % (hostname, cert.subject)
+    print("verifying socket hostname (%s) matches cert subject (%s)" % (hostname, cert.subject))
     try:
         # If the cert fails validation it will raise an exception
         cert_is_valid = cert.verify_hostname(hostname)
-    except Exception, e:
-        print e.strerror
+    except Exception as e:
+        print(e)
         cert_is_valid = False
-        print "Returning cert_is_valid = %s" % cert_is_valid
+        print("Returning cert_is_valid = %s" % cert_is_valid)
         return cert_is_valid
 
-    print "Returning cert_is_valid = %s" % cert_is_valid
+    print("Returning cert_is_valid = %s" % cert_is_valid)
     return cert_is_valid
 
 def client_auth_data_callback(ca_names, chosen_nickname, password, certdb):
@@ -116,23 +117,23 @@ def client_auth_data_callback(ca_names, chosen_nickname, password, certdb):
         try:
             cert = nss.find_cert_from_nickname(chosen_nickname, password)
             priv_key = nss.find_key_by_any_cert(cert, password)
-            print "client cert:\n%s" % cert
+            print("client cert:\n%s" % cert)
             return cert, priv_key
-        except NSPRError, e:
-            print e
+        except NSPRError as e:
+            print(e)
             return False
     else:
         nicknames = nss.get_cert_nicknames(certdb, cert.SEC_CERT_NICKNAMES_USER)
         for nickname in nicknames:
             try:
                 cert = nss.find_cert_from_nickname(nickname, password)
-                print "client cert:\n%s" % cert
+                print("client cert:\n%s" % cert)
                 if cert.check_valid_times():
                     if cert.has_signer_in_ca_names(ca_names):
                         priv_key = nss.find_key_by_any_cert(cert, password)
                         return cert, priv_key
-            except NSPRError, e:
-                print e
+            except NSPRError as e:
+                print(e)
         return False
 
 # -----------------------------------------------------------------------------
@@ -144,13 +145,14 @@ def Client():
     # Get the IP Address of our server
     try:
         addr_info = io.AddrInfo(options.hostname)
-    except Exception, e:
-        print "could not resolve host address \"%s\"" % options.hostname
+    except Exception as e:
+        print("could not resolve host address \"%s\"" % options.hostname)
         return
 
     for net_addr in addr_info:
         if options.family != io.PR_AF_UNSPEC:
-            if net_addr.family != options.family: continue
+            if net_addr.family != options.family:
+                continue
         net_addr.port = options.port
 
         if options.use_ssl:
@@ -175,32 +177,34 @@ def Client():
             sock = io.Socket(net_addr.family)
 
         try:
-            print "client trying connection to: %s" % (net_addr)
+            print("client trying connection to: %s" % (net_addr))
             sock.connect(net_addr, timeout=io.seconds_to_interval(timeout_secs))
-            print "client connected to: %s" % (net_addr)
+            print("client connected to: %s" % (net_addr))
             valid_addr = True
             break
-        except Exception, e:
+        except Exception as e:
             sock.close()
-            print "client connection to: %s failed (%s)" % (net_addr, e)
+            print("client connection to: %s failed (%s)" % (net_addr, e))
 
     if not valid_addr:
-        print "Could not establish valid address for \"%s\" in family %s" % \
-        (options.hostname, io.addr_family_name(options.family))
+        print("Could not establish valid address for \"%s\" in family %s" % \
+        (options.hostname, io.addr_family_name(options.family)))
         return
 
     # Talk to the server
     try:
-        sock.send('Hello' + '\n') # newline is protocol record separator
+        data = 'Hello' + '\n' # newline is protocol record separator
+        sock.send(data.encode('utf-8'))
         buf = sock.readline()
         if not buf:
-            print "client lost connection"
+            print("client lost connection")
             sock.close()
             return
+        buf = buf.decode('utf-8')
         buf = buf.rstrip()        # remove newline record separator
-        print "client received: %s" % (buf)
-    except Exception, e:
-        print e.strerror
+        print("client received: %s" % (buf))
+    except Exception as e:
+        print(e.strerror)
         try:
             sock.close()
         except:
@@ -218,8 +222,8 @@ def Client():
         sock.close()
         if options.use_ssl:
             ssl.clear_session_cache()
-    except Exception, e:
-        print e
+    except Exception as e:
+        print(e)
 
 # -----------------------------------------------------------------------------
 # Server Implementation
@@ -241,7 +245,7 @@ def Server():
         priv_key = nss.find_key_by_any_cert(server_cert, options.password)
         server_cert_kea = server_cert.find_kea_type();
 
-        print "server cert:\n%s" % server_cert
+        print("server cert:\n%s" % server_cert)
 
         sock = ssl.SSLSocket(net_addr.family)
 
@@ -265,7 +269,7 @@ def Server():
 
     # Bind to our network address and listen for clients
     sock.bind(net_addr)
-    print "listening on: %s" % (net_addr)
+    print("listening on: %s" % (net_addr))
     sock.listen()
 
     while True:
@@ -274,28 +278,30 @@ def Server():
         if options.use_ssl:
             client_sock.set_handshake_callback(handshake_callback)
 
-        print "client connect from: %s" % (client_addr)
+        print("client connect from: %s" % (client_addr))
 
         while True:
             try:
                 # Handle the client connection
                 buf = client_sock.readline()
                 if not buf:
-                    print "server lost lost connection to %s" % (client_addr)
+                    print("server lost lost connection to %s" % (client_addr))
                     break
 
+                buf = buf.decode('utf-8')
                 buf = buf.rstrip()                 # remove newline record separator
-                print "server received: %s" % (buf)
+                print("server received: %s" % (buf))
 
-                client_sock.send('Goodbye' + '\n') # newline is protocol record separator
+                data ='Goodbye' + '\n' # newline is protocol record separator
+                client_sock.send(data.encode('utf-8'))
                 try:
                     client_sock.shutdown(io.PR_SHUTDOWN_RCV)
                     client_sock.close()
                 except:
                     pass
                 break
-            except Exception, e:
-                print e.strerror
+            except Exception as e:
+                print(e.strerror)
                 break
         break
 
@@ -304,8 +310,8 @@ def Server():
         sock.close()
         if options.use_ssl:
             ssl.shutdown_server_session_id_cache()
-    except Exception, e:
-        print e
+    except Exception as e:
+        print(e)
         pass
 
 # -----------------------------------------------------------------------------
@@ -401,7 +407,7 @@ parser.set_defaults(client = False,
                     family = io.PR_AF_UNSPEC,
                     server_nickname = 'test_server',
                     client_nickname = 'test_user',
-                    password = 'db_passwd',
+                    password = 'DB_passwd',
                     port = 1234,
                     use_ssl = True,
                     client_cert_action = NO_CLIENT_CERT,
@@ -410,10 +416,10 @@ parser.set_defaults(client = False,
 options = parser.parse_args()
 
 if options.client and options.server:
-    print "can't be both client and server"
+    print("can't be both client and server")
     sys.exit(1)
 if not (options.client or options.server):
-    print "must be one of client or server"
+    print("must be one of client or server")
     sys.exit(1)
 
 # Perform basic configuration and setup
@@ -427,13 +433,13 @@ nss.set_password_callback(password_callback)
 
 min_ssl_version, max_ssl_version = \
     ssl.get_supported_ssl_version_range(repr_kind=nss.AsString)
-print "Supported SSL version range: min=%s, max=%s" % \
-    (min_ssl_version, max_ssl_version)
+print("Supported SSL version range: min=%s, max=%s" % \
+    (min_ssl_version, max_ssl_version))
 
 min_ssl_version, max_ssl_version = \
     ssl.get_default_ssl_version_range(repr_kind=nss.AsString)
-print "Default SSL version range: min=%s, max=%s" % \
-    (min_ssl_version, max_ssl_version)
+print("Default SSL version range: min=%s, max=%s" % \
+    (min_ssl_version, max_ssl_version))
 
 if options.min_ssl_version is not None or \
    options.max_ssl_version is not None:
@@ -443,25 +449,25 @@ if options.min_ssl_version is not None or \
     if options.max_ssl_version is not None:
         max_ssl_version  = options.max_ssl_version
 
-    print "Setting default SSL version range: min=%s, max=%s" % \
-        (min_ssl_version, max_ssl_version)
+    print("Setting default SSL version range: min=%s, max=%s" % \
+        (min_ssl_version, max_ssl_version))
     ssl.set_default_ssl_version_range(min_ssl_version, max_ssl_version)
 
     min_ssl_version, max_ssl_version = \
         ssl.get_default_ssl_version_range(repr_kind=nss.AsString)
-    print "Default SSL version range now: min=%s, max=%s" % \
-        (min_ssl_version, max_ssl_version)
+    print("Default SSL version range now: min=%s, max=%s" % \
+        (min_ssl_version, max_ssl_version))
 
 # Run as a client or as a serveri
 if options.client:
-    print "starting as client"
+    print("starting as client")
     Client()
 
 if options.server:
-    print "starting as server"
+    print("starting as server")
     Server()
 
 try:
     nss.nss_shutdown()
-except Exception, e:
-    print e
+except Exception as e:
+    print(e)

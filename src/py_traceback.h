@@ -26,7 +26,7 @@
  */
 
 static void
-print_traceback()
+print_traceback(void)
 {
     PyFrameObject *frame = PyEval_GetFrame();
     int depth = 6;
@@ -34,7 +34,7 @@ print_traceback()
     printf("Traceback (most recent frame first)\n");
     while (frame && depth) {
         PyObject *msg_unicode = NULL;
-        PyOjbect *msg_utf8 = NULL;
+        PyObject *msg_utf8 = NULL;
 
         msg_unicode = PyUnicode_FromFormat("  File \"%S\", line %d, in %S\n",
                                            frame->f_code->co_filename,

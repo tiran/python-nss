@@ -1,10 +1,13 @@
-#!/usr/bin/python
+from __future__ import absolute_import
+from __future__ import print_function
 
 import argparse
 import sys
 
 import nss.nss as nss
 import nss.error as nss_error
+print(sys.path)
+import six
 
 #-------------------------------------------------------------------------------
 
@@ -17,7 +20,7 @@ def fmt_info(label, item, level=0, hex_data=False):
     if hex_data:
         fmt_tuples.extend(nss.make_line_fmt_tuples(level+1,
                                                    nss.data_to_hex(item, 16)))
-    elif isinstance(item, basestring):
+    elif isinstance(item, six.string_types):
         fmt_tuples.extend(nss.make_line_fmt_tuples(level+1, str(item)))
     else:
         fmt_tuples.extend(item.format_lines(level=level+1))
@@ -42,8 +45,8 @@ def generate_key():
                                            options.salt)
 
     if not options.quiet:
-        print fmt_info("create_pbev2_algorithm_id returned()", alg_id)
-        print
+        print(fmt_info("create_pbev2_algorithm_id returned()", alg_id))
+        print()
 
 
     # Pick a PK11 Slot to operate in, we'll use the internal slot
@@ -53,10 +56,10 @@ def generate_key():
     sym_key = slot.pbe_key_gen(alg_id, options.password)
 
     if not options.quiet:
-        print fmt_info("Using password", options.password)
-        print
-        print fmt_info("pbe_key_gen() returned sym_key", sym_key)
-        print
+        print(fmt_info("Using password", options.password))
+        print()
+        print(fmt_info("pbe_key_gen() returned sym_key", sym_key))
+        print()
 
     return alg_id, sym_key
 
@@ -87,11 +90,11 @@ def get_encryption_context(alg_id, sym_key):
     params_base64 = params.to_base64(0)
 
     if not options.quiet:
-        print fmt_info("get_pbe_crypto_mechanism (encrypting) returned mechanism:",
-                       nss.key_mechanism_type_name(mechanism))
-        print fmt_info("get_pbe_crypto_mechanism (encrypting) returned params:",
-                       params)
-        print
+        print(fmt_info("get_pbe_crypto_mechanism (encrypting) returned mechanism:",
+                       nss.key_mechanism_type_name(mechanism)))
+        print(fmt_info("get_pbe_crypto_mechanism (encrypting) returned params:",
+                       params))
+        print()
 
     # Now we have enough information to create an encrypting context
     # and decrypting the data.
@@ -123,9 +126,9 @@ def get_decryption_context(alg_id, sym_key, params_base64):
     params = nss.SecItem(params_base64, ascii=True)
 
     if not options.quiet:
-        print fmt_info("get_pbe_crypto_mechanism (decrypting) returned mechanism:",
-                       nss.key_mechanism_type_name(mechanism))
-        print
+        print(fmt_info("get_pbe_crypto_mechanism (decrypting) returned mechanism:",
+                       nss.key_mechanism_type_name(mechanism)))
+        print()
 
     # Now we have enough information to create a decrypting context
 
@@ -144,16 +147,16 @@ def do_pbkdf2():
 
     # First encrypt the plain text input
 
-    print fmt_info("Plain Text", options.plain_text)
-    print
+    print(fmt_info("Plain Text", options.plain_text))
+    print()
 
     # Encode the plain text by feeding it to cipher_op getting cipher text back.
     # Append the final bit of cipher text by calling digest_final
-    cipher_text = encrypt_ctx.cipher_op(options.plain_text)
+    cipher_text = encrypt_ctx.cipher_op(options.plain_text.encode('utf-8'))
     cipher_text += encrypt_ctx.digest_final()
 
-    print fmt_info("Cipher Text", cipher_text, hex_data=True)
-    print
+    print(fmt_info("Cipher Text", cipher_text, hex_data=True))
+    print()
 
     # Get decryption contexts to decrypt
     decrypt_ctx = get_decryption_context(alg_id, sym_key, params_base64)
@@ -162,9 +165,10 @@ def do_pbkdf2():
     # Append the final bit of plain text by calling digest_final
     decoded_text = decrypt_ctx.cipher_op(cipher_text)
     decoded_text += decrypt_ctx.digest_final()
+    decoded_text = decoded_text.decode('utf-8')
 
-    print fmt_info("Decoded Text", decoded_text)
-    print
+    print(fmt_info("Decoded Text", decoded_text))
+    print()
 
 #-------------------------------------------------------------------------------
 def main():

@@ -1,11 +1,11 @@
-#!/usr/bin/python
-
 from __future__ import print_function
+from __future__ import absolute_import
 import sys
 import os
 import unittest
 
 import nss.nss as nss
+import six
 
 #-------------------------------------------------------------------------------
 class TestVersion(unittest.TestCase):
@@ -27,10 +27,7 @@ class TestShutdownCallback(unittest.TestCase):
             self.assertEqual(isinstance(i, int), True)
             self.assertEqual(i, int_value)
 
-            if sys.version_info.major <= 2:
-                self.assertEqual(isinstance(s, basestring), True)
-            else:
-                self.assertEqual(isinstance(s, str), True)
+            self.assertEqual(isinstance(s, six.string_types), True)
             self.assertEqual(s, str_value)
 
             self.assertEqual(isinstance(d, dict), True)

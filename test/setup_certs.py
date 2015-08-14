@@ -1,4 +1,4 @@
-#!/usr/bin/python
+from __future__ import absolute_import
 
 import argparse
 import atexit
@@ -10,6 +10,7 @@ import subprocess
 import sys
 from string import Template
 import tempfile
+import six
 
 #-------------------------------------------------------------------------------
 logger = None
@@ -349,7 +350,7 @@ def get_system_fips_enabled():
         return True
     else:
         return False
-        
+
 
 def get_db_fips_enabled(db_name):
     cmd_args = ['/usr/bin/modutil',
@@ -365,7 +366,7 @@ def get_db_fips_enabled(db_name):
             return parse_fips_enabled(e.stdout)
         else:
             raise
-        
+
 def set_fips_mode(options):
     if options.fips:
         state = 'true'
@@ -503,18 +504,14 @@ def setup_certs(args):
     # This is ugly because argparse does not expose an API which permits iterating over
     # the contents of options nor a way to get the options as a dict, ugh :-(
     # So we access options.__dict__ directly.
-    for key in options.__dict__.keys():
+    for key in list(options.__dict__.keys()):
         # Assume options never begin with underscore
         if key.startswith('_'):
             continue
         value = getattr(options, key)
         # Can't substitue on non-string values
-        if sys.version_info.major < 3:
-            if not isinstance(value, basestring):
-                continue
-        else:
-            if not isinstance(value, str):
-                continue
+        if not isinstance(value, six.string_types):
+            continue
         # Don't bother trying to substitute if $ substitution character isn't present
         if '$' not in value:
             continue

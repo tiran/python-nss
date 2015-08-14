@@ -2253,6 +2253,8 @@ SSLSocket_new(PyTypeObject *type, PyObject *args, PyObject *kwds)
 static int
 SSLSocket_traverse(SSLSocket *self, visitproc visit, void *arg)
 {
+    TraceMethodEnter(self);
+
     Py_VISIT(self->py_auth_certificate_callback);
     Py_VISIT(self->py_auth_certificate_callback_data);
     Py_VISIT(self->py_pk11_pin_args);
@@ -2772,7 +2774,7 @@ SSLCipherSuiteInformation_new_from_SSLCipherSuiteInfo(SSLCipherSuiteInfo *info)
         return NULL;
     }
 
-    self->info = *info
+    self->info = *info;
 
     TraceObjNewLeave(self);
     return (PyObject *) self;
@@ -3196,7 +3198,7 @@ SSLChannelInformation_new_from_SSLChannelInfo(SSLChannelInfo *info)
         return NULL;
     }
 
-    self->info = *info
+    self->info = *info;
 
     TraceObjNewLeave(self);
     return (PyObject *) self;

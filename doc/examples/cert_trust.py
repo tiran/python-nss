@@ -1,4 +1,5 @@
-#!/usr/bin/python
+from __future__ import absolute_import
+from __future__ import print_function
 
 import argparse
 import sys
@@ -15,28 +16,28 @@ def illustrate_ssl_trust(cert):
     # Get list of ssl trusts as names
     trust_flags = cert.ssl_trust_flags
     if trust_flags is None:
-        print "cert has no SSL trust flags"
+        print("cert has no SSL trust flags")
         return
 
     # Get list of trusts as friendly description
     trust_list = nss.Certificate.trust_flags(trust_flags, nss.AsEnumDescription)
-    print "trust flags (asString): %#x = %s" % (trust_flags, trust_list)
+    print("trust flags (asString): %#x = %s" % (trust_flags, trust_list))
 
     # Get list of trusts as the names of the enumerated constants
     trust_list = nss.Certificate.trust_flags(trust_flags, nss.AsEnumName)
-    print "trust flags (asEnumName): %#x = %s" % (trust_flags, trust_list)
+    print("trust flags (asEnumName): %#x = %s" % (trust_flags, trust_list))
 
     # Get list of trusts as enumeration constants
     trust_list = nss.Certificate.trust_flags(trust_flags, nss.AsEnum)
-    print "trust flags (asEnum): %#x = %s" % (trust_flags, trust_list)
+    print("trust flags (asEnum): %#x = %s" % (trust_flags, trust_list))
 
     # test for membership in list of enumeration constants
     if nss.CERTDB_TRUSTED_CA in trust_list:
-        print "using trust list; cert is trusted CA"
+        print("using trust list; cert is trusted CA")
 
     # test via bitmask
     if trust_flags & nss.CERTDB_TRUSTED_CA:
-        print "using trust bitmask; cert is trusted CA"
+        print("using trust bitmask; cert is trusted CA")
 
 
 #-------------------------------------------------------------------------------
@@ -89,25 +90,25 @@ def main():
 
     if options.cert_perm:
         if not options.cert_filename:
-            print >>sys.stderr, "You must specify a cert filename to install a cert in the database"
+            print("You must specify a cert filename to install a cert in the database", file=sys.stderr)
             return 1
-            
+
         if not options.cert_nickname:
-            print >>sys.stderr, "You must specify a cert nickname to install a cert in the database"
+            print("You must specify a cert nickname to install a cert in the database", file=sys.stderr)
             return 1
     else:
         if options.cert_filename and options.cert_nickname:
-            print >>sys.stderr, "You may not specify both a cert filename and a nickname, only one or the other"
+            print("You may not specify both a cert filename and a nickname, only one or the other", file=sys.stderr)
             return 1
 
         if not options.cert_filename and not options.cert_nickname:
-            print >>sys.stderr, "You must specify either a cert filename or a nickname to load"
+            print("You must specify either a cert filename or a nickname to load", file=sys.stderr)
             return 1
 
-        
+
     # Initialize NSS.
-    print 'NSS Database: %s' % (options.db_name)
-    print
+    print('NSS Database: %s' % (options.db_name))
+    print()
     # Initialize the database as read/write, otherwise we would not
     # be able to import a cert
     nss.nss_init_read_write(options.db_name)
@@ -129,7 +130,7 @@ def main():
         si = nss.read_der_from_file(filename, options.input_format.lower() == 'pem')
         # Parse the DER encoded data returning a Certificate object.
         #
-        # If we've been asked to install the cert in the database the 
+        # If we've been asked to install the cert in the database the
         # options.cert_perm flag will be True and we'll need to supply
         # the nickname (which is used to locate the cert in the database).
         cert = nss.Certificate(si, certdb,
@@ -137,18 +138,18 @@ def main():
     else:
         try:
             cert = nss.find_cert_from_nickname(options.cert_nickname)
-        except Exception, e:
-            print e
-            print >>sys.stderr, 'Unable to load cert nickname "%s" from database "%s"' % \
-                (options.cert_nickname, options.db_name)
+        except Exception as e:
+            print(e)
+            print('Unable to load cert nickname "%s" from database "%s"' % \
+                (options.cert_nickname, options.db_name), file=sys.stderr)
             return 1
 
     # Dump the cert if the user wants to see it
     if options.print_cert:
-        print cert
+        print(cert)
     else:
-        print 'cert subject: %s' % (cert.subject)
-    print
+        print('cert subject: %s' % (cert.subject))
+    print()
 
     # Change the cert trust if specified
     if options.cert_trust:
@@ -162,4 +163,3 @@ def main():
 if __name__ == "__main__":
     sys.exit(main())
     nss.nss_shutdown()
-

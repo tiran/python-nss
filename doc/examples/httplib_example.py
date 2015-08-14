@@ -1,4 +1,5 @@
-#!/usr/bin/python
+from __future__ import absolute_import
+from __future__ import print_function
 
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -7,11 +8,13 @@
 import argparse
 import errno
 import getpass
-import httplib
+import six.moves.http_client
 import logging
 import sys
-import urlparse
-
+try:
+    import urlparse
+except ImportError:
+    import urllib.parse as urlparse
 from nss.error import NSPRError
 import nss.io as io
 import nss.nss as nss
@@ -48,7 +51,7 @@ def auth_certificate_callback(sock, check_sig, is_server, certdb):
         # will be set to the error code matching the reason why the validation failed
         # and the strerror attribute will contain a string describing the reason.
         approved_usage = cert.verify_now(certdb, check_sig, intended_usage, *pin_args)
-    except Exception, e:
+    except Exception as e:
         logging.error('cert validation failed for "%s" (%s)', cert.subject, e.strerror)
         cert_is_valid = False
         return cert_is_valid
@@ -77,7 +80,7 @@ def auth_certificate_callback(sock, check_sig, is_server, certdb):
     try:
         # If the cert fails validation it will raise an exception
         cert_is_valid = cert.verify_hostname(hostname)
-    except Exception, e:
+    except Exception as e:
         logging.error('failed verifying socket hostname "%s" matches cert subject "%s" (%s)',
                       hostname, cert.subject, e.strerror)
         cert_is_valid = False
@@ -97,11 +100,11 @@ def handshake_callback(sock):
     logging.debug("handshake complete, peer = %s", sock.get_peer_name())
     pass
 
-class NSSConnection(httplib.HTTPConnection):
-    default_port = httplib.HTTPSConnection.default_port
+class NSSConnection(six.moves.http_client.HTTPConnection):
+    default_port = six.moves.http_client.HTTPSConnection.default_port
 
     def __init__(self, host, port=None, strict=None, dbdir=None):
-        httplib.HTTPConnection.__init__(self, host, port, strict)
+        six.moves.http_client.HTTPConnection.__init__(self, host, port, strict)
 
         if not dbdir:
             raise RuntimeError("dbdir is required")
@@ -130,7 +133,7 @@ class NSSConnection(httplib.HTTPConnection):
         logging.debug("connect: host=%s port=%s", self.host, self.port)
         try:
             addr_info = io.AddrInfo(self.host)
-        except Exception, e:
+        except Exception as e:
             logging.error("could not resolve host address \"%s\"", self.host)
             raise
 
@@ -142,16 +145,16 @@ class NSSConnection(httplib.HTTPConnection):
                 self.sock.connect(net_addr, timeout=io.seconds_to_interval(timeout_secs))
                 logging.debug("connected to: %s", net_addr)
                 return
-            except Exception, e:
+            except Exception as e:
                 logging.debug("connect failed: %s (%s)", net_addr, e)
 
         raise IOError(errno.ENOTCONN, "could not connect to %s at port %d" % (self.host, self.port))
 
-class NSPRConnection(httplib.HTTPConnection):
-    default_port = httplib.HTTPConnection.default_port
+class NSPRConnection(six.moves.http_client.HTTPConnection):
+    default_port = six.moves.http_client.HTTPConnection.default_port
 
     def __init__(self, host, port=None, strict=None):
-        httplib.HTTPConnection.__init__(self, host, port, strict)
+        six.moves.http_client.HTTPConnection.__init__(self, host, port, strict)
 
         logging.debug('%s init %s', self.__class__.__name__, host)
         if not nss.nss_is_initialized(): nss.nss_init_nodb()
@@ -161,7 +164,7 @@ class NSPRConnection(httplib.HTTPConnection):
         logging.debug("connect: host=%s port=%s", self.host, self.port)
         try:
             addr_info = io.AddrInfo(self.host)
-        except Exception, e:
+        except Exception as e:
             logging.error("could not resolve host address \"%s\"", self.host)
             raise
 
@@ -173,12 +176,12 @@ class NSPRConnection(httplib.HTTPConnection):
                 self.sock.connect(net_addr, timeout=io.seconds_to_interval(timeout_secs))
                 logging.debug("connected to: %s", net_addr)
                 return
-            except Exception, e:
+            except Exception as e:
                 logging.debug("connect failed: %s (%s)", net_addr, e)
 
         raise IOError(errno.ENOTCONN, "could not connect to %s at port %d" % (self.host, self.port))
 
-class NSSHTTPS(httplib.HTTP):
+class NSSHTTPS(six.moves.http_client.HTTP):
     _http_vsn = 11
     _http_vsn_str = 'HTTP/1.1'
 
@@ -192,7 +195,7 @@ class NSSHTTPS(httplib.HTTP):
             port = None
         self._setup(self._connection_class(host, port, strict, dbdir=dbdir))
 
-class NSPRHTTP(httplib.HTTP):
+class NSPRHTTP(six.moves.http_client.HTTP):
     _http_vsn = 11
     _http_vsn_str = 'HTTP/1.1'
 
@@ -260,7 +263,7 @@ else:
 url = urlparse.urlunsplit(url_components)
 url_components = urlparse.urlsplit(url)
 if not url_components.scheme or not url_components.netloc:
-    print "ERROR: bad url \"%s\"" % (url)
+    print("ERROR: bad url \"%s\"" % (url))
     sys.exit(1)
 
 if options.use_connection_class:
@@ -274,15 +277,15 @@ if options.use_connection_class:
     conn.connect()
     conn.request("GET", "/")
     response = conn.getresponse()
-    print "status = %s %s" % (response.status, response.reason)
+    print("status = %s %s" % (response.status, response.reason))
     headers = response.getheaders()
-    print "headers:"
+    print("headers:")
     for header in headers:
-        print "%s: %s" % (header[0], header[1])
+        print("%s: %s" % (header[0], header[1]))
     content_length = int(response.getheader('content-length'))
     data = response.read()
     assert(content_length == len(data))
-    print data
+    print(data)
     conn.close()
 else:
     if options.use_ssl:
@@ -296,11 +299,11 @@ else:
     h.putrequest('GET', '/')
     h.endheaders()
     http_status, http_reason, headers = h.getreply()
-    print "status = %s %s" % (http_status, http_reason)
-    print "headers:\n%s" % headers
+    print("status = %s %s" % (http_status, http_reason))
+    print("headers:\n%s" % headers)
     content_length = int(headers['content-length'])
     f = h.getfile()
     data = f.read() # Get the raw HTML
     assert(content_length == len(data))
     f.close()
-    print data
+    print(data)

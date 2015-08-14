@@ -456,6 +456,8 @@ NetworkAddress_new_from_PRNetAddr(PRNetAddr *pr_netaddr)
 static int
 NetworkAddress_traverse(NetworkAddress *self, visitproc visit, void *arg)
 {
+    TraceMethodEnter(self);
+
     Py_VISIT(self->py_hostname);
     Py_VISIT(self->py_hostentry);
     return 0;
@@ -752,6 +754,8 @@ AddrInfo_new(PyTypeObject *type, PyObject *args, PyObject *kwds)
 static int
 AddrInfo_traverse(AddrInfo *self, visitproc visit, void *arg)
 {
+    TraceMethodEnter(self);
+
     Py_VISIT(self->py_hostname);
     Py_VISIT(self->py_canonical_name);
     Py_VISIT(self->py_netaddrs);
@@ -1190,6 +1194,8 @@ HostEntry_new(PyTypeObject *type, PyObject *args, PyObject *kwds)
 static int
 HostEntry_traverse(HostEntry *self, visitproc visit, void *arg)
 {
+    TraceMethodEnter(self);
+
     Py_VISIT(self->py_aliases);
     Py_VISIT(self->py_netaddrs);
     return 0;
@@ -3319,6 +3325,8 @@ Socket_new(PyTypeObject *type, PyObject *args, PyObject *kwds)
 static int
 Socket_traverse(Socket *self, visitproc visit, void *arg)
 {
+    TraceMethodEnter(self);
+
     Py_VISIT(self->py_netaddr);
     return 0;
 }

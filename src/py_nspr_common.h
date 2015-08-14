@@ -557,7 +557,7 @@ PyUnicode_Lower(PyObject *obj)
 #define DumpRefCount(x)                                                 \
 {                                                                       \
     PyObject *_obj = (PyObject *) (x);                                  \
-    printf("<%s object at %p refcnt=%d>\n", Py_TYPE(_obj)->tp_name, _obj, _obj->ob_refcnt); \
+    printf("<%s object at %p refcnt=%zd>\n", Py_TYPE(_obj)->tp_name, _obj, _obj->ob_refcnt); \
 }
 
 
@@ -574,7 +574,7 @@ PyUnicode_Lower(PyObject *obj)
     if (_obj) {                                                         \
         name = Py_TYPE(_obj)->tp_name;                                  \
     }                                                                   \
-    printf("%s (Enter): <%s object at %p refcnt=%d>\n",                 \
+    printf("%s (Enter): <%s object at %p refcnt=%zd>\n",                \
            __FUNCTION__, name, _obj, _obj ? _obj->ob_refcnt : -9999);   \
 }
 
@@ -586,7 +586,7 @@ PyUnicode_Lower(PyObject *obj)
     if (_obj) {                                                         \
         name = Py_TYPE(_obj)->tp_name;                                  \
     }                                                                   \
-    printf("%s (Leave): <%s object at %p refcnt=%d>\n",                 \
+    printf("%s (Leave): <%s object at %p refcnt=%zd>\n",                \
            __FUNCTION__, name, _obj, _obj ? _obj->ob_refcnt : -9999);   \
 }
 
@@ -608,7 +608,7 @@ PyUnicode_Lower(PyObject *obj)
     if (_obj) {                                                         \
         name = Py_TYPE(_obj)->tp_name;                                  \
     }                                                                   \
-    printf("%s: returns <%s object at %p refcnt=%d>\n",                 \
+    printf("%s: returns <%s object at %p refcnt=%zd>\n",                \
            __FUNCTION__, name, _obj, _obj ? _obj->ob_refcnt : -9999);   \
 }
 

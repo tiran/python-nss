@@ -1,4 +1,5 @@
-#!/usr/bin/python
+from __future__ import absolute_import
+from __future__ import print_function
 
 import argparse
 import sys
@@ -110,7 +111,7 @@ def main():
     group = parser.add_argument_group('Validation',
                                       'Control the validation')
 
-    group.add_argument('-u', '--usage', dest='cert_usage', action='append', choices=cert_usage_map.keys(),
+    group.add_argument('-u', '--usage', dest='cert_usage', action='append', choices=list(cert_usage_map.keys()),
                            help='certificate usage flags, may be specified multiple times')
     group.add_argument('-c', '--check-sig', action='store_true', dest='check_sig',
                            help='check signature')
@@ -153,7 +154,7 @@ def main():
             try:
                 flag = cert_usage_map[usage]
             except KeyError:
-                print "Unknown usage '%s', valid values: %s" % (usage, ', '.join(sorted(cert_usage_map.keys())))
+                print("Unknown usage '%s', valid values: %s" % (usage, ', '.join(sorted(cert_usage_map.keys()))))
                 return 1
             else:
                 intended_usage |= flag
@@ -162,20 +163,20 @@ def main():
         # it's a special value of zero instead of being the bitwise OR
         # of all the certificateUsage* flags (go figure!)
         intended_usage = 0
-        for usage in cert_usage_map.values():
+        for usage in list(cert_usage_map.values()):
             intended_usage |= usage
 
     if options.cert_filename and options.cert_nickname:
-        print >>sys.stderr, "You may not specify both a cert filename and a nickname, only one or the other"
+        print("You may not specify both a cert filename and a nickname, only one or the other", file=sys.stderr)
         return 1
 
     if not options.cert_filename and not options.cert_nickname:
-        print >>sys.stderr, "You must specify either a cert filename or a nickname to load"
+        print("You must specify either a cert filename or a nickname to load", file=sys.stderr)
         return 1
 
     # Initialize NSS.
-    print indented_output('NSS Database', options.db_name)
-    print
+    print(indented_output('NSS Database', options.db_name))
+    print()
     nss.nss_init(options.db_name)
     certdb = nss.get_default_certdb()
     nss.set_password_callback(password_callback)
@@ -190,33 +191,33 @@ def main():
     else:
         try:
             cert = nss.find_cert_from_nickname(options.cert_nickname)
-        except Exception, e:
-            print e
-            print >>sys.stderr, 'Unable to load cert nickname "%s" from database "%s"' % \
-                (options.cert_nickname, options.db_name)
+        except Exception as e:
+            print(e)
+            print('Unable to load cert nickname "%s" from database "%s"' % \
+                (options.cert_nickname, options.db_name), file=sys.stderr)
             return 1
 
     # Dump the cert if the user wants to see it
     if options.print_cert:
-        print cert
+        print(cert)
     else:
-        print indented_output('cert subject', cert.subject)
-    print
+        print(indented_output('cert subject', cert.subject))
+    print()
 
     # Dump the usages attached to the cert
-    print indented_output('cert has these usages', nss.cert_type_flags(cert.cert_type))
+    print(indented_output('cert has these usages', nss.cert_type_flags(cert.cert_type)))
 
     # Should we check if the cert is a CA cert?
     if options.check_ca:
         # CA Cert?
         is_ca, cert_type = cert.is_ca_cert(True)
-        print
-        print indented_output('is CA cert boolean', is_ca)
-        print indented_output('is CA cert returned usages', nss.cert_type_flags(cert_type))
+        print()
+        print(indented_output('is CA cert boolean', is_ca))
+        print(indented_output('is CA cert returned usages', nss.cert_type_flags(cert_type)))
 
-    print
-    print indented_output('verifying usages for', nss.cert_usage_flags(intended_usage))
-    print
+    print()
+    print(indented_output('verifying usages for', nss.cert_usage_flags(intended_usage)))
+    print()
 
     # Use the log or non-log variant to verify the cert
     #
@@ -239,43 +240,43 @@ def main():
     if options.with_log:
         try:
             approved_usage, log = cert.verify_with_log(certdb, options.check_sig, intended_usage, None)
-        except nss_error.CertVerifyError, e:
+        except nss_error.CertVerifyError as e:
             # approved_usage and log available in CertVerifyError exception on failure.
-            print e
-            print
-            print indented_obj('log', e.log)
-            print
-            print indented_output('approved usages from exception', nss.cert_usage_flags(e.usages))
+            print(e)
+            print()
+            print(indented_obj('log', e.log))
+            print()
+            print(indented_output('approved usages from exception', nss.cert_usage_flags(e.usages)))
             approved_usage = e.usages # Get the returned usage bitmask from the exception
-        except Exception, e:
-            print e
+        except Exception as e:
+            print(e)
         else:
-            print indented_output('approved usages', nss.cert_usage_flags(approved_usage))
+            print(indented_output('approved usages', nss.cert_usage_flags(approved_usage)))
             if log.count:
-                print
-                print indented_obj('log', log)
+                print()
+                print(indented_obj('log', log))
     else:
         try:
             approved_usage = cert.verify(certdb, options.check_sig, intended_usage, None)
-        except nss_error.CertVerifyError, e:
+        except nss_error.CertVerifyError as e:
             # approved_usage available in CertVerifyError exception on failure.
-            print e
-            print indented_output('approved usages from exception', nss.cert_usage_flags(e.usages))
+            print(e)
+            print(indented_output('approved usages from exception', nss.cert_usage_flags(e.usages)))
             approved_usage = e.usages # Get the returned usage bitmask from the exception
-        except Exception, e:
-            print e
+        except Exception as e:
+            print(e)
         else:
-            print indented_output('approved usages', nss.cert_usage_flags(approved_usage))
+            print(indented_output('approved usages', nss.cert_usage_flags(approved_usage)))
 
     # The cert is valid if all the intended usages are in the approved usages
     valid = (intended_usage & approved_usage) == intended_usage
 
-    print
+    print()
     if valid:
-        print indented_output('SUCCESS: cert is approved for', nss.cert_usage_flags(intended_usage))
+        print(indented_output('SUCCESS: cert is approved for', nss.cert_usage_flags(intended_usage)))
         return 0
     else:
-        print indented_output('FAIL: cert not approved for', nss.cert_usage_flags(intended_usage ^ approved_usage))
+        print(indented_output('FAIL: cert not approved for', nss.cert_usage_flags(intended_usage ^ approved_usage)))
         return 1
 
 #-------------------------------------------------------------------------------
