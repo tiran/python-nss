@@ -3413,6 +3413,36 @@ SymKeyOrNoneConvert(PyObject *obj, PyObject **param)
     return 0;
 }
 
+/*
+ * Note, this is only necessary in Py2, it is equivalent to the 's'
+ * PyArg_Parse format conversion in Py3 with the exception a PyBytes
+ * object is returned which must be DECREF'ed instead of returning a
+ * char * pointer.
+ */
+static int
+UTF8Convert(PyObject *obj, PyObject **param)
+{
+    PyObject *py_utf8 = NULL;
+
+    if (!obj) {
+        *param = NULL;
+        return 0;
+    }
+
+    if ((py_utf8 = PyBaseString_UTF8(obj, NULL)) != NULL) {
+        *param = py_utf8;
+        return 1;
+    }
+
+    return 0;
+}
+
+/*
+ * Note, this is only necessary in Py2, it is equivalent to the 'z'
+ * PyArg_Parse format conversion in Py3 with the exception a PyBytes
+ * object is returned (if obj is non-NULL or not None) which must be
+ * DECREF'ed instead of returning a char * pointer.
+ */
 static int
 UTF8OrNoneConvert(PyObject *obj, PyObject **param)
 {
@@ -13820,6 +13850,169 @@ PK11Slot_authenticate(PK11Slot *self, PyObject *args)
 
 }
 
+PyDoc_STRVAR(PK11Slot_check_security_officer_passwd_doc,
+"check_security_officer_passwd(security_officer_passwd) -> bool\n\
+\n\
+Verify security officer password.\n\
+\n\
+:Parameters:\n\
+    security_officer_passwd : string\n\
+        Security Officer password.\n\
+");
+
+static PyObject *
+PK11Slot_check_security_officer_passwd(PK11Slot *self, PyObject *args)
+{
+    SECStatus result;
+    PyObject *security_officer_passwd = NULL;
+
+    TraceMethodEnter(self);
+
+    if (!PyArg_ParseTuple(args, "O&:check_security_officer_passwd",
+                          UTF8Convert, &security_officer_passwd
+                          ))
+        return NULL;
+
+    result = PK11_CheckSSOPassword(self->slot,
+                                   PyBytes_AsString(security_officer_passwd));
+
+    if (result != SECSuccess && PORT_GetError() != SEC_ERROR_BAD_PASSWORD) {
+        Py_DECREF(security_officer_passwd);
+	return set_nspr_error(NULL);
+    }
+
+    Py_DECREF(security_officer_passwd);
+
+    if (result == SECSuccess) {
+        Py_RETURN_TRUE;
+    } else {
+        Py_RETURN_FALSE;
+    }
+}
+
+PyDoc_STRVAR(PK11Slot_check_user_passwd_doc,
+"check_user_passwd(user_passwd)\n\
+\n\
+Verify security officer password.\n\
+\n\
+:Parameters:\n\
+    user_passwd : string\n\
+        user password.\n\
+");
+
+static PyObject *
+PK11Slot_check_user_passwd(PK11Slot *self, PyObject *args)
+{
+    SECStatus result;
+    PyObject *user_passwd = NULL;
+
+    TraceMethodEnter(self);
+
+    if (!PyArg_ParseTuple(args, "O&:check_user_passwd",
+                          UTF8Convert, &user_passwd
+                          ))
+        return NULL;
+
+    result = PK11_CheckUserPassword(self->slot,
+                                    PyBytes_AsString(user_passwd));
+
+    if (result != SECSuccess && PORT_GetError() != SEC_ERROR_BAD_PASSWORD) {
+        Py_DECREF(user_passwd);
+	return set_nspr_error(NULL);
+    }
+
+    Py_DECREF(user_passwd);
+
+    if (result == SECSuccess) {
+        Py_RETURN_TRUE;
+    } else {
+        Py_RETURN_FALSE;
+    }
+}
+
+PyDoc_STRVAR(PK11Slot_change_passwd_doc,
+"change_passwd(old_passwd=None, new_passwd=None)\n\
+\n\
+Change the user password on the token.\n\
+\n\
+:Parameters:\n\
+    old_passwd : string or None\n\
+        Previouis password.\n\
+    new_passwd : string or None\n\
+        New password.\n\
+");
+
+static PyObject *
+PK11Slot_change_passwd(PK11Slot *self, PyObject *args, PyObject *kwds)
+{
+    static char *kwlist[] = {"old_passwd", "new_passwd", NULL};
+    PyObject *old_passwd = NULL;
+    PyObject *new_passwd = NULL;
+
+    TraceMethodEnter(self);
+
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "O!|O&O&:change_passwd", kwlist,
+                                     UTF8OrNoneConvert, &old_passwd,
+                                     UTF8OrNoneConvert, &new_passwd
+                                     ))
+        return NULL;
+
+    if (PK11_ChangePW(self->slot,
+                      old_passwd ? PyBytes_AsString(old_passwd) : NULL,
+                      new_passwd ? PyBytes_AsString(new_passwd) : NULL) != SECSuccess) {
+        Py_XDECREF(old_passwd);
+        Py_XDECREF(new_passwd);
+	return set_nspr_error(NULL);
+    }
+
+    Py_XDECREF(old_passwd);
+    Py_XDECREF(new_passwd);
+
+    Py_RETURN_NONE;
+
+}
+PyDoc_STRVAR(PK11Slot_init_pin_doc,
+"init_pin(security_officer_passwd=None, user_passwd=None)\n\
+\n\
+Initialize the token's pin for first use.\n\
+\n\
+:Parameters:\n\
+    security_officer_passwd : string or None\n\
+        Security Officer password used to unlock token.\n\
+    user_passwd : string or None\n\
+        User password to set as token pin.\n\
+");
+
+static PyObject *
+PK11Slot_init_pin(PK11Slot *self, PyObject *args, PyObject *kwds)
+{
+    static char *kwlist[] = {"security_officer_passwd", "user_passwd", NULL};
+    PyObject *security_officer_passwd = NULL;
+    PyObject *user_passwd = NULL;
+
+    TraceMethodEnter(self);
+
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "O!|O&O&:init_pin", kwlist,
+                                     UTF8OrNoneConvert, &security_officer_passwd,
+                                     UTF8OrNoneConvert, &user_passwd
+                                     ))
+        return NULL;
+
+    if (PK11_InitPin(self->slot,
+                     security_officer_passwd ? PyBytes_AsString(security_officer_passwd) : NULL,
+                     user_passwd ? PyBytes_AsString(user_passwd) : NULL) != SECSuccess) {
+        Py_XDECREF(security_officer_passwd);
+        Py_XDECREF(user_passwd);
+	return set_nspr_error(NULL);
+    }
+
+    Py_XDECREF(security_officer_passwd);
+    Py_XDECREF(user_passwd);
+
+    Py_RETURN_NONE;
+
+}
+
 PyDoc_STRVAR(PK11Slot_logout_doc,
 "logout()l\n\
 \n\
@@ -14365,6 +14558,10 @@ static PyMethodDef PK11Slot_methods[] = {
     {"user_disable",                      (PyCFunction)PK11Slot_user_disable,                      METH_NOARGS,                PK11Slot_user_disable_doc},
     {"user_enable",                       (PyCFunction)PK11Slot_user_enable,                       METH_NOARGS,                PK11Slot_user_enable_doc},
     {"authenticate",                      (PyCFunction)PK11Slot_authenticate,                      METH_VARARGS,               PK11Slot_authenticate_doc},
+    {"check_security_officer_passwd",     (PyCFunction)PK11Slot_check_security_officer_passwd,     METH_VARARGS,               PK11Slot_check_security_officer_passwd_doc},
+    {"check_user_passwd",                 (PyCFunction)PK11Slot_check_user_passwd,                 METH_VARARGS,               PK11Slot_check_user_passwd_doc},
+    {"change_passwd",                     (PyCFunction)PK11Slot_change_passwd,                     METH_VARARGS|METH_KEYWORDS, PK11Slot_change_passwd_doc},
+    {"init_pin",                          (PyCFunction)PK11Slot_init_pin,                          METH_VARARGS|METH_KEYWORDS, PK11Slot_init_pin_doc},
     {"logout",                            (PyCFunction)PK11Slot_logout,                            METH_NOARGS,                PK11Slot_logout_doc},
     {"get_best_wrap_mechanism",           (PyCFunction)PK11Slot_get_best_wrap_mechanism,           METH_NOARGS,                PK11Slot_get_best_wrap_mechanism_doc},
     {"get_best_key_length",               (PyCFunction)PK11Slot_get_best_key_length,               METH_VARARGS,               PK11Slot_get_best_key_length_doc},
@@ -21136,6 +21333,7 @@ pk11_pk11_need_pw_init(PyObject *self, PyObject *args, PyObject *kwds)
 }
 
 
+
 PyDoc_STRVAR(pk11_pk11_token_exists_doc,
 "pk11_token_exists(mechanism) -> bool\n\
 \n\
@@ -24695,25 +24893,16 @@ static PyObject *
 cert_set_ocsp_default_responder(PyObject *self, PyObject *args)
 {
     CertDB *py_certdb = NULL;
-    PyObject *py_url = NULL;
     PyObject *py_url_utf8 = NULL;
-    PyObject *py_nickname = NULL;
     PyObject *py_nickname_utf8 = NULL;
 
     TraceMethodEnter(self);
 
-    if (!PyArg_ParseTuple(args, "O!OO:set_ocsp_default_responder",
+    if (!PyArg_ParseTuple(args, "O!O&O&:set_ocsp_default_responder",
                           &CertDBType, &py_certdb,
-                          &py_url, &py_nickname))
+                          UTF8Convert, &py_url_utf8,
+                          UTF8Convert, &py_nickname_utf8))
         return NULL;
-
-    if ((py_url_utf8 = PyBaseString_UTF8(py_url, "url")) == NULL) {
-        goto exit;
-    }
-
-    if ((py_nickname_utf8 = PyBaseString_UTF8(py_nickname, "nickname")) == NULL) {
-        goto exit;
-    }
 
     if (CERT_SetOCSPDefaultResponder(py_certdb->handle,
                                      PyBytes_AS_STRING(py_url_utf8),
@@ -24721,7 +24910,6 @@ cert_set_ocsp_default_responder(PyObject *self, PyObject *args)
         return set_nspr_error(NULL);
     }
 
- exit:
     Py_XDECREF(py_url_utf8);
     Py_XDECREF(py_nickname_utf8);
 
