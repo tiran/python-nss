@@ -2984,12 +2984,7 @@ get_oid_tag_from_object(PyObject *obj)
                     return -1;
                 }
                 /* Get the OID tag from the SECItem */
-                if ((oid_tag = SECOID_FindOIDTag(&item)) == SEC_OID_UNKNOWN) {
-                    SECITEM_FreeItem(&item, PR_FALSE);
-                    PyErr_Format(PyExc_ValueError, "could not convert \"%s\" to OID tag", type_string);
-                    Py_DECREF(py_obj_string_utf8);
-                    return -1;
-                }
+                oid_tag = SECOID_FindOIDTag(&item);
                 SECITEM_FreeItem(&item, PR_FALSE);
             } else {
                 oid_tag = oid_tag_from_name(type_string);
@@ -11263,12 +11258,7 @@ AVA_init(AVA *self, PyObject *args, PyObject *kwds)
     }
 
     if (oid_tag == SEC_OID_UNKNOWN) {
-        PyObject *type_str = PyObject_String(py_type);
-        PyObject *type_str_utf8 = PyBaseString_UTF8(type_str, "oid type");
-        PyErr_Format(PyExc_ValueError, "unable to convert \"%s\" to known OID",
-                     PyBytes_AsString(type_str_utf8));
-        Py_DECREF(type_str);
-        Py_XDECREF(type_str_utf8);
+        PyErr_Format(PyExc_ValueError, "unable to convert to known OID");
         return -1;
     }
 
@@ -22203,8 +22193,11 @@ cert_oid_str(PyObject *self, PyObject *args)
         return NULL;
 
    oid_tag = get_oid_tag_from_object(arg);
-   if (oid_tag == SEC_OID_UNKNOWN || oid_tag == -1) {
+   if (oid_tag == SEC_OID_UNKNOWN) {
+       PyErr_Format(PyExc_ValueError, "unable to convert to known OID");
        return NULL;
+   } else if (oid_tag == -1) {
+       return NULL; /* exception already set */
    }
 
    if ((oiddata = SECOID_FindOIDByTag(oid_tag)) == NULL) {
@@ -22247,8 +22240,11 @@ cert_oid_tag_name(PyObject *self, PyObject *args)
         return NULL;
 
     oid_tag = get_oid_tag_from_object(arg);
-    if (oid_tag == SEC_OID_UNKNOWN || oid_tag == -1) {
+    if (oid_tag == SEC_OID_UNKNOWN) {
+        PyErr_Format(PyExc_ValueError, "unable to convert to known OID");
         return NULL;
+    } else if (oid_tag == -1) {
+        return NULL; /* exception already set */
     }
 
     py_name = oid_tag_to_pystr_name(oid_tag);
@@ -22287,8 +22283,11 @@ cert_oid_tag(PyObject *self, PyObject *args)
         return NULL;
 
     oid_tag = get_oid_tag_from_object(arg);
-    if (oid_tag == SEC_OID_UNKNOWN || oid_tag == -1) {
+    if (oid_tag == SEC_OID_UNKNOWN) {
+        PyErr_Format(PyExc_ValueError, "unable to convert to known OID");
         return NULL;
+    } else if (oid_tag == -1) {
+        return NULL; /* exception already set */
     }
 
     result = PyLong_FromLong(oid_tag);
@@ -22326,9 +22325,17 @@ cert_oid_dotted_decimal(PyObject *self, PyObject *args)
     if (!PyArg_ParseTuple(args, "O:oid_dotted_decimal", &arg))
         return NULL;
 
+    if (PySecItem_Check(arg)) {
+        return oid_secitem_to_pystr_dotted_decimal(&((SecItem *)arg)->item);
+    }
+
     oid_tag = get_oid_tag_from_object(arg);
-    if (oid_tag == SEC_OID_UNKNOWN || oid_tag == -1) {
+
+    if (oid_tag == SEC_OID_UNKNOWN) {
+        PyErr_Format(PyExc_ValueError, "unable to convert to known OID");
         return NULL;
+    } else if (oid_tag == -1) {
+        return NULL; /* exception already set */
     }
 
     if ((oiddata = SECOID_FindOIDByTag(oid_tag)) == NULL) {
