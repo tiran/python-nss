@@ -1,3 +1,26 @@
+2015-09-03  John Dennis  <jdennis@redhat.com> 1.0.0beta1
+  The primary enhancement in this version is support for Python3
+  Single code base supports both Py2 (minimum version 2.7) and Py3
+  
+      When built for Py2:
+       - text will be a Unicode object
+       - binary data will be a str object
+       - ints will be Python long object
+      When built for Py3:
+       - text will be a str object
+       - binary data will be a bytes object
+       - ints will be a Python int object
+
+      All pure Python tests and examples have been ported to Py3
+      syntax but should continue to run under Py2.
+	
+  * The following class methods were added:
+
+    - PK11Slot.check_security_officer_passwd
+    - PK11Slot.check_user_passwd
+    - PK11Slot.change_passwd
+    - PK11Slot.init_pin
+
 2014-11-07  John Dennis  <jdennis@redhat.com> 0.17.0
   The primary enhancement in this version is adding support for PBKDF2
 
