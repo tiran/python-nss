@@ -4402,15 +4402,20 @@ MOD_INIT(ssl)
         return MOD_ERROR_VAL;
 
     /* SSL_ImplementedCiphers */
-    if ((py_ssl_implemented_ciphers = PyTuple_New(SSL_NumImplementedCiphers)) == NULL) {
-        return MOD_ERROR_VAL;
-    }
+    {
+        PRUint16 n_implemented_ciphers = SSL_GetNumImplementedCiphers();
+        const PRUint16 *implemented_ciphers = SSL_GetImplementedCiphers();
 
-    for (i = 0; i < SSL_NumImplementedCiphers; i++) {
-        PyTuple_SetItem(py_ssl_implemented_ciphers, i, PyLong_FromLong(SSL_ImplementedCiphers[i]));
-    }
+        if ((py_ssl_implemented_ciphers = PyTuple_New(n_implemented_ciphers)) == NULL) {
+            return MOD_ERROR_VAL;
+        }
 
-    PyModule_AddObject(m, "ssl_implemented_ciphers", py_ssl_implemented_ciphers);
+        for (i = 0; i < n_implemented_ciphers; i++) {
+            PyTuple_SetItem(py_ssl_implemented_ciphers, i, PyLong_FromLong(implemented_ciphers[i]));
+        }
+
+        PyModule_AddObject(m, "ssl_implemented_ciphers", py_ssl_implemented_ciphers);
+    }
 
     /***************************************************************************
      * SSL Library Version
