@@ -64,7 +64,7 @@ def update_version():
     else:
         os.unlink(tmp_file)
 
-def find_include_dir(dir_names, include_files, include_roots=['/usr/include', '/usr/local/include']):
+def find_include_dir(dir_names, include_files, include_roots=None):
     '''
     Locate an include directory on the system which contains the specified include files.
     You must provide a list of directory basenames to search. You may optionally provide
@@ -73,6 +73,8 @@ def find_include_dir(dir_names, include_files, include_roots=['/usr/include', '/
     files that directory is returned. If no directory is found containing all the include
     files a ValueError is raised.
     '''
+    if not include_roots:
+        include_roots = ['/usr/include', '/usr/local/include']
     if len(dir_names) == 0:
         raise ValueError("directory search list is empty")
     if len(include_files) == 0:
@@ -313,6 +315,7 @@ def main(argv):
 
     debug_compile_args = ['-O0', '-g']
     extra_compile_args = []
+    include_roots = []
 
     for arg in argv[:]:
         if arg in ('-d', '--debug'):
@@ -323,9 +326,12 @@ def main(argv):
             print("compiling with trace")
             extra_compile_args += ['-DDEBUG']
             argv.remove(arg)
+        if arg.startswith('--include-root'):
+            include_roots.append(arg.split('--include-root=')[1])
+            argv.remove(arg)
 
-    nss_include_dir  = find_include_dir(['nss3', 'nss'],   ['nss.h',  'pk11pub.h'])
-    nspr_include_dir = find_include_dir(['nspr4', 'nspr'], ['nspr.h', 'prio.h'])
+    nss_include_dir  = find_include_dir(['nss3', 'nss'],   ['nss.h',  'pk11pub.h'], include_roots=include_roots)
+    nspr_include_dir = find_include_dir(['nspr4', 'nspr'], ['nspr.h', 'prio.h'], include_roots=include_roots)
 
     nss_error_extension = \
         Extension('nss.error',
