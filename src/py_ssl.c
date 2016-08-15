@@ -4708,6 +4708,17 @@ if (_AddIntConstantWithLookup(m, #constant, constant, \
     ExportConstant(TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256);
     ExportConstant(TLS_ECDH_RSA_WITH_AES_128_GCM_SHA256);
 
+    /* draft-ietf-tls-chacha20-poly1305-04 */
+#ifdef TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256
+    ExportConstant(TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256);
+    ExportConstant(TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256);
+    ExportConstant(TLS_DHE_RSA_WITH_CHACHA20_POLY1305_SHA256);
+#endif
+#ifdef TLS_ECDHE_PSK_WITH_CHACHA20_POLY1305_SHA256
+    ExportConstant(TLS_ECDHE_PSK_WITH_CHACHA20_POLY1305_SHA256);
+    ExportConstant(TLS_DHE_PSK_WITH_CHACHA20_POLY1305_SHA256);
+#endif
+
     /* Netscape "experimental" cipher suites. */
     ExportConstant(SSL_RSA_OLDFIPS_WITH_3DES_EDE_CBC_SHA);
     ExportConstant(SSL_RSA_OLDFIPS_WITH_DES_CBC_SHA);
