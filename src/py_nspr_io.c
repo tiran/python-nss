@@ -1518,11 +1518,11 @@ HostEntry_new_from_PRNetAddr(PRNetAddr *pr_netaddr)
     }                                                                   \
 }
 
-#define SOCKET_CHECK_OPEN(py_socket)                            \
-{                                                               \
-    if (!py_socket->open_for_read || !py_socket->pr_socket) {   \
-        return err_closed();                                    \
-    }                                                           \
+#define SOCKET_CHECK_OPEN(py_socket)            \
+{                                               \
+    if (!py_socket->pr_socket) {                \
+        return err_closed();                    \
+    }                                           \
 }
 
 static void
@@ -2057,7 +2057,6 @@ Socket_connect(Socket *self, PyObject *args, PyObject *kwds)
     }
     Py_END_ALLOW_THREADS
 
-    SOCKET_OPEN_FOR_READ(self);
     Py_RETURN_NONE;
 }
 
@@ -2116,7 +2115,6 @@ Socket_accept(Socket *self, PyObject *args, PyObject *kwds)
     if ((py_socket = Socket_new_from_PRFileDesc(pr_socket, self->family)) == NULL) {
         goto error;
     }
-    SOCKET_OPEN_FOR_READ(py_socket);
 
     if ((return_values = Py_BuildValue("NN", py_socket, py_netaddr)) == NULL) {
         goto error;
@@ -2201,7 +2199,6 @@ Socket_accept_read(Socket *self, PyObject *args, PyObject *kwds)
     if ((py_socket = Socket_new_from_PRFileDesc(pr_socket, self->family)) == NULL) {
         goto error;
     }
-    SOCKET_OPEN_FOR_READ(py_socket);
 
     if ((return_values = Py_BuildValue("NNN", py_socket, py_netaddr, py_buf)) == NULL) {
         goto error;
@@ -2332,10 +2329,6 @@ Socket_shutdown(Socket *self, PyObject *args, PyObject *kwds)
     }
     Py_END_ALLOW_THREADS
 
-    if (how == PR_SHUTDOWN_RCV || how == PR_SHUTDOWN_BOTH) {
-        SOCKET_CLOSED_FOR_READ(self);
-    }
-
     Py_RETURN_NONE;
 }
 
@@ -2360,11 +2353,11 @@ Socket_close(Socket *self, PyObject *args)
     Py_BEGIN_ALLOW_THREADS
     if (PR_Close(self->pr_socket) != PR_SUCCESS) {
         Py_BLOCK_THREADS
+        self->pr_socket = NULL;
         return set_nspr_error(NULL);
     }
     Py_END_ALLOW_THREADS
 
-    SOCKET_CLOSED_FOR_READ(self);
     self->pr_socket = NULL;
     Py_RETURN_NONE;
 }
@@ -3315,7 +3308,6 @@ Socket_new(PyTypeObject *type, PyObject *args, PyObject *kwds)
     self->family = 0;
     self->py_netaddr = NULL;
     self->makefile_refs = 0;
-    self->open_for_read = 0;
     INIT_READAHEAD(&self->readahead);
 
     TraceObjNewLeave(self);
