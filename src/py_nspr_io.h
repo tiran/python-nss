@@ -66,20 +66,6 @@ typedef struct {
 } ReadAhead;
 
 
-#define SOCKET_OPEN_FOR_READ(py_socket)         \
-{                                               \
-    Socket *sock = (Socket*)py_socket;          \
-                                                \
-    sock->open_for_read = 1;                    \
-}
-
-#define SOCKET_CLOSED_FOR_READ(py_socket)       \
-{                                               \
-    Socket *sock = (Socket*)py_socket;          \
-                                                \
-    sock->open_for_read = 0;                    \
-}
-
 #define INIT_READAHEAD(readahead)               \
 {                                               \
     (readahead)->buf = NULL;                    \
@@ -99,7 +85,6 @@ typedef struct {
     PRFileDesc *pr_socket;                      \
     int family;                                 \
     int makefile_refs;                          \
-    int open_for_read;                          \
     NetworkAddress *py_netaddr;                 \
     ReadAhead readahead;
 
