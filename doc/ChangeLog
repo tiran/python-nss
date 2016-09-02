@@ -7,6 +7,10 @@
     possible for the binding to know in all cases, especially if the
     socket is created from an external socket passed in.
 
+  * The following module functions were added:
+
+    - nss.get_all_tokens
+
 2015-09-03  John Dennis  <jdennis@redhat.com> 1.0.0beta1
   The primary enhancement in this version is support for Python3
   Single code base supports both Py2 (minimum version 2.7) and Py3

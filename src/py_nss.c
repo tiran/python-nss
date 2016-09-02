@@ -2452,6 +2452,32 @@ CERTCertExtension_tuple(CERTCertExtension **extensions, RepresentationKind repr_
 
 
 static PyObject *
+PK11SlotList_to_tuple(PK11SlotList *list)
+{
+    Py_ssize_t len, i;
+    PyObject *tuple = NULL;
+    PyObject *py_slotinfo = NULL;
+    PK11SlotListElement *le;
+
+    /* Count number of elements in list, allocate tuple */
+    for (le = list->head, len = 0; le; le = le->next) len++;
+
+    if ((tuple = PyTuple_New(len)) == NULL) {
+        return NULL;
+    }
+
+    for (le = list->head, i = 0; le; le = le->next, i++) {
+        if ((py_slotinfo = PK11Slot_new_from_PK11SlotInfo(le->slot)) == NULL) {
+            Py_DECREF(tuple);
+            return NULL;
+        }
+        PyTuple_SetItem(tuple, i, py_slotinfo);
+    }
+
+    return tuple;
+}
+
+static PyObject *
 CERTCertList_to_tuple(CERTCertList *cert_list, bool add_reference)
 {
     Py_ssize_t n_certs = 0;
@@ -22693,6 +22719,100 @@ pk11_get_internal_key_slot(PyObject *self, PyObject *args)
     return py_slot;
 }
 
+
+PyDoc_STRVAR(pk11_get_all_tokens_doc,
+"get_all_tokens(mechanism=CKM_INVALID_MECHANISM, need_rw=False, load_certs=False, pin_args=None) -> (PK11Slot, ...)\n\
+\n\
+:Parameters:\n\
+    mechanism : int\n\
+        key mechanism enumeration constant (CKM_*).\n\
+        Use CKM_INVALID_MECHANISM to get all tokens.\n\
+    need_rw : boolean\n\
+        need read/write\n\
+    load_certs : boolean\n\
+        load certificates\n\
+    pin_args : tuple\n\
+        Extra parameters which will\n\
+        be passed to the password callback function.\n\
+\n\
+Return a tuple of PK11Slot objects.\n\
+\n\
+Example::\n\
+\n\
+    import nss.nss as nss\n\
+    nss.nss_init_nodb()\n\
+\n\
+    slots = nss.get_all_tokens()\n\
+    for slot in slots:\n\
+        print slot\n\
+        print\n\
+\n\
+    Slot Name:                         NSS User Private Key and Certificate Services\n\
+    Token Name:                        NSS Certificate DB\n\
+    Is Hardware:                       False\n\
+    Is Present:                        True\n\
+    Is Read Only:                      True\n\
+    Is Internal:                       True\n\
+    Needs Login:                       False\n\
+    Needs User Init:                   True\n\
+    Is Friendly:                       True\n\
+    Is Removable:                      False\n\
+    Has Protected Authentication Path: False\n\
+    Is Disabled:                       False (no reason)\n\
+    Has Root Certs:                    False\n\
+    Best Wrap Mechanism:               CKM_DES3_ECB (0x132)\n\
+\n\
+    Slot Name:                         NSS Internal Cryptographic Services\n\
+    Token Name:                        NSS Generic Crypto Services\n\
+    Is Hardware:                       False\n\
+    Is Present:                        True\n\
+    Is Read Only:                      True\n\
+    Is Internal:                       True\n\
+    Needs Login:                       False\n\
+    Needs User Init:                   True\n\
+    Is Friendly:                       True\n\
+    Is Removable:                      False\n\
+    Has Protected Authentication Path: False\n\
+    Is Disabled:                       False (no reason)\n\
+    Has Root Certs:                    False\n\
+    Best Wrap Mechanism:               CKM_DES3_ECB (0x132)\n\
+\n\
+");
+
+static PyObject *
+pk11_get_all_tokens(PyObject *self, PyObject *args, PyObject *kwds)
+{
+    static char *kwlist[] = {"mechanism", "need_rw", "load_certs", "pin_args", NULL};
+    unsigned long mechanism = CKM_INVALID_MECHANISM;
+    int need_rw = 0;
+    int load_certs = 0;
+    PyObject *pin_args = Py_None;
+    PyObject *tuple = NULL;
+    PK11SlotList *list = NULL;
+
+
+    TraceMethodEnter(self);
+
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "|kiiO&:get_all_tokens", kwlist,
+                                     &mechanism, &need_rw, &load_certs,
+                                     TupleOrNoneConvert, &pin_args))
+        return NULL;
+
+    if (PyNone_Check(pin_args)) {
+        pin_args = NULL;
+    }
+
+    if ((list = PK11_GetAllTokens(CKM_INVALID_MECHANISM, PR_FALSE, PR_FALSE, pin_args)) == NULL) {
+        return set_nspr_error(NULL);
+    }
+
+    tuple = PK11SlotList_to_tuple(list);
+    PK11_FreeSlotList(list);
+
+    return tuple;
+}
+
+
 PyDoc_STRVAR(pk11_find_slot_by_name_doc,
 "find_slot_by_name(name) -> `PK11Slot`\n\
 \n\
@@ -25053,6 +25173,7 @@ module_methods[] = {
     {"get_best_slot",                    (PyCFunction)pk11_get_best_slot,                  METH_VARARGS,               pk11_get_best_slot_doc},
     {"get_internal_slot",                (PyCFunction)pk11_get_internal_slot,              METH_NOARGS,                pk11_get_internal_slot_doc},
     {"get_internal_key_slot",            (PyCFunction)pk11_get_internal_key_slot,          METH_NOARGS,                pk11_get_internal_key_slot_doc},
+    {"get_all_tokens",                   (PyCFunction)pk11_get_all_tokens,                 METH_VARARGS|METH_KEYWORDS, pk11_get_all_tokens_doc},
     {"find_slot_by_name",                (PyCFunction)pk11_find_slot_by_name,              METH_VARARGS,               pk11_find_slot_by_name_doc},
     {"create_context_by_sym_key",        (PyCFunction)pk11_create_context_by_sym_key,      METH_VARARGS|METH_KEYWORDS, pk11_create_context_by_sym_key_doc},
     {"import_sym_key",                   (PyCFunction)pk11_import_sym_key,                 METH_VARARGS,               pk11_import_sym_key_doc},
