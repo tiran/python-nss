@@ -1,4 +1,6 @@
-2016-09-01  John Dennis  <jdennis@redhat.com> 1.0.0beta2
+2016-09-01  John Dennis  <jdennis@redhat.com> 1.0.0
+  * Official 1.0.0 release, only minor tweaks from 1.0.0.beta1
+
   * Allow custom include root in setup.py as command line arg
 
   * Add TLS chacha20 poly1305 constants
@@ -11,6 +13,15 @@
 
     - nss.get_all_tokens
 
+  * The following constants were added:
+	
+    - ssl.TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256
+    - ssl.TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256
+    - ssl.TLS_DHE_RSA_WITH_CHACHA20_POLY1305_SHA256
+    - ssl.TLS_ECDHE_PSK_WITH_CHACHA20_POLY1305_SHA256
+    - ssl.TLS_DHE_PSK_WITH_CHACHA20_POLY1305_SHA256
+
+	
 2015-09-03  John Dennis  <jdennis@redhat.com> 1.0.0beta1
   The primary enhancement in this version is support for Python3
   Single code base supports both Py2 (minimum version 2.7) and Py3
