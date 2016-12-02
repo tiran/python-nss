@@ -16,7 +16,7 @@ from distutils.util import subst_vars, change_root
 from distutils.command.build_py import build_py as _build_py
 from distutils.command.sdist import sdist as _sdist
 
-version = "1.0.0"
+version = "1.0.1"
 
 doc_manifest = [
     [['include README LICENSE* doc/ChangeLog',
@@ -318,7 +318,7 @@ def main(argv):
     include_roots = []
 
     for arg in argv[:]:
-        if arg in ('-d', '--debug'):
+        if arg == '--debug':
             print("compiling with debug")
             extra_compile_args += debug_compile_args
             argv.remove(arg)

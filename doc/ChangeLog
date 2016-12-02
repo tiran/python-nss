@@ -1,3 +1,6 @@
+2017-01-06  Christian Heimes  <cheimes@redhat.com> 1.0.1
+  * Fix wheel packaging issue in setup.py
+
 2016-09-01  John Dennis  <jdennis@redhat.com> 1.0.0
   * Official 1.0.0 release, only minor tweaks from 1.0.0.beta1
 
