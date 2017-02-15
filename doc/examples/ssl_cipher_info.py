@@ -102,6 +102,10 @@ def ssl_connect():
         sock.set_ssl_option(ssl.SSL_SECURITY, True)
         sock.set_ssl_option(ssl.SSL_HANDSHAKE_AS_CLIENT, True)
         sock.set_hostname(options.hostname)
+        try:
+            sock.set_ssl_version_range("tls1.0", "tls1.3")
+        except NSPRError as e:
+            print("Cannot enable TLS 1.3, {}".format(e))
 
         # Provide a callback which notifies us when the SSL handshake is
         # complete
