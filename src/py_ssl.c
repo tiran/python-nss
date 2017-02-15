@@ -4718,6 +4718,13 @@ if (_AddIntConstantWithLookup(m, #constant, constant, \
     ExportConstant(TLS_DHE_PSK_WITH_CHACHA20_POLY1305_SHA256);
 #endif
 
+    /* TLS 1.3 cipher suites */
+#ifdef TLS_AES_128_GCM_SHA256
+    ExportConstant(TLS_AES_128_GCM_SHA256);
+    ExportConstant(TLS_AES_256_GCM_SHA384);
+    ExportConstant(TLS_CHACHA20_POLY1305_SHA256);
+#endif
+
     /* Netscape "experimental" cipher suites. */
     ExportConstant(SSL_RSA_OLDFIPS_WITH_3DES_EDE_CBC_SHA);
     ExportConstant(SSL_RSA_OLDFIPS_WITH_DES_CBC_SHA);
