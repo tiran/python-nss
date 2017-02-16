@@ -318,7 +318,7 @@ def main(argv):
     include_roots = []
 
     for arg in argv[:]:
-        if arg in ('-d', '--debug'):
+        if arg in ('--debug', ):
             print("compiling with debug")
             extra_compile_args += debug_compile_args
             argv.remove(arg)
